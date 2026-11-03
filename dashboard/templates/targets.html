@@ -10,7 +10,7 @@
     <b>{{ p.name }}</b>
     <span class="sub">{{ p.description }}</span>
     <span class="mono small">{% for h in p.scope %}{{ h }}{{ ", " if not loop.last }}{% endfor %}</span>
-    {% if p.roles %}<span class="sub small">역할: {{ p.roles.values() | join(" · ") }}</span>{% endif %}
+    {% if p.roles %}{% for rid, r in p.roles.items() %}<span class="sub small">{{ r.name }}{% if r.scope %} — <span class="mono">{{ r.scope | join(", ") }}</span>{% endif %}</span>{% endfor %}{% endif %}
   </div>
   {% endfor %}
 </div>
@@ -25,8 +25,8 @@
   </label>
   <label>역할
     <select name="role" id="role-pick">
-      {% for p in PROJECTS.values() %}{% for rid, rname in p.roles.items() %}
-      <option value="{{ rid }}" data-project="{{ p.id }}" {{ 'hidden' if p.id != default_pid }}>{{ rname }}</option>
+      {% for p in PROJECTS.values() %}{% for rid, r in p.roles.items() %}
+      <option value="{{ rid }}" data-project="{{ p.id }}" {{ 'hidden' if p.id != default_pid }}>{{ r.name }}</option>
       {% endfor %}{% endfor %}
       <option value="" data-project="general">— 역할 없음</option>
     </select>
@@ -45,7 +45,7 @@
   {% for t in targets %}
     <tr>
       <td><span class="proj-badge">{{ PROJECTS[t.project].name if t.project in PROJECTS else t.project ~ " (팩 없음)" }}</span></td>
-      <td class="sub">{{ PROJECTS[t.project].roles.get(t.role, t.role) if t.project in PROJECTS else t.role }}</td>
+      <td class="sub">{{ PROJECTS[t.project].role_name(t.role) if t.project in PROJECTS else t.role }}</td>
       <td><a href="{{ url_for('dash.results', target=t.id) }}">{{ t.name }}</a></td>
       <td class="mono">{{ t.url }}</td>
       <td>

@@ -309,7 +309,7 @@ def test_role_shown_in_report(app, client):
     with app.app_context():
         tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
     md = client.get(f"/report/{tid}.md").get_data(as_text=True)
-    assert "관리자 웹 (EC2 ②, 터널 localhost:3000)" in md   # 주소만으론 어디인지 모른다
+    assert "관리자 웹 (EC2 ②, 터널 3000)" in md   # 주소만으론 어디인지 모른다
     assert json.loads(client.get(f"/report/{tid}.json").get_data(as_text=True))["target"]["role"]
 
 
@@ -344,3 +344,114 @@ def test_host_report_needs_input():
     from modules import host_report
     with pytest.raises(ValueError):
         host_report.run(Target(1, "t", "https://x.test"), {"output": "", "fixed": "", "public_ports": ""})
+
+
+# ── 역할이 포트까지 묶는다 ────────────────────────────────────
+
+@pytest.mark.parametrize("url, role, ok", [
+    ("http://localhost:3000/admin", "admin_web", True),
+    ("http://127.0.0.1:3000/admin", "admin_web", True),
+    ("http://localhost:8443/", "admin_web", False),     # 같은 호스트, 다른 서버(Wazuh)
+    ("http://localhost:5051/", "admin_web", False),
+    ("http://localhost:8443/", "siem", True),
+    ("http://localhost:3000/", "siem", False),
+    ("https://sesacedu.store/", "user_web", True),
+    ("http://localhost:3000/", "user_web", False),      # 사용자 웹 역할로 터널에 못 간다
+])
+def test_role_scope_pins_the_port(app, url, role, ok):
+    from dashboard import scope
+    project = app.config["PROJECTS"]["sesacedu"]
+    assert scope.is_in_scope(url, project.role_scope(role)) is ok
+
+
+def test_bare_host_entry_allows_any_port():
+    from dashboard import scope
+    # 포트를 안 적은 줄은 포트를 가리지 않는다
+    assert scope.is_in_scope("https://sesacedu.store:8443/", ["sesacedu.store"])
+    assert scope.is_in_scope("https://a.sesacedu.store/", ["sesacedu.store"])
+    # 포트를 적은 줄은 그 포트만. 아래 글은 생략된 443 이라 통과한다
+    assert scope.is_in_scope("https://sesacedu.store/", ["sesacedu.store:443"])
+    assert not scope.is_in_scope("https://sesacedu.store:8443/", ["sesacedu.store:443"])
+
+
+def test_registering_target_checks_role_port(client):
+    assert "허용 범위 밖" in add_target(client, "관리자", "http://localhost:8443", "admin_web")
+    assert "등록했습니다" in add_target(client, "관리자", "http://localhost:3000", "admin_web")
+
+
+def test_module_cannot_reach_other_tunnel_port(app, client, monkeypatch):
+    """관리자 웹 대상으로 돌린 모듈이 Wazuh 포트로 나가려 하면 막힌다."""
+    from dashboard import core
+    from modules import http_security_headers
+    add_target(client, "관리자", "http://localhost:3000", "admin_web")
+    monkeypatch.setattr(http_security_headers, "fetch", lambda url, **k: core.fetch("http://localhost:8443/"))
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    page = client.post("/modules/http_security_headers/run", data={"target_id": tid, "path": "/"},
+                       follow_redirects=True).get_data(as_text=True)
+    assert "허용 범위 밖" in page and "8443" in page
+
+
+# ── 포트 확인: HTTP 가 아닌 길은 따로 검사한다 ────────────────
+
+def test_port_check_uses_host_scope_not_role_port(app, client, monkeypatch):
+    """역할이 3000 으로 묶여 있어도 포트 확인은 다른 포트를 볼 수 있어야 한다."""
+    from dashboard import core
+    from modules import port_check
+    tried = []
+    monkeypatch.setattr(core, "tcp_check", lambda h, p, t=2.0: tried.append((h, p)) or
+                        ("open" if p in (22, 8080) else "closed"))
+    monkeypatch.setattr(port_check, "tcp_check", core.tcp_check)
+    add_target(client, "관리자", "http://localhost:3000", "admin_web")
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    page = client.post("/tools/run", data={
+        "target_id": tid, "module_id": "port_check", "confirm": "yes",
+        "ports": "22,443,8080", "expected": "443", "timeout": "1"}).get_data(as_text=True)
+    assert tried == [("localhost", 22), ("localhost", 443), ("localhost", 8080)]
+    assert "예상 밖 2개" in page
+
+
+def test_tcp_blocked_outside_project_hosts(app):
+    from dashboard import core, scope
+    from flask import g
+    with app.test_request_context():
+        g.host_scope = ["sesacedu.store", "localhost"]
+        with pytest.raises(scope.OutOfScope):
+            core.tcp_check("example.com", 80)
+
+
+def test_tcp_records_in_history(app, client, monkeypatch):
+    import socket
+    from modules import port_check
+    monkeypatch.setattr(socket, "create_connection", lambda *a, **k: pytest.fail("열지 않는다")
+                        if a[0][1] != 22 else _FakeSock())
+    add_target(client, "웹", "https://sesacedu.store", "user_web")
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    client.post("/tools/run", data={"target_id": tid, "module_id": "port_check", "confirm": "yes",
+                                    "ports": "22", "expected": "22", "timeout": "1"})
+    with app.app_context():
+        x = get_db().execute("SELECT method, url, resp_body FROM exchanges WHERE method = 'TCP'").fetchone()
+    assert x["url"] == "tcp://sesacedu.store:22" and x["resp_body"] == "open"
+
+
+class _FakeSock:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_port_check_rejects_bad_input(app, client):
+    add_target(client, "웹", "https://sesacedu.store", "user_web")
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    page = client.post("/tools/run", data={"target_id": tid, "module_id": "port_check", "confirm": "yes",
+                                           "ports": "22,abc", "expected": "", "timeout": "1"}).get_data(as_text=True)
+    assert "포트가 아닌 값" in page
+    page = client.post("/tools/run", data={
+        "target_id": tid, "module_id": "port_check", "confirm": "yes",
+        "ports": ",".join(str(p) for p in range(1, 40)), "expected": "", "timeout": "1"}).get_data(as_text=True)
+    assert "30개까지" in page

@@ -1,4 +1,5 @@
 """모듈이 쓰는 공통 자료형과 HTTP 요청 함수."""
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -243,3 +244,29 @@ def fmt_kst(iso: str) -> str:
     if not iso:
         return ""
     return datetime.fromisoformat(iso).astimezone(KST).strftime("%m-%d %H:%M")
+
+
+def tcp_check(host: str, port: int, timeout: float = 2.0) -> str:
+    """포트가 열려 있는지 TCP 연결만 해 본다 — 열림 / 닫힘 / 응답없음.
+
+    보내는 것은 연결 요청뿐이고 바로 끊는다. 데이터를 주고받지 않는다.
+    호스트는 프로젝트 범위 안이어야 하고, 요청 간격·한도는 HTTP 와 같이 지킨다.
+    """
+    scope.ensure_host_allowed(host)
+    ctx = _run_ctx()
+    if ctx:
+        ctx.before_send()
+    start = time.monotonic()
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            result = "open"
+    except (socket.timeout, TimeoutError):
+        result = "filtered"
+    except OSError:
+        result = "closed"
+    ms = int((time.monotonic() - start) * 1000)
+    if ctx and ctx.recorder:
+        ctx.recorder({"method": "TCP", "url": f"tcp://{host}:{port}", "req_headers": [], "req_body": "",
+                      "status": 0, "resp_headers": [], "resp_body": result, "size": 0, "ms": ms,
+                      "error": "" if result == "open" else result})
+    return result

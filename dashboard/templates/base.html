@@ -54,7 +54,7 @@
         </select>
       </form>
       {% if target %}<span class="proj-badge">{{ PROJECTS[target.project].name if target.project in PROJECTS else target.project }}</span>
-      {% if target.role %}<span class="role-badge">{{ PROJECTS[target.project].roles.get(target.role, target.role) if target.project in PROJECTS else target.role }}</span>{% endif %}
+      {% if target.role %}<span class="role-badge">{{ PROJECTS[target.project].role_name(target.role) if target.project in PROJECTS else target.role }}</span>{% endif %}
       {% endif %}
       {% endif %}
       <div class="top-spacer"></div>

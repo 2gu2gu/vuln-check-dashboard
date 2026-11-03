@@ -40,7 +40,7 @@ def _role_label(t):
     """대상의 역할을 사람이 읽는 이름으로. 터널로 열어 둔 경우 주소만 보고는 어디인지 모른다."""
     if not t or not t["role"]:
         return ""
-    return _project_of(t).roles.get(t["role"], t["role"])
+    return _project_of(t).role_name(t["role"])
 
 
 def _targets():
@@ -125,13 +125,14 @@ def targets():
         try:
             if pid not in _projects():
                 raise ValueError(f"없는 프로젝트입니다: {pid}")
-            scope.ensure_in_scope(url, _projects()[pid].scope)
             if not name:
                 raise ValueError("이름을 넣어 주세요")
             role = request.form.get("role", "").strip()
-            roles = _projects()[pid].roles
-            if roles and role not in roles:
-                raise ValueError(f"역할을 골라 주세요 ({', '.join(roles)})")
+            project = _projects()[pid]
+            if project.roles and role not in project.roles:
+                raise ValueError(f"역할을 골라 주세요 ({', '.join(project.roles)})")
+            # 역할을 고르면 그 서버의 범위(포트까지)로 검사한다
+            scope.ensure_in_scope(url, project.role_scope(role))
             db.execute("INSERT INTO targets (project, role, name, url, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                        [pid, role, name, url, request.form.get("note", "").strip(), now_iso()])
             db.commit()
@@ -274,7 +275,10 @@ def _execute(mod, t, params, call):
                      [t["id"], mod.id, json.dumps(params, ensure_ascii=False), now_iso()])
     g.run_id = cur.lastrowid
     db.commit()
-    g.scope_hosts = _project_of(t).scope  # 실행 중 core.fetch 는 이 범위로만 나간다
+    # 실행 중 core.fetch 는 이 범위로만 나간다 — 역할을 골랐으면 그 서버의 포트까지
+    g.scope_hosts = _project_of(t).role_scope(t["role"])
+    # 포트를 가리지 않는 일(포트 스캔)은 프로젝트 호스트 목록으로만 검사한다
+    g.host_scope = _project_of(t).scope
     g.run_ctx = RunContext(t["url"], _parse_headers(t["headers"]), cfg["DELAY_MS"], cfg["MAX_REQUESTS"],
                            _recorder(t["id"], mod.id), cache=_load_cache(t["id"], mod.id))
     try:
@@ -291,6 +295,7 @@ def _execute(mod, t, params, call):
         # 중간에 멈춰도 그때까지 읽은 값은 남겨 둔다
         _save_cache(t["id"], mod.id, g.run_ctx.cache)
         g.pop("scope_hosts", None)
+        g.pop("host_scope", None)
         g.pop("run_ctx", None)
     db.commit()
 
