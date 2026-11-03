@@ -15,6 +15,7 @@
 </div>
 
 <form method="post" class="panel form-row">
+  {{ csrf_field() }}
   {% set default_pid = target.project if target else ((PROJECTS.keys() | reject("equalto", "general") | first) or "general") %}
   <label>프로젝트
     <select name="project">
@@ -30,17 +31,32 @@
 {% if targets %}
 <div class="table-wrap">
 <table class="grid">
-  <thead><tr><th>프로젝트</th><th>이름</th><th>주소</th><th>메모</th><th>등록</th><th></th></tr></thead>
+  <thead><tr><th>프로젝트</th><th>이름</th><th>주소</th><th>인증 헤더</th><th>메모</th><th>등록</th><th></th></tr></thead>
   <tbody>
   {% for t in targets %}
     <tr>
       <td><span class="proj-badge">{{ PROJECTS[t.project].name if t.project in PROJECTS else t.project ~ " (팩 없음)" }}</span></td>
       <td><a href="{{ url_for('dash.results', target=t.id) }}">{{ t.name }}</a></td>
       <td class="mono">{{ t.url }}</td>
+      <td>
+        <details class="hdr-edit">
+          <summary>{% if header_names[t.id] %}<span class="mono small">{{ header_names[t.id] | join(", ") }}</span>{% else %}<span class="sub">없음</span>{% endif %}</summary>
+          <form method="post" action="{{ url_for('dash.target_headers', tid=t.id) }}">
+            {{ csrf_field() }}
+            <textarea name="headers" rows="3" placeholder="Cookie: JSESSIONID=...&#10;Authorization: Bearer ..."></textarea>
+            <small class="sub">한 줄에 '이름: 값'. 저장하면 기존 값을 모두 바꿉니다. 이 대상 주소로 가는 요청에만 붙고, 요청 기록에는 *** 로 남습니다.</small>
+            <div class="row-btns">
+              <button class="btn" type="submit">저장</button>
+              {% if header_names[t.id] %}<button class="btn ghost danger" type="submit" name="clear" value="yes">지우기</button>{% endif %}
+            </div>
+          </form>
+        </details>
+      </td>
       <td class="sub">{{ t.note }}</td>
       <td class="sub">{{ t.created_at | kst }}</td>
       <td class="right">
         <form method="post" action="{{ url_for('dash.target_delete', tid=t.id) }}" data-confirm="{{ t.name }} 과 그 결과를 모두 지울까요?">
+          {{ csrf_field() }}
           <button class="btn ghost danger" type="submit">삭제</button>
         </form>
       </td>

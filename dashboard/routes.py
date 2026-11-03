@@ -7,7 +7,7 @@ from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
 
 from . import scope
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
-from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, Target,
+from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    fmt_kst, now_iso)
 from .db import STATUSES, get_db
 from .registry import GENERAL, modules_for
@@ -129,7 +129,8 @@ def targets():
             flash(str(e), "error")
         return redirect(url_for("dash.targets"))
     target, targets = _current_target()
-    return render_template("targets.html", target=target, targets=targets)
+    names = {t["id"]: list(_parse_headers(t["headers"])) for t in targets}
+    return render_template("targets.html", target=target, targets=targets, header_names=names)
 
 
 @bp.post("/targets/<int:tid>/delete")
@@ -139,6 +140,36 @@ def target_delete(tid):
     db.commit()
     flash("대상을 지웠습니다(결과 포함)", "ok")
     return redirect(url_for("dash.targets"))
+
+
+def _parse_headers(text):
+    """'이름: 값' 한 줄에 하나 → dict. 형식이 틀린 줄은 ValueError."""
+    out = {}
+    for n, line in enumerate((text or "").splitlines(), 1):
+        if not line.strip():
+            continue
+        name, sep, value = line.partition(":")
+        if not sep or not re.fullmatch(r"[A-Za-z0-9-]+", name.strip()):
+            raise ValueError(f"{n}번째 줄 형식이 틀렸습니다 — '이름: 값'")
+        out[name.strip()] = value.strip()
+    return out
+
+
+@bp.post("/targets/<int:tid>/headers")
+def target_headers(tid):
+    text = "" if request.form.get("clear") == "yes" else request.form.get("headers", "")
+    if not text.strip() and request.form.get("clear") != "yes":
+        flash("바꿀 내용이 없습니다. 지우려면 '지우기'를 누르세요", "error")
+        return redirect(url_for("dash.targets", target=tid))
+    try:
+        hdrs = _parse_headers(text)
+        db = get_db()
+        db.execute("UPDATE targets SET headers = ? WHERE id = ?", [text.strip(), tid])
+        db.commit()
+        flash(f"인증 헤더 {len(hdrs)}개를 저장했습니다" if hdrs else "인증 헤더를 지웠습니다", "ok")
+    except ValueError as e:
+        flash(str(e), "error")
+    return redirect(url_for("dash.targets", target=tid))
 
 
 # ── 모듈 ──────────────────────────────────────────────────────
@@ -159,7 +190,8 @@ def modules():
                 groups.append((f"{p.name} 전용", f"{p.source}modules/", [m for m in available.values() if m.project == p.id]))
     runs = get_db().execute(
         "SELECT runs.*, targets.name AS target_name, "
-        "(SELECT COUNT(*) FROM findings f WHERE f.run_id = runs.id) AS n "
+        "(SELECT COUNT(*) FROM findings f WHERE f.run_id = runs.id) AS n, "
+        "(SELECT COUNT(*) FROM exchanges x WHERE x.run_id = runs.id) AS reqs "
         "FROM runs JOIN targets ON targets.id = runs.target_id ORDER BY runs.id DESC LIMIT 15").fetchall()
     return render_template("modules.html", groups=groups, all_modules=_modules(), project=project,
                            hidden=len(_modules()) - len(available), errors=current_app.config["MODULE_ERRORS"],
@@ -177,19 +209,47 @@ def _guard(mod, t, back):
     return None
 
 
+def _read_params(mod, prefix=""):
+    """화면 입력값 → 모듈 params. type 이 int 인 칸은 숫자인지 먼저 본다."""
+    params = {}
+    for p in mod.params:
+        val = request.form.get(prefix + p["name"], p.get("default", ""))
+        if p.get("type") == "int" and not str(val).strip().isdigit():
+            raise ValueError(f"'{p.get('label') or p['name']}' 에는 숫자를 넣어 주세요")
+        params[p["name"]] = val
+    return params
+
+
+def _recorder(tid, mid):
+    """core.fetch 가 요청마다 부른다. 실행이 실패해도 기록은 남도록 바로 커밋한다."""
+    def record(x):
+        db = get_db()
+        cur = db.execute(
+            "INSERT INTO exchanges (run_id, target_id, module_id, method, url, req_headers, req_body, status, "
+            "resp_headers, resp_body, size, ms, error, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [g.run_id, tid, mid, x["method"], x["url"], json.dumps(x["req_headers"], ensure_ascii=False),
+             x.get("req_body", ""), x.get("status", 0), json.dumps(x.get("resp_headers", []), ensure_ascii=False),
+             x.get("resp_body", ""), x.get("size", 0), x.get("ms", 0), x.get("error", ""), now_iso()])
+        db.commit()
+        return cur.lastrowid
+    return record
+
+
 def _execute(mod, t, params, call):
-    """실행 기록·범위·오류 처리를 한곳에서. call(target) 이 저장까지 하고 알림 문구를 돌려준다."""
-    db = get_db()
+    """실행 기록·범위·요청 설정·오류 처리를 한곳에서. call(target) 이 저장까지 하고 알림 문구를 돌려준다."""
+    db, cfg = get_db(), current_app.config
     cur = db.execute("INSERT INTO runs (target_id, module_id, params, status, started_at) VALUES (?, ?, ?, 'running', ?)",
                      [t["id"], mod.id, json.dumps(params, ensure_ascii=False), now_iso()])
     g.run_id = cur.lastrowid
     db.commit()
     g.scope_hosts = _project_of(t).scope  # 실행 중 core.fetch 는 이 범위로만 나간다
+    g.run_ctx = RunContext(t["url"], _parse_headers(t["headers"]), cfg["DELAY_MS"], cfg["MAX_REQUESTS"],
+                           _recorder(t["id"], mod.id))
     try:
         scope.ensure_in_scope(t["url"])
         msg = call(Target(t["id"], t["name"], t["url"]))
         db.execute("UPDATE runs SET status = 'done', finished_at = ? WHERE id = ?", [now_iso(), g.run_id])
-        flash(f"{mod.name}: {msg}", "ok")
+        flash(f"{mod.name}: {msg} · 요청 {g.run_ctx.count}개", "ok")
     except Exception as e:  # noqa: BLE001 — 실패도 실행 기록에 남긴다
         db.rollback()
         db.execute("UPDATE runs SET status = 'error', error = ?, finished_at = ? WHERE id = ?",
@@ -197,6 +257,7 @@ def _execute(mod, t, params, call):
         flash(f"{mod.name} 실패: {e}", "error")
     finally:
         g.pop("scope_hosts", None)
+        g.pop("run_ctx", None)
     db.commit()
 
 
@@ -204,17 +265,18 @@ def _save_finding(mod, tid, f):
     """같은 대상·모듈·제목·위치면 새로 쌓지 않고 갱신한다. 조치됨이었는데 다시 나오면 미확인으로 되돌린다(재발)."""
     db, now = get_db(), now_iso()
     tech = f.technique or mod.attack[0]["technique"]
+    xid = getattr(f.response, "exchange_id", 0) or None
     row = db.execute("SELECT id, status FROM findings WHERE target_id = ? AND module_id = ? AND title = ? AND location = ?",
                      [tid, mod.id, f.title, f.location]).fetchone()
     if row:
         status = "open" if row["status"] == "fixed" else row["status"]
         db.execute("UPDATE findings SET run_id = ?, severity = ?, evidence = ?, recommendation = ?, technique = ?, "
-                   "status = ?, last_seen = ? WHERE id = ?",
-                   [g.run_id, f.severity, f.evidence, f.recommendation, tech, status, now, row["id"]])
+                   "status = ?, last_seen = ?, exchange_id = ? WHERE id = ?",
+                   [g.run_id, f.severity, f.evidence, f.recommendation, tech, status, now, xid, row["id"]])
         return False
     db.execute("INSERT INTO findings (run_id, target_id, module_id, title, severity, location, evidence, "
-               "recommendation, technique, created_at, last_seen) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-               [g.run_id, tid, mod.id, f.title, f.severity, f.location, f.evidence, f.recommendation, tech, now, now])
+               "recommendation, technique, created_at, last_seen, exchange_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+               [g.run_id, tid, mod.id, f.title, f.severity, f.location, f.evidence, f.recommendation, tech, now, now, xid])
     return True
 
 
@@ -252,7 +314,11 @@ def module_run(mid):
     stop = _guard(mod, t, url_for("dash.modules", target=t["id"]))
     if stop:
         return stop
-    params = {p["name"]: request.form.get(p["name"], p.get("default", "")) for p in mod.params}
+    try:
+        params = _read_params(mod)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("dash.modules", target=t["id"]))
 
     if mod.stage == "collect":
         def call(target):
@@ -298,7 +364,8 @@ def surface():
             if p["param"]:
                 grp["params"].append({**dict(p), "checks": [
                     {"module": _modules()[c["module_id"]].name if c["module_id"] in _modules() else c["module_id"],
-                     "verdict": c["verdict"], "evidence": c["evidence"]} for c in checks.get(p["id"], [])]})
+                     "verdict": c["verdict"], "evidence": c["evidence"], "exchange_id": c["exchange_id"]}
+                    for c in checks.get(p["id"], [])]})
                 totals["params"] += 1
                 for c in checks.get(p["id"], []):
                     totals[c["verdict"]] += 1
@@ -322,7 +389,11 @@ def surface_probe():
     stop = _guard(mod, t, back)
     if stop:
         return stop
-    params = {p["name"]: request.form.get(f"{mod.id}__{p['name']}", p.get("default", "")) for p in mod.params}
+    try:
+        params = _read_params(mod, f"{mod.id}__")
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(back)
 
     marks = ",".join("?" * len(ids))
     rows = db.execute(f"SELECT * FROM points WHERE target_id = ? AND param != '' AND id IN ({marks})", [t["id"], *ids]).fetchall()
@@ -340,15 +411,16 @@ def surface_probe():
             if not isinstance(c, Check):
                 raise TypeError("지점 점검 모듈의 run() 은 Check 목록을 돌려줘야 합니다")
             counts[c.verdict] += 1
-            db.execute("INSERT INTO point_checks (point_id, module_id, verdict, evidence, checked_at) VALUES (?,?,?,?,?) "
-                       "ON CONFLICT (point_id, module_id) DO UPDATE SET verdict = excluded.verdict, "
-                       "evidence = excluded.evidence, checked_at = excluded.checked_at",
-                       [c.point.id, mod.id, c.verdict, c.evidence, now_iso()])
+            xid = getattr(c.response, "exchange_id", 0) or None
+            db.execute("INSERT INTO point_checks (point_id, module_id, verdict, evidence, checked_at, exchange_id) "
+                       "VALUES (?,?,?,?,?,?) ON CONFLICT (point_id, module_id) DO UPDATE SET verdict = excluded.verdict, "
+                       "evidence = excluded.evidence, checked_at = excluded.checked_at, exchange_id = excluded.exchange_id",
+                       [c.point.id, mod.id, c.verdict, c.evidence, now_iso(), xid])
             if c.verdict == "vuln":
                 p = c.point
                 _save_finding(mod, t["id"], Finding(
                     title=c.title or mod.name, severity=c.severity or mod.severity, evidence=c.evidence,
-                    location=f"{p.url} ({p.place}: {p.param})", recommendation=c.recommendation))
+                    location=f"{p.url} ({p.place}: {p.param})", recommendation=c.recommendation, response=c.response))
         skipped = len(points) - len(checks)
         return (f"지점 {len(checks)}개 — " + " · ".join(f"{VERDICTS[v]} {n}" for v, n in counts.items())
                 + (f", 건너뜀 {skipped}" if skipped else ""))
@@ -364,6 +436,63 @@ def surface_clear():
     db.commit()
     flash("수집된 지점을 비웠습니다(결과 탭의 결과는 남음)", "ok")
     return redirect(url_for("dash.surface", target=tid))
+
+
+# ── 요청 기록(보낸 요청·받은 응답) ───────────────────────────
+
+STATUS_FILTER = {"2xx": "status BETWEEN 200 AND 299", "3xx": "status BETWEEN 300 AND 399",
+                 "4xx": "status BETWEEN 400 AND 499", "5xx": "status >= 500", "err": "status = 0"}
+
+
+@bp.get("/history")
+def history():
+    target, targets = _current_target()
+    rows = []
+    if target:
+        sql, args = "SELECT * FROM exchanges WHERE target_id = ?", [target["id"]]
+        if request.args.get("run", type=int):
+            sql += " AND run_id = ?"
+            args.append(request.args.get("run", type=int))
+        if request.args.get("module_id"):
+            sql += " AND module_id = ?"
+            args.append(request.args["module_id"])
+        if request.args.get("status") in STATUS_FILTER:
+            sql += " AND " + STATUS_FILTER[request.args["status"]]
+        if request.args.get("q"):
+            sql += " AND (url LIKE ? OR req_body LIKE ?)"
+            args += [f"%{request.args['q']}%"] * 2
+        rows = get_db().execute(sql + " ORDER BY id DESC LIMIT 300", args).fetchall()
+    return render_template("history.html", rows=rows, target=target, targets=targets, args=request.args,
+                           modules=_modules_for(target), all_modules=_modules(), status_filter=STATUS_FILTER)
+
+
+def _raw_request(x):
+    s = urlsplit(x["url"])
+    lines = [f"{x['method']} {s.path or '/'}{'?' + s.query if s.query else ''} HTTP/1.1", f"Host: {s.netloc}"]
+    lines += [f"{k}: {v}" for k, v in json.loads(x["req_headers"])]
+    return "\n".join(lines) + "\n\n" + x["req_body"]
+
+
+def _raw_response(x):
+    if x["error"]:
+        return f"(응답 없음)\n{x['error']}"
+    lines = [f"HTTP/1.1 {x['status']}"] + [f"{k}: {v}" for k, v in json.loads(x["resp_headers"])]
+    return "\n".join(lines) + "\n\n" + x["resp_body"]
+
+
+@bp.get("/history/<int:xid>")
+def history_detail(xid):
+    db = get_db()
+    x = db.execute("SELECT * FROM exchanges WHERE id = ?", [xid]).fetchone() or abort(404)
+    target = db.execute("SELECT * FROM targets WHERE id = ?", [x["target_id"]]).fetchone()
+    linked = db.execute("SELECT id, title, severity FROM findings WHERE exchange_id = ?", [xid]).fetchall()
+    checks = db.execute("SELECT pc.verdict, pc.module_id, p.param, p.place FROM point_checks pc "
+                        "JOIN points p ON p.id = pc.point_id WHERE pc.exchange_id = ?", [xid]).fetchall()
+    prev = db.execute("SELECT MAX(id) FROM exchanges WHERE run_id = ? AND id < ?", [x["run_id"], xid]).fetchone()[0]
+    nxt = db.execute("SELECT MIN(id) FROM exchanges WHERE run_id = ? AND id > ?", [x["run_id"], xid]).fetchone()[0]
+    return render_template("history_detail.html", x=x, raw_req=_raw_request(x), raw_resp=_raw_response(x),
+                           linked=linked, checks=checks, prev=prev, nxt=nxt, all_modules=_modules(),
+                           target=target, targets=_targets())
 
 
 # ── ATT&CK · 시나리오 · 보고서 ───────────────────────────────
@@ -416,12 +545,43 @@ def help_page():
     return render_template("help.html", counts=counts, target=target, targets=targets)
 
 
-@bp.get("/report/<int:tid>.md")
-def report(tid):
+def _report_rows(tid):
     db = get_db()
     t = db.execute("SELECT * FROM targets WHERE id = ?", [tid]).fetchone() or abort(404)
     rows = db.execute(f"SELECT * FROM findings WHERE target_id = ? AND status != 'false_positive' "
                       f"ORDER BY {SEVERITY_ORDER_SQL}, id", [tid]).fetchall()
+    exchanges = {}
+    for r in rows:
+        if r["exchange_id"]:
+            x = db.execute("SELECT * FROM exchanges WHERE id = ?", [r["exchange_id"]]).fetchone()
+            if x:
+                exchanges[r["id"]] = {"request": _raw_request(x), "response": _raw_response(x)[:1500]}
+    return t, rows, exchanges
+
+
+@bp.get("/report/<int:tid>.json")
+def report_json(tid):
+    """보고서 자동화(도구 ①) 등 다른 도구가 읽을 형식."""
+    t, rows, exchanges = _report_rows(tid)
+    mods = _modules()
+    data = {
+        "tool": "vuln-check-dashboard", "version": current_app.jinja_env.globals["VERSION"], "generated_at": now_iso(),
+        "target": {"name": t["name"], "url": t["url"], "project": _project_of(t).name},
+        "findings": [{
+            "title": r["title"], "severity": r["severity"], "status": r["status"], "location": r["location"],
+            "module": mods[r["module_id"]].name if r["module_id"] in mods else r["module_id"],
+            "attack": {"technique": r["technique"], "url": technique_url(r["technique"]) if r["technique"] else ""},
+            "evidence": r["evidence"], "recommendation": r["recommendation"],
+            "first_seen": r["created_at"], "last_seen": r["last_seen"], "exchange": exchanges.get(r["id"]),
+        } for r in rows],
+    }
+    return Response(json.dumps(data, ensure_ascii=False, indent=2), mimetype="application/json",
+                    headers={"Content-Disposition": f"attachment; filename=report_{tid}.json"})
+
+
+@bp.get("/report/<int:tid>.md")
+def report(tid):
+    t, rows, exchanges = _report_rows(tid)
     mods = _modules()
     lines = [f"# 점검 결과 — {t['name']}", "", f"- 프로젝트: {_project_of(t).name}", f"- 대상: {t['url']}",
              f"- 작성: {fmt_kst(now_iso())} (KST)", f"- 발견: {len(rows)}건", "",
@@ -435,6 +595,10 @@ def report(tid):
                   f"- 심각도: {SEVERITY_LABEL[r['severity']]} · 모듈: {mod.name if mod else r['module_id']}",
                   f"- 위치: `{r['location']}`", f"- ATT&CK: [{r['technique']}]({technique_url(r['technique'])})",
                   "", "**근거**", "", "```", r["evidence"], "```", "", "**조치 방안**", "", r["recommendation"]]
+        if r["id"] in exchanges:
+            x = exchanges[r["id"]]
+            lines += ["", "**요청**", "", "```http", x["request"], "```", "", "**응답(앞부분)**", "", "```http",
+                      x["response"], "```"]
     body = "\n".join(lines) + "\n"
     return Response(body, mimetype="text/markdown; charset=utf-8",
                     headers={"Content-Disposition": f"attachment; filename=report_{tid}.md"})

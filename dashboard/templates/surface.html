@@ -22,6 +22,7 @@
            url_for('dash.modules', target=target.id), "모듈로 가기") }}
 {% else %}
 <form method="post" action="{{ url_for('dash.surface_probe') }}" id="probe-form">
+  {{ csrf_field() }}
   <input type="hidden" name="target_id" value="{{ target.id }}">
   <div class="panel probe-bar">
     <label class="check"><input type="checkbox" id="pick-all"> 전체 선택</label>
@@ -61,7 +62,10 @@
         <td class="sub">{{ {"query": "쿼리", "form": "폼 본문", "path": "경로"}[p.place] }}</td>
         <td class="mono sub loc" title="{{ p.sample }}">{{ p.sample }}</td>
         <td class="sub">{{ p.source }}</td>
-        <td>{% for c in p.checks %}<span class="vchip" title="{{ c.module }}&#10;{{ c.evidence }}">{{ verdict(c.verdict) }}<small>{{ c.module }}</small></span>{% else %}<span class="sub small">미점검</span>{% endfor %}</td>
+        <td>{% for c in p.checks %}
+          {% if c.exchange_id %}<a class="vchip" href="{{ url_for('dash.history_detail', xid=c.exchange_id) }}" title="눌러서 요청·응답 보기&#10;{{ c.evidence }}">{{ verdict(c.verdict) }}<small>{{ c.module }} ↗</small></a>
+          {% else %}<span class="vchip" title="{{ c.evidence }}">{{ verdict(c.verdict) }}<small>{{ c.module }}</small></span>{% endif %}
+        {% else %}<span class="sub small">미점검</span>{% endfor %}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -71,6 +75,7 @@
 </form>
 
 <form method="post" action="{{ url_for('dash.surface_clear') }}" class="clear-form" data-confirm="{{ target.name }} 의 수집 지점과 판정을 모두 지울까요? 결과 탭의 결과는 남습니다.">
+  {{ csrf_field() }}
   <input type="hidden" name="target_id" value="{{ target.id }}">
   <button class="btn ghost danger" type="submit">수집 지점 비우기</button>
 </form>

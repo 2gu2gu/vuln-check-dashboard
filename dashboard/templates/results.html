@@ -71,9 +71,11 @@
     </dl>
     <h3>근거</h3>
     <pre id="d-evi"></pre>
+    <p><a id="d-ex" class="btn ghost" hidden>보낸 요청 · 받은 응답 보기 →</a></p>
     <h3>조치 방안</h3>
     <p id="d-rec"></p>
     <form method="post" id="d-form" class="status-form">
+      {{ csrf_field() }}
       <label for="d-status">상태</label>
       <select name="status" id="d-status">
         {% for k, v in STATUSES.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}

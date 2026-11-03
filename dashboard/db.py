@@ -50,6 +50,24 @@ CREATE TABLE IF NOT EXISTS points (
     last_seen TEXT NOT NULL,
     UNIQUE (target_id, method, url, param, place)
 );
+CREATE TABLE IF NOT EXISTS exchanges (
+    id INTEGER PRIMARY KEY,
+    run_id INTEGER REFERENCES runs(id) ON DELETE CASCADE,
+    target_id INTEGER REFERENCES targets(id) ON DELETE CASCADE,
+    module_id TEXT NOT NULL DEFAULT '',
+    method TEXT NOT NULL,
+    url TEXT NOT NULL,
+    req_headers TEXT NOT NULL DEFAULT '[]',
+    req_body TEXT NOT NULL DEFAULT '',
+    status INTEGER NOT NULL DEFAULT 0,
+    resp_headers TEXT NOT NULL DEFAULT '[]',
+    resp_body TEXT NOT NULL DEFAULT '',
+    size INTEGER NOT NULL DEFAULT 0,
+    ms INTEGER NOT NULL DEFAULT 0,
+    error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS exchanges_run ON exchanges(run_id);
 CREATE TABLE IF NOT EXISTS point_checks (
     point_id INTEGER NOT NULL REFERENCES points(id) ON DELETE CASCADE,
     module_id TEXT NOT NULL,
@@ -77,11 +95,19 @@ def close_db(_exc=None):
         db.close()
 
 
+# 먼저 만든 DB 에 없던 열 — (테이블, 열, 정의)
+MIGRATIONS = [
+    ("findings", "last_seen", "TEXT"),
+    ("findings", "exchange_id", "INTEGER"),
+    ("point_checks", "exchange_id", "INTEGER"),
+    ("targets", "headers", "TEXT NOT NULL DEFAULT ''"),
+]
+
+
 def init_db():
     db = get_db()
     db.executescript(SCHEMA)
-    # 프로토타입 초기 DB 에 없던 열 추가
-    cols = {r["name"] for r in db.execute("PRAGMA table_info(findings)")}
-    if "last_seen" not in cols:
-        db.execute("ALTER TABLE findings ADD COLUMN last_seen TEXT")
-        db.commit()
+    for table, col, ddl in MIGRATIONS:
+        if col not in {r["name"] for r in db.execute(f"PRAGMA table_info({table})")}:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+    db.commit()

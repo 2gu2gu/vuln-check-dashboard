@@ -31,12 +31,13 @@ def run(target, params):
             has_ver = bool(VERSION.search(val))
             out.append(Finding(
                 title=f"{name} 헤더에 {'버전' if has_ver else '제품명'} 노출", severity="low" if has_ver else "info",
-                location=home.url, evidence=f"GET {home.url} → {home.status}\n{name}: {val}", recommendation=HIDE))
+                location=home.url, evidence=f"GET {home.url} → {home.status}\n{name}: {val}", recommendation=HIDE,
+                response=home))
     m = GENERATOR.search(home.body)
     if m:
         out.append(Finding(title="generator 메타 태그 노출", severity="info", location=home.url,
                            evidence=f'<meta name="generator" content="{m.group(1)}">',
-                           recommendation="generator 메타 태그를 지웁니다."))
+                           recommendation="generator 메타 태그를 지웁니다.", response=home))
 
     # 없는 경로로 기본 오류 페이지를 띄워 본다
     miss = fetch(f"{target.url}/__dashboard_{uuid.uuid4().hex[:8]}")
@@ -44,10 +45,10 @@ def run(target, params):
     if m:
         out.append(Finding(title="오류 페이지에 서버 버전 노출", severity="low", location=miss.url,
                            evidence=f"GET {miss.url} → {miss.status}\n본문: …{m.group(0)}…",
-                           recommendation="기본 오류 페이지 대신 사용자 정의 오류 페이지를 씁니다."))
+                           recommendation="기본 오류 페이지 대신 사용자 정의 오류 페이지를 씁니다.", response=miss))
     m = STACK_TRACE.search(miss.body)
     if m:
         out.append(Finding(title="오류 페이지에 스택 트레이스 노출", severity="medium", location=miss.url,
                            evidence=f"GET {miss.url} → {miss.status}\n본문: …{m.group(0)}…",
-                           recommendation="운영 환경에서 예외 상세를 응답에 싣지 않도록 오류 처리기를 둡니다."))
+                           recommendation="운영 환경에서 예외 상세를 응답에 싣지 않도록 오류 처리기를 둡니다.", response=miss))
     return out

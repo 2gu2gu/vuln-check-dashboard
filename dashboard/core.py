@@ -1,9 +1,12 @@
 """모듈이 쓰는 공통 자료형과 HTTP 요청 함수."""
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
+
+from flask import g, has_app_context
 
 from . import scope
 
@@ -34,6 +37,7 @@ class Finding:
     evidence: str = ""
     recommendation: str = ""
     technique: str = ""
+    response: object = field(default=None, repr=False, compare=False)  # 근거 응답 — 넣으면 요청 기록과 이어진다
 
     def __post_init__(self):
         if self.severity not in SEVERITIES:
@@ -73,6 +77,7 @@ class Check:
     title: str = ""          # 취약일 때 결과 제목(비면 모듈 이름)
     severity: str = ""       # 취약일 때 심각도(비면 META severity)
     recommendation: str = ""
+    response: object = field(default=None, repr=False, compare=False)  # 판정에 쓴 응답
 
     def __post_init__(self):
         if self.verdict not in VERDICTS:
@@ -85,6 +90,7 @@ class Response:
     status: int
     headers: list = field(default_factory=list)  # [(이름, 값)] — Set-Cookie 처럼 여러 개인 헤더 보존
     body: str = ""
+    exchange_id: int = 0  # 요청 기록 번호(실행 중일 때만)
 
     def header(self, name: str, default: str = "") -> str:
         name = name.lower()
@@ -106,30 +112,103 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 _opener = urllib.request.build_opener(_NoRedirect)
 
+USER_AGENT = "vuln-check-dashboard/0.2"
+SECRET_HEADERS = {"cookie", "authorization", "proxy-authorization", "x-api-key", "x-auth-token"}
+BODY_LIMIT = 200_000  # 요청 기록에 남기는 응답 본문 최대 글자 수
+
+
+class BudgetExceeded(Exception):
+    """한 실행에서 보낼 수 있는 요청 수를 넘었을 때."""
+
+
+class RunContext:
+    """모듈 실행 하나의 요청 설정. 앱이 만들어 flask.g.run_ctx 에 둔다."""
+
+    def __init__(self, target_url="", auth_headers=None, delay_ms=0, max_requests=0, recorder=None):
+        self.netloc = urlsplit(target_url).netloc
+        self.auth_headers = auth_headers or {}
+        self.delay = delay_ms / 1000
+        self.max_requests = max_requests
+        self.recorder = recorder  # (dict) -> 기록 번호
+        self.count = 0
+
+    def before_send(self):
+        self.count += 1
+        if self.max_requests and self.count > self.max_requests:
+            raise BudgetExceeded(f"요청 수 한도({self.max_requests})를 넘어 멈췄습니다")
+        if self.delay and self.count > 1:
+            time.sleep(self.delay)
+
+
+def _run_ctx():
+    return g.get("run_ctx") if has_app_context() else None
+
+
+def redact(headers, injected=()):
+    """기록용 헤더. 인증 값은 가리고 이름만 남긴다."""
+    out = []
+    for k, v in headers:
+        low = k.lower()
+        if low in injected:
+            v = "***(대상 인증 헤더)"
+        elif low in SECRET_HEADERS:
+            v = "***"
+        elif low == "set-cookie":
+            v = v.split("=", 1)[0] + "=***" + ("; " + v.split(";", 1)[1].strip() if ";" in v else "")
+        out.append((k, v))
+    return out
+
+
+def join(base: str, path: str) -> str:
+    """대상 주소 + 경로. 경로가 / 로 시작하지 않아도 붙는다."""
+    return base.rstrip("/") + "/" + (path or "").lstrip("/")
+
 
 def fetch(url: str, *, method: str = "GET", headers=None, data=None, timeout: float = 10,
-          max_bytes: int = 1_000_000) -> Response:
-    """범위 검사를 거친 뒤 요청한다. 모든 모듈은 이 함수로만 요청한다. data(dict)는 폼 본문."""
+          max_bytes: int = 1_000_000, record_body: bool = True) -> Response:
+    """범위 검사를 거친 뒤 요청한다. 모든 모듈은 이 함수로만 요청한다.
+
+    data(dict)는 폼 본문. record_body=False 면 요청 기록에 응답 본문을 남기지 않는다(.env 처럼 비밀이 섞일 응답).
+    실행 중이면 요청 간격·요청 수 한도를 지키고, 대상 인증 헤더를 그 대상 주소에만 붙이고, 요청·응답을 기록한다.
+    """
     scope.ensure_in_scope(url)
-    hdrs = {"User-Agent": "vuln-check-dashboard/0.1", **(headers or {})}
+    ctx = _run_ctx()
+    if ctx:
+        ctx.before_send()
+    hdrs = {"User-Agent": USER_AGENT}
+    injected = set()
+    if ctx and urlsplit(url).netloc == ctx.netloc:
+        hdrs.update(ctx.auth_headers)
+        injected = {k.lower() for k in ctx.auth_headers}
+    hdrs.update(headers or {})
     body = None
     if data is not None:
         body = urlencode(data).encode()
         hdrs.setdefault("Content-Type", "application/x-www-form-urlencoded")
     req = urllib.request.Request(url, data=body, method=method, headers=hdrs)
+    record = {"method": method, "url": url, "req_headers": redact(list(hdrs.items()), injected),
+              "req_body": body.decode() if body else ""}
+    start = time.monotonic()
     try:
-        resp = _opener.open(req, timeout=timeout)
-    except urllib.error.HTTPError as e:  # 3xx·4xx·5xx 도 응답으로 다룬다
-        resp = e
-    with resp:
-        raw = resp.read(max_bytes)
-        charset = resp.headers.get_content_charset() or "utf-8"
-        return Response(
-            url=url,
-            status=resp.status if hasattr(resp, "status") else resp.code,
-            headers=list(resp.headers.items()),
-            body=raw.decode(charset, errors="replace"),
-        )
+        try:
+            resp = _opener.open(req, timeout=timeout)
+        except urllib.error.HTTPError as e:  # 3xx·4xx·5xx 도 응답으로 다룬다
+            resp = e
+        with resp:
+            raw = resp.read(max_bytes)
+            charset = resp.headers.get_content_charset() or "utf-8"
+            r = Response(url=url, status=resp.status if hasattr(resp, "status") else resp.code,
+                         headers=list(resp.headers.items()), body=raw.decode(charset, errors="replace"))
+    except OSError as e:
+        if ctx and ctx.recorder:
+            ctx.recorder({**record, "status": 0, "error": str(e), "ms": int((time.monotonic() - start) * 1000)})
+        raise
+    if ctx and ctx.recorder:
+        r.exchange_id = ctx.recorder({
+            **record, "status": r.status, "resp_headers": redact(r.headers), "size": len(r.body),
+            "resp_body": r.body[:BODY_LIMIT] if record_body else "(모듈이 민감 응답으로 표시해 본문을 남기지 않음)",
+            "ms": int((time.monotonic() - start) * 1000)})
+    return r
 
 
 def now_iso() -> str:
