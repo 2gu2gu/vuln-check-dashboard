@@ -44,8 +44,9 @@ def opener(monkeypatch):
     return sent, reply
 
 
-def add_target(client, url="https://sesacedu.store", project="sesacedu"):
-    return client.post("/targets", data={"project": project, "name": "웹", "url": url}, follow_redirects=True)
+def add_target(client, url="https://sesacedu.store", project="sesacedu", role="user_web"):
+    return client.post("/targets", data={"project": project, "role": role, "name": "웹", "url": url},
+                       follow_redirects=True)
 
 
 def test_join():
@@ -126,8 +127,8 @@ def test_sensitive_body_not_recorded(app, client, opener):
 
 
 def test_self_scan_blocked(client):
-    assert "대시보드 자신" in add_target(client, "http://127.0.0.1:5050", "general").get_data(as_text=True)
-    assert "등록했습니다" in add_target(client, "http://127.0.0.1:5051", "general").get_data(as_text=True)
+    assert "대시보드 자신" in add_target(client, "http://127.0.0.1:5050", "general", "").get_data(as_text=True)
+    assert "등록했습니다" in add_target(client, "http://127.0.0.1:5051", "general", "").get_data(as_text=True)
 
 
 def test_int_param_validated(client, opener):

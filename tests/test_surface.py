@@ -95,7 +95,7 @@ def echo_fetch(escape_param=None):
 
 @pytest.fixture
 def seeded(app, client):
-    client.post("/targets", data={"project": "sesacedu", "name": "웹", "url": "https://sesacedu.store"})
+    client.post("/targets", data={"project": "sesacedu", "role": "user_web", "name": "웹", "url": "https://sesacedu.store"})
     with app.app_context():
         tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
     urls = "https://sesacedu.store/courses?category=web&level=1\nPOST /qna title=&body=\nhttps://evil.example/x?a=1"
@@ -161,7 +161,7 @@ def test_probe_module_not_runnable_from_modules_tab(client, seeded):
 
 def test_rerun_check_module_does_not_duplicate(app, client, monkeypatch, fake_fetch):
     from modules import http_security_headers
-    client.post("/targets", data={"project": "sesacedu", "name": "웹", "url": "https://sesacedu.store"})
+    client.post("/targets", data={"project": "sesacedu", "role": "user_web", "name": "웹", "url": "https://sesacedu.store"})
     monkeypatch.setattr(http_security_headers, "fetch", fake_fetch({"/": {}}))
     for _ in range(2):
         client.post("/modules/http_security_headers/run", data={"target_id": 1, "path": "/"})

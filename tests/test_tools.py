@@ -1,0 +1,346 @@
+"""도구 모듈 — 인코딩, 블라인드 추출 계산, 경로 조작·SQL 주입 도구, 도구 화면."""
+import json
+import sqlite3
+from urllib.parse import parse_qs, unquote, urlsplit
+
+import pytest
+
+from dashboard import payloads
+from dashboard.blind import Oracle, _to_char
+from dashboard.core import Response, Target, ToolResult
+from dashboard.db import get_db
+from projects.sesacedu.modules import lecture_sqli, material_traversal
+
+T = Target(1, "t", "https://sesacedu.store")
+
+
+# ── 인코딩 ────────────────────────────────────────────────────
+
+def test_double_full_matches_the_payload_that_worked():
+    """11-03 실측에 썼던 그 형태와 글자까지 같아야 한다."""
+    u = "%25%32%65%25%32%65%25%32%66"
+    assert payloads.traversal("etc/passwd", 9, "double-full") == u * 9 + "etc/passwd"
+
+
+@pytest.mark.parametrize("scheme, want", [
+    ("none", "../../etc/passwd"),
+    ("url", "%2e%2e%2f%2e%2e%2fetc/passwd"),
+    ("double", "%252e%252e%252f%252e%252e%252fetc/passwd"),
+    ("dots", "%2e%2e/%2e%2e/etc/passwd"),
+])
+def test_traversal_shapes(scheme, want):
+    assert payloads.traversal("/etc/passwd", 2, scheme) == want
+
+
+def test_each_encoding_decodes_back_to_traversal():
+    for scheme in payloads.ENCODINGS:
+        once = unquote(payloads.traversal("etc/passwd", 1, scheme))
+        assert "../" in once or "../" in unquote(once), scheme
+
+
+@pytest.mark.parametrize("sql", ["DELETE FROM users", "SELECT 1; DROP TABLE users", "UPDATE t SET a=1"])
+def test_only_select_allowed(sql):
+    with pytest.raises(ValueError):
+        payloads.ensure_select_only(sql)
+
+
+def test_select_passes():
+    assert payloads.ensure_select_only("SELECT mail FROM members ;") == "SELECT mail FROM members"
+
+
+def test_to_char_handles_utf8_bytes_and_codepoints():
+    assert _to_char(ord("a")) == "a"
+    assert _to_char(0xED858C, as_bytes=True) == "테"     # Oracle ASCII() 가 주는 바이트 묶음
+    assert _to_char(ord("테"), as_bytes=False) == "테"    # UNICODE() 가 주는 글자 번호
+    # 같은 숫자라도 DB 제품에 따라 다르게 읽어야 한다
+    assert _to_char(0xD14C, as_bytes=True) != _to_char(0xD14C, as_bytes=False)
+
+
+# ── 블라인드 추출 계산(진짜 DB 로) ────────────────────────────
+
+@pytest.fixture
+def sqlite_oracle():
+    """sqlite 를 '참·거짓만 알려 주는 상대'로 두고 추출 계산을 그대로 시험한다."""
+    db = sqlite3.connect(":memory:")
+    db.executescript("CREATE TABLE members (mail TEXT, uname TEXT);"
+                     "INSERT INTO members VALUES ('demo@example.test', '연습계정');")
+    asked = []
+
+    def ask(cond):
+        asked.append(cond)
+        return bool(db.execute(f"SELECT CASE WHEN ({cond}) THEN 1 ELSE 0 END").fetchone()[0])
+
+    return Oracle(ask, dbms="sqlite"), asked
+
+
+def test_reads_number_and_text(sqlite_oracle):
+    ora, _ = sqlite_oracle
+    assert ora.read_number("SELECT COUNT(*) FROM members") == 1
+    assert ora.read_text("SELECT mail FROM members") == "demo@example.test"
+
+
+def test_reads_korean_text(sqlite_oracle):
+    ora, _ = sqlite_oracle
+    assert ora.read_text("SELECT uname FROM members", charset="text") == "연습계정"
+
+
+def test_cache_skips_second_read(sqlite_oracle):
+    ora, asked = sqlite_oracle
+    ora.read_text("SELECT mail FROM members")
+    first = len(asked)
+    assert ora.read_text("SELECT mail FROM members") == "demo@example.test"
+    assert len(asked) == first and ora.cached_hits == 1
+
+
+def test_reads_table_list(sqlite_oracle):
+    ora, _ = sqlite_oracle
+    assert ora.read_list(payloads.DBMS["sqlite"]["tables"], limit=3, charset="ident") == ["members"]
+
+
+# ── 가짜 새싹에듀(연습용 대상과 같은 모양) ────────────────────
+
+def fake_lectures_fetch(record=None):
+    """keyword 를 SQL 에 그대로 이어 붙이는 서버. 연습용 대상과 같은 동작."""
+    db = sqlite3.connect(":memory:")
+    db.executescript("CREATE TABLE lectures (id INTEGER, title TEXT, is_open INTEGER);"
+                     "CREATE TABLE members (id INTEGER, mail TEXT);"
+                     "INSERT INTO members VALUES (1, 'demo@example.test');")
+    # 실제 서버처럼 조건이 하나 더 있다. 그래서 OR 를 끼우면 그 조건이 무력해져 건수가 달라진다.
+    db.executemany("INSERT INTO lectures VALUES (?, ?, ?)",
+                   [(i, f"강의 {i}", 1 if i <= 35 else 0) for i in range(1, 42)])
+
+    def fetch(url, **_kw):
+        keyword = parse_qs(urlsplit(url).query).get("keyword", [""])[0]
+        if record is not None:
+            record.append(keyword)
+        try:
+            total = db.execute(f"SELECT COUNT(*) FROM lectures "
+                               f"WHERE is_open = 1 AND title LIKE '%{keyword}%'").fetchone()[0]
+        except sqlite3.Error as e:
+            return Response(url, 500, [], json.dumps({"error": str(e)}))
+        return Response(url, 200, [], json.dumps({"page": {"total": total}}))
+    return fetch
+
+
+def test_sqli_probe_reports_injection(monkeypatch):
+    sent = []
+    monkeypatch.setattr(lecture_sqli, "fetch", fake_lectures_fetch(sent))
+    r = lecture_sqli.run(T, {"mode": "probe", "dbms": "sqlite", "limit": "5", "offset": "0"})
+    assert "주입됩니다" in r.summary and len(sent) == 2
+    assert r.findings[0].severity == "critical"
+    assert r.rows[0][1] != r.rows[1][1]          # 참·거짓 건수가 다르다
+
+
+def test_sqli_walks_tables_then_columns_then_values(monkeypatch):
+    monkeypatch.setattr(lecture_sqli, "fetch", fake_lectures_fetch())
+    base = {"dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
+
+    tables = lecture_sqli.run(T, {**base, "mode": "tables"})
+    assert [r[0] for r in tables.rows] == ["lectures", "members"]
+
+    drill = tables.drills[1]["컬럼 보기"]           # members 행의 '컬럼 보기'
+    assert drill["table"] == "members"
+    columns = lecture_sqli.run(T, {**base, **drill})
+    assert [r[0] for r in columns.rows] == ["id", "mail"]
+
+    values = lecture_sqli.run(T, {**base, **columns.drills[1]["값 보기"]})
+    assert values.rows[0][1] == "demo@example.test"
+
+
+def test_sqli_blocks_writes(monkeypatch):
+    monkeypatch.setattr(lecture_sqli, "fetch", fake_lectures_fetch())
+    with pytest.raises(ValueError):
+        lecture_sqli.run(T, {"mode": "sql", "sql": "DELETE FROM members", "dbms": "sqlite",
+                             "limit": "1", "offset": "0", "table": "", "column": ""})
+
+
+def test_sqli_stops_when_not_injectable(monkeypatch):
+    monkeypatch.setattr(lecture_sqli, "fetch",
+                        lambda url, **k: Response(url, 200, [], json.dumps({"page": {"total": 41}})))
+    with pytest.raises(RuntimeError, match="같습니다"):
+        lecture_sqli.run(T, {"mode": "tables", "dbms": "sqlite", "limit": "5", "offset": "0",
+                             "table": "", "column": "", "sql": ""})
+
+
+# ── 경로 조작 도구 ────────────────────────────────────────────
+
+def fake_download_fetch():
+    """'../ 제거 뒤 디코딩' 순서를 그대로 흉내 낸 서버."""
+    files = {"etc/passwd": "root:x:0:0:root:/root:/bin/bash\n"}
+
+    def fetch(url, **_kw):
+        raw = parse_qs(urlsplit(url).query).get("file", [""])[0]   # 들어올 때 이미 1번 디코딩
+        decoded = unquote(raw.replace("../", ""))                  # ../ 를 먼저 지우고 그다음 디코딩
+        if "../" in decoded and decoded.replace("../", "") in files:
+            return Response(url, 200, [], files[decoded.replace("../", "")])
+        return Response(url, 404, [], "not found")
+    return fetch
+
+
+def test_traversal_tool_finds_readable_file(monkeypatch):
+    monkeypatch.setattr(material_traversal, "fetch", fake_download_fetch())
+    r = material_traversal.run(T, {"paths": "etc/passwd\netc/shadow", "scheme": "double-full",
+                                   "depth": "9", "lecture": "123"})
+    assert r.rows[0][3] == "읽힘" and r.rows[1][3] == "없음/차단"
+    assert r.drills[0] == {"내용 보기": {"paths": "etc/passwd"}} and r.drills[1] is None
+    assert r.findings[0].severity == "high"
+
+
+def test_traversal_tool_shows_content_for_single_path(monkeypatch):
+    monkeypatch.setattr(material_traversal, "fetch", fake_download_fetch())
+    r = material_traversal.run(T, {"paths": "etc/passwd", "scheme": "double-full",
+                                   "depth": "9", "lecture": "123"})
+    assert "root:x:0:0" in r.text
+
+
+def test_traversal_tool_plain_scheme_is_blocked(monkeypatch):
+    monkeypatch.setattr(material_traversal, "fetch", fake_download_fetch())
+    r = material_traversal.run(T, {"paths": "etc/passwd", "scheme": "none", "depth": "9", "lecture": "123"})
+    assert r.findings == [] and r.rows[0][1] == 404
+
+
+def test_traversal_tool_limits_paths(monkeypatch):
+    monkeypatch.setattr(material_traversal, "fetch", fake_download_fetch())
+    with pytest.raises(ValueError, match="40개까지"):
+        material_traversal.run(T, {"paths": "\n".join(f"a{i}" for i in range(41)),
+                                   "scheme": "none", "depth": "9", "lecture": "123"})
+
+
+# ── 도구 화면 ─────────────────────────────────────────────────
+
+@pytest.fixture
+def tool_client(app, client, monkeypatch):
+    client.post("/targets", data={"project": "sesacedu", "role": "user_web", "name": "웹", "url": "https://sesacedu.store"})
+    monkeypatch.setattr(lecture_sqli, "fetch", fake_lectures_fetch())
+    return client
+
+
+def test_tools_page_lists_tools(tool_client):
+    page = tool_client.get("/tools").get_data(as_text=True)
+    assert "강의 목록 SQL 주입" in page and "자료 다운로드 경로 조작" in page
+
+
+def test_tool_run_and_drill(app, tool_client):
+    form = {"target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "tables",
+            "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
+    page = tool_client.post("/tools/run", data=form).get_data(as_text=True)
+    assert "members" in page and "컬럼 보기" in page
+
+    # 표의 '컬럼 보기'를 누른 것과 같은 요청
+    drill = json.dumps({"mode": "columns", "table": "members", "offset": "0"})
+    page = tool_client.post("/tools/run", data={**form, "_drill": drill}).get_data(as_text=True)
+    assert "mail" in page and "members — 컬럼" in page
+
+
+def test_tool_needs_confirm(app, tool_client):
+    page = tool_client.post("/tools/run", data={
+        "target_id": 1, "module_id": "sesacedu_lecture_sqli", "mode": "probe", "dbms": "sqlite",
+        "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}, follow_redirects=True).get_data(as_text=True)
+    assert "체크해야" in page
+
+
+def test_tool_rejects_bad_select_option(app, tool_client):
+    page = tool_client.post("/tools/run", data={
+        "target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "nope",
+        "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}).get_data(as_text=True)
+    assert "목록에 있는 값" in page
+
+
+def test_tool_cache_persists_between_runs(app, tool_client):
+    form = {"target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "tables",
+            "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
+    tool_client.post("/tools/run", data=form)
+    with app.app_context():
+        saved = get_db().execute("SELECT COUNT(*) c FROM tool_cache").fetchone()["c"]
+    assert saved > 0
+    page = tool_client.post("/tools/run", data=form).get_data(as_text=True)
+    assert "기억해 둔 값" in page
+
+
+def test_tool_module_not_runnable_from_modules_tab(app, tool_client):
+    r = tool_client.post("/modules/sesacedu_lecture_sqli/run", data={"target_id": 1, "confirm": "yes"})
+    assert r.status_code == 302 and "/tools" in r.headers["Location"]
+
+
+def test_tool_result_type_checked(app, tool_client, monkeypatch):
+    mod = app.config["MODULES"]["sesacedu_lecture_sqli"]
+    monkeypatch.setattr(mod, "run", lambda *a, **k: "틀린 반환값")
+    page = tool_client.post("/tools/run", data={
+        "target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "probe",
+        "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}).get_data(as_text=True)
+    assert "ToolResult" in page
+    assert isinstance(ToolResult(), ToolResult)
+
+
+# ── 역할(같은 프로젝트 안의 서버 구분) ────────────────────────
+
+def add_target(client, name, url, role, project="sesacedu"):
+    return client.post("/targets", data={"project": project, "role": role, "name": name, "url": url},
+                       follow_redirects=True).get_data(as_text=True)
+
+
+def test_role_required_when_project_has_roles(client):
+    assert "역할을 골라" in add_target(client, "웹", "https://sesacedu.store", "")
+    assert "역할을 골라" in add_target(client, "웹", "https://sesacedu.store", "없는역할")
+    assert "등록했습니다" in add_target(client, "웹", "https://sesacedu.store", "user_web")
+
+
+def test_modules_filtered_by_role(app, client):
+    add_target(client, "사용자 웹", "https://sesacedu.store", "user_web")
+    add_target(client, "Wazuh", "http://localhost:8443", "siem")
+    with app.app_context():
+        ids = {r["role"]: r["id"] for r in get_db().execute("SELECT id, role FROM targets")}
+
+    web = client.get(f"/tools?target={ids['user_web']}").get_data(as_text=True)
+    assert "강의 목록 SQL 주입" in web
+
+    siem = client.get(f"/tools?target={ids['siem']}").get_data(as_text=True)
+    assert "강의 목록 SQL 주입" not in siem       # 사용자 웹 전용이라 숨는다
+    assert "서버 명령 출력 읽기" in siem           # 역할을 가리지 않는 모듈은 보인다
+
+    page = client.post("/tools/run", data={
+        "target_id": ids["siem"], "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "probe",
+        "dbms": "oracle", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""})
+    assert page.status_code == 404                # 숨은 모듈은 돌릴 수도 없다
+
+
+def test_role_shown_in_report(app, client):
+    add_target(client, "관리자 웹", "http://localhost:3000", "admin_web")
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    md = client.get(f"/report/{tid}.md").get_data(as_text=True)
+    assert "관리자 웹 (EC2 ②, 터널 localhost:3000)" in md   # 주소만으론 어디인지 모른다
+    assert json.loads(client.get(f"/report/{tid}.json").get_data(as_text=True))["target"]["role"]
+
+
+# ── 서버 명령 출력 읽기 ───────────────────────────────────────
+
+SS = ('$ sudo --version\nSudo version 1.9.15p5\n\n$ ss -tlnp\n'
+      'LISTEN 0 4096 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))\n'
+      'LISTEN 0 4096 0.0.0.0:8080 0.0.0.0:* users:(("java",pid=2,fd=4))\n'
+      'LISTEN 0 4096 127.0.0.1:3000 0.0.0.0:* users:(("node",pid=3,fd=5))\n')
+
+
+def test_host_report_reads_version_and_ports():
+    from modules import host_report
+    r = host_report.run(Target(1, "EC2 ①", "https://sesacedu.store"),
+                        {"output": SS, "fixed": "sudo 1.9.17", "public_ports": "22,80,443"})
+    titles = [f.title for f in r.findings]
+    assert any("sudo 1.9.15" in t and "낮음" in t for t in titles)
+    assert any("8080" in t for t in titles)
+    assert not any("3000" in t for t in titles)   # 127.0.0.1 로만 듣는 것은 표시하지 않는다
+    assert not any(":22" in t for t in titles)    # 허용 목록에 있는 포트도 표시하지 않는다
+
+
+def test_host_report_sends_nothing(monkeypatch):
+    from dashboard import core
+    from modules import host_report
+    monkeypatch.setattr(core, "fetch", lambda *a, **k: pytest.fail("요청을 보내면 안 된다"))
+    host_report.run(Target(1, "t", "https://sesacedu.store"),
+                    {"output": SS, "fixed": "sudo 1.9.17", "public_ports": "22"})
+
+
+def test_host_report_needs_input():
+    from modules import host_report
+    with pytest.raises(ValueError):
+        host_report.run(Target(1, "t", "https://x.test"), {"output": "", "fixed": "", "public_ports": ""})

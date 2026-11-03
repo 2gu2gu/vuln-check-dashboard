@@ -10,11 +10,48 @@
 | POST /guestbook   | 받은 글을 그대로(저장 안 함)     | 취약          |
 """
 import json
+import os
+import sqlite3
+import tempfile
+from pathlib import Path
+from urllib.parse import unquote
 
 from flask import Flask, Response, request
 from markupsafe import escape
 
 app = Flask(__name__)
+
+# ── 연습용 모래상자 ───────────────────────────────────────────
+# 경로 조작·SQL 주입을 실제로 시험할 수 있게, 진짜처럼 동작하되
+# 이 폴더 밖으로는 절대 나가지 않는 가짜 서버 한 채를 임시 폴더에 만든다.
+SANDBOX = Path(tempfile.gettempdir()) / "vcd-demo-root"
+FILES = {
+    "etc/passwd": "root:x:0:0:root:/root:/bin/bash\ndemo:x:1000:1000:demo:/home/demo:/bin/sh\n",
+    "etc/nginx/sites-enabled/default": "server {\n  listen 80;\n  root /srv/demo;\n}\n",
+    "srv/demo/material/강의자료.pdf": "(연습용 자료 파일)\n",
+}
+
+
+def _setup():
+    for rel, body in FILES.items():
+        path = SANDBOX / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+    db = sqlite3.connect(SANDBOX / "demo.sqlite3")
+    db.executescript("""
+        DROP TABLE IF EXISTS members; DROP TABLE IF EXISTS lectures;
+        CREATE TABLE members (id INTEGER, mail TEXT, uname TEXT);
+        CREATE TABLE lectures (id INTEGER, title TEXT, is_open INTEGER);
+        INSERT INTO members VALUES (1, 'demo@example.test', '연습계정'), (2, 'two@example.test', 'TWO');
+    """)
+    # 41개 중 35개만 공개 — 실제 서버와 같은 '참 41 / 거짓 35' 모양이 된다
+    db.executemany("INSERT INTO lectures VALUES (?, ?, ?)",
+                   [(i, f"강의 {i}", 1 if i <= 35 else 0) for i in range(1, 42)])
+    db.commit()
+    db.close()
+
+
+_setup()
 
 HOME = """<!doctype html><meta charset="utf-8"><title>연습용 대상</title>
 <h1>연습용 대상</h1>
@@ -63,6 +100,48 @@ def about():
 @app.post("/guestbook")
 def guestbook():
     return f"<p>{request.form.get('name', '')}: {request.form.get('message', '')}</p>"  # 저장하지 않고 돌려주기만
+
+
+# ── 새싹에듀와 같은 모양의 허점 두 개 ─────────────────────────
+# 도구 모듈을 실서버 대신 여기서 시험하려고 똑같은 모양으로 만들어 뒀다.
+
+@app.get("/backend/lectures/<int:lid>/material/download")
+def material_download(lid):
+    """자료 다운로드 — '../ 제거'를 디코딩보다 먼저 해서 이중 인코딩에 뚫린다.
+
+    읽는 범위는 임시 폴더 안의 가짜 서버(SANDBOX)로 못 박아 둔다.
+    """
+    if not request.headers.get("Authorization", "").startswith("Bearer "):
+        return Response('{"error":"unauthorized"}', status=401, mimetype="application/json")
+
+    name = request.args.get("file", "")        # 들어올 때 이미 한 번 디코딩된 상태
+    cleaned = name.replace("../", "")          # ① ../ 를 먼저 지우고
+    decoded = unquote(cleaned)                 # ② 그다음 디코딩한다 ← 여기서 되살아난다
+
+    if "../" in decoded:                       # 올라가기가 통한 경우
+        path = SANDBOX / decoded.replace("../", "")
+    else:
+        path = SANDBOX / "srv/demo/material" / decoded
+
+    real = os.path.realpath(path)
+    if not real.startswith(str(SANDBOX.resolve())) or not os.path.isfile(real):
+        return Response("not found", status=404)
+    return Response(Path(real).read_text(encoding="utf-8", errors="replace"), mimetype="text/plain")
+
+
+@app.get("/backend/lectures")
+def lectures():
+    """강의 목록 — 검색어를 SQL 에 그대로 이어 붙인다. 건수 차이로 참·거짓이 드러난다."""
+    keyword = request.args.get("keyword", "")
+    sql = f"SELECT COUNT(*) FROM lectures WHERE is_open = 1 AND title LIKE '%{keyword}%'"
+    db = sqlite3.connect(f"file:{SANDBOX / 'demo.sqlite3'}?mode=ro", uri=True)  # 읽기 전용으로 연다
+    try:
+        total = db.execute(sql).fetchone()[0]
+    except sqlite3.Error as e:
+        return Response(json.dumps({"error": str(e)}), status=500, mimetype="application/json")
+    finally:
+        db.close()
+    return Response(json.dumps({"page": {"total": total}}), mimetype="application/json")
 
 
 if __name__ == "__main__":

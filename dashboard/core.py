@@ -85,6 +85,23 @@ class Check:
 
 
 @dataclass
+class ToolResult:
+    """도구 모듈(stage="tool")이 돌려주는 것. 화면에 바로 보여 준다.
+
+    columns/rows 는 표. 각 행에 drill 을 달면 '이어서 조회' 링크가 생긴다
+    (예: 테이블 목록의 한 행 → 그 테이블의 컬럼 보기).
+    """
+    summary: str = ""
+    columns: list = field(default_factory=list)
+    rows: list = field(default_factory=list)          # [[값, ...], ...]
+    drills: list = field(default_factory=list)        # 행마다 {라벨: {파라미터}} 또는 None
+    text: str = ""                                    # 표가 아닌 결과(파일 내용 등)
+    findings: list = field(default_factory=list)      # 결과 탭에도 남길 것
+    note: str = ""                                    # 화면 아래 주의 문구
+    more: dict = field(default_factory=dict)          # 있으면 '다음 N개' 단추가 생긴다
+
+
+@dataclass
 class Response:
     url: str
     status: int
@@ -124,13 +141,14 @@ class BudgetExceeded(Exception):
 class RunContext:
     """모듈 실행 하나의 요청 설정. 앱이 만들어 flask.g.run_ctx 에 둔다."""
 
-    def __init__(self, target_url="", auth_headers=None, delay_ms=0, max_requests=0, recorder=None):
+    def __init__(self, target_url="", auth_headers=None, delay_ms=0, max_requests=0, recorder=None, cache=None):
         self.netloc = urlsplit(target_url).netloc
         self.auth_headers = auth_headers or {}
         self.delay = delay_ms / 1000
         self.max_requests = max_requests
         self.recorder = recorder  # (dict) -> 기록 번호
         self.count = 0
+        self.cache = cache if cache is not None else {}
 
     def before_send(self):
         self.count += 1
@@ -142,6 +160,12 @@ class RunContext:
 
 def _run_ctx():
     return g.get("run_ctx") if has_app_context() else None
+
+
+def run_cache():
+    """모듈이 한 번 읽은 값을 기억해 두는 고—대상·모듈별로 앱이 저장한다."""
+    ctx = _run_ctx()
+    return ctx.cache if ctx else {}
 
 
 def redact(headers, injected=()):

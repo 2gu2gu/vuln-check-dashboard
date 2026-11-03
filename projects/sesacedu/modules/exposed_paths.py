@@ -8,6 +8,7 @@ META = {
     "name": "관리·개발 경로 노출",
     "category": "설정 점검",
     "kind": "active",
+    "roles": ["user_web", "admin_web", "practice"],  # 이 역할의 대상에서만 보인다
     "attack": [
         {"tactic": "TA0043", "technique": "T1595.003", "name": "Wordlist Scanning"},
         {"tactic": "TA0001", "technique": "T1190", "name": "Exploit Public-Facing Application"},

@@ -75,6 +75,7 @@ h3 { font-size: 14px; margin: 0; }
 .target-pick label { color: var(--sub); font-size: 12px; white-space: nowrap; }
 .target-pick select { max-width: 420px; min-width: 0; width: 100%; }
 .proj-badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.role-badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--sub); white-space: nowrap; }
 .content { padding: 24px; max-width: 1400px; width: 100%; }
 
 /* 컨트롤 */
@@ -217,6 +218,24 @@ table.grid { width: 100%; border-collapse: collapse; }
 .clear-form { margin-top: 12px; text-align: right; }
 textarea { font: 12.5px/1.5 var(--mono); color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; width: 100%; resize: vertical; }
 input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
+
+/* 도구 */
+.tool-pick { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.tool-tab { display: flex; flex-direction: column; padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); font-weight: 600; }
+.tool-tab small { font-weight: 400; color: var(--sub); }
+.tool-tab:hover { text-decoration: none; border-color: var(--accent); }
+.tool-tab.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.tool-form .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px 14px; margin: 10px 0 14px; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--sub); }
+.field-textarea { grid-column: 1 / -1; }
+.field .num { max-width: 120px; }
+.run-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.tool-result { margin-top: 14px; }
+.tool-result h2 { font-size: 15px; margin-bottom: 10px; }
+.tool-result h3 { font-size: 12px; color: var(--sub); margin: 14px 0 6px; }
+.tool-text { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 12px; font: 12px/1.55 var(--mono); white-space: pre-wrap; word-break: break-all; max-height: 60vh; overflow: auto; margin: 0; }
+.grid td.wrapcell { max-width: 520px; overflow-wrap: anywhere; }
+ul.plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 
 /* 요청 기록 */
 #history tbody tr { cursor: pointer; }

@@ -68,6 +68,14 @@ CREATE TABLE IF NOT EXISTS exchanges (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS exchanges_run ON exchanges(run_id);
+CREATE TABLE IF NOT EXISTS tool_cache (
+    target_id INTEGER NOT NULL REFERENCES targets(id) ON DELETE CASCADE,
+    module_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (target_id, module_id, key)
+);
 CREATE TABLE IF NOT EXISTS point_checks (
     point_id INTEGER NOT NULL REFERENCES points(id) ON DELETE CASCADE,
     module_id TEXT NOT NULL,
@@ -101,6 +109,7 @@ MIGRATIONS = [
     ("findings", "exchange_id", "INTEGER"),
     ("point_checks", "exchange_id", "INTEGER"),
     ("targets", "headers", "TEXT NOT NULL DEFAULT ''"),
+    ("targets", "role", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 

@@ -21,6 +21,22 @@
     });
   });
 
+  // 대상 등록: 프로젝트를 고르면 그 프로젝트의 역할만 남긴다
+  var proj = document.getElementById("project-pick");
+  var rolePick = document.getElementById("role-pick");
+  if (proj && rolePick) {
+    var sync = function () {
+      var first = null;
+      [].forEach.call(rolePick.options, function (o) {
+        o.hidden = o.dataset.project !== proj.value;
+        if (!o.hidden && first === null) first = o;
+      });
+      if (rolePick.selectedOptions[0] && rolePick.selectedOptions[0].hidden && first) first.selected = true;
+    };
+    proj.addEventListener("change", sync);
+    sync();
+  }
+
   // 요청 기록: 줄 누르면 원문으로
   var hist = document.getElementById("history");
   if (hist) {

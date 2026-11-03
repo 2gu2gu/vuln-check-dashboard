@@ -8,7 +8,7 @@ from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
 from . import scope
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
-                   fmt_kst, now_iso)
+                   ToolResult, fmt_kst, now_iso)
 from .db import STATUSES, get_db
 from .registry import GENERAL, modules_for
 
@@ -32,8 +32,15 @@ def _project_of(target):
 
 
 def _modules_for(target):
-    """대상이 있으면 범용 + 그 프로젝트 전용, 없으면 전부."""
-    return modules_for(_modules(), target["project"]) if target else _modules()
+    """대상이 있으면 범용 + 그 프로젝트 전용 중 역할이 맞는 것, 없으면 전부."""
+    return modules_for(_modules(), target["project"], target["role"]) if target else _modules()
+
+
+def _role_label(t):
+    """대상의 역할을 사람이 읽는 이름으로. 터널로 열어 둔 경우 주소만 보고는 어디인지 모른다."""
+    if not t or not t["role"]:
+        return ""
+    return _project_of(t).roles.get(t["role"], t["role"])
 
 
 def _targets():
@@ -121,8 +128,12 @@ def targets():
             scope.ensure_in_scope(url, _projects()[pid].scope)
             if not name:
                 raise ValueError("이름을 넣어 주세요")
-            db.execute("INSERT INTO targets (project, name, url, note, created_at) VALUES (?, ?, ?, ?, ?)",
-                       [pid, name, url, request.form.get("note", "").strip(), now_iso()])
+            role = request.form.get("role", "").strip()
+            roles = _projects()[pid].roles
+            if roles and role not in roles:
+                raise ValueError(f"역할을 골라 주세요 ({', '.join(roles)})")
+            db.execute("INSERT INTO targets (project, role, name, url, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                       [pid, role, name, url, request.form.get("note", "").strip(), now_iso()])
             db.commit()
             flash(f"대상을 등록했습니다: {name}", "ok")
         except Exception as e:  # noqa: BLE001
@@ -209,15 +220,22 @@ def _guard(mod, t, back):
     return None
 
 
-def _read_params(mod, prefix=""):
-    """화면 입력값 → 모듈 params. type 이 int 인 칸은 숫자인지 먼저 본다."""
-    params = {}
+def _check_types(mod, values):
+    """입력값이 칸 종류에 맞는지 본다. 숫자 칸은 숫자, 고르는 칸은 목록 안의 값."""
     for p in mod.params:
-        val = request.form.get(prefix + p["name"], p.get("default", ""))
-        if p.get("type") == "int" and not str(val).strip().isdigit():
-            raise ValueError(f"'{p.get('label') or p['name']}' 에는 숫자를 넣어 주세요")
-        params[p["name"]] = val
-    return params
+        val = str(values.get(p["name"], "")).strip()
+        label = p.get("label") or p["name"]
+        if p.get("type") == "int" and not val.isdigit():
+            raise ValueError(f"'{label}' 에는 숫자를 넣어 주세요")
+        if p.get("type") == "select" and val not in [o["value"] for o in p.get("options", [])]:
+            raise ValueError(f"'{label}' 은 목록에 있는 값이어야 합니다")
+    return values
+
+
+def _read_params(mod, prefix=""):
+    """화면 입력값 → 모듈 params."""
+    values = {p["name"]: request.form.get(prefix + p["name"], p.get("default", "")) for p in mod.params}
+    return _check_types(mod, values)
 
 
 def _recorder(tid, mid):
@@ -235,6 +253,20 @@ def _recorder(tid, mid):
     return record
 
 
+def _load_cache(tid, mid):
+    """모듈이 지난번에 읽어 둔 값. 블라인드 추출처럼 비싼 작업을 다시 하지 않게 한다."""
+    return {r["key"]: r["value"] for r in get_db().execute(
+        "SELECT key, value FROM tool_cache WHERE target_id = ? AND module_id = ?", [tid, mid])}
+
+
+def _save_cache(tid, mid, cache):
+    db, now = get_db(), now_iso()
+    db.executemany("INSERT INTO tool_cache (target_id, module_id, key, value, created_at) VALUES (?,?,?,?,?) "
+                   "ON CONFLICT (target_id, module_id, key) DO UPDATE SET value = excluded.value",
+                   [(tid, mid, k, v, now) for k, v in cache.items()])
+    db.commit()
+
+
 def _execute(mod, t, params, call):
     """실행 기록·범위·요청 설정·오류 처리를 한곳에서. call(target) 이 저장까지 하고 알림 문구를 돌려준다."""
     db, cfg = get_db(), current_app.config
@@ -244,7 +276,7 @@ def _execute(mod, t, params, call):
     db.commit()
     g.scope_hosts = _project_of(t).scope  # 실행 중 core.fetch 는 이 범위로만 나간다
     g.run_ctx = RunContext(t["url"], _parse_headers(t["headers"]), cfg["DELAY_MS"], cfg["MAX_REQUESTS"],
-                           _recorder(t["id"], mod.id))
+                           _recorder(t["id"], mod.id), cache=_load_cache(t["id"], mod.id))
     try:
         scope.ensure_in_scope(t["url"])
         msg = call(Target(t["id"], t["name"], t["url"]))
@@ -256,6 +288,8 @@ def _execute(mod, t, params, call):
                    [str(e), now_iso(), g.run_id])
         flash(f"{mod.name} 실패: {e}", "error")
     finally:
+        # 중간에 멈춰도 그때까지 읽은 값은 남겨 둔다
+        _save_cache(t["id"], mod.id, g.run_ctx.cache)
         g.pop("scope_hosts", None)
         g.pop("run_ctx", None)
     db.commit()
@@ -311,6 +345,8 @@ def module_run(mid):
     if mod.stage == "probe":
         flash(f"{mod.name} 은 지점 점검 모듈입니다. 표면 탭에서 지점을 골라 실행하세요", "error")
         return redirect(url_for("dash.surface", target=t["id"]))
+    if mod.stage == "tool":
+        return redirect(url_for("dash.tools", target=t["id"], tool=mid))
     stop = _guard(mod, t, url_for("dash.modules", target=t["id"]))
     if stop:
         return stop
@@ -436,6 +472,70 @@ def surface_clear():
     db.commit()
     flash("수집된 지점을 비웠습니다(결과 탭의 결과는 남음)", "ok")
     return redirect(url_for("dash.surface", target=tid))
+
+
+# ── 도구(값을 넣고 바로 결과를 보는 모듈) ────────────────────
+
+def _tool_modules(target):
+    return {k: m for k, m in _modules_for(target).items() if m.stage == "tool"}
+
+
+def _tool_page(target, targets, mod, values, result=None):
+    tools = _tool_modules(target)
+    return render_template("tools.html", tools=tools, mod=mod, values=values, result=result,
+                           target=target, targets=targets)
+
+
+@bp.get("/tools")
+def tools():
+    target, targets = _current_target()
+    tools_ = _tool_modules(target)
+    mod = tools_.get(request.args.get("tool") or "") or (next(iter(tools_.values())) if tools_ else None)
+    values = {p["name"]: p.get("default", "") for p in mod.params} if mod else {}
+    return _tool_page(target, targets, mod, values)
+
+
+@bp.post("/tools/run")
+def tool_run():
+    target, targets = _current_target()
+    db = get_db()
+    t = db.execute("SELECT * FROM targets WHERE id = ?", [request.form.get("target_id", type=int)]).fetchone()
+    if not t:
+        flash("대상을 먼저 고르세요", "error")
+        return redirect(url_for("dash.tools"))
+    mod = _tool_modules(t).get(request.form.get("module_id", "")) or abort(404)
+    values = {p["name"]: request.form.get(p["name"], p.get("default", "")) for p in mod.params}
+    if request.form.get("_drill"):
+        # 표에서 '이어서 보기'를 누른 경우 — 그 행이 들고 있던 값으로 덮어쓴다
+        try:
+            drill = json.loads(request.form["_drill"])
+        except ValueError:
+            abort(400)
+        if not isinstance(drill, dict):
+            abort(400)
+        values.update({k: str(v) for k, v in drill.items() if k in values})
+    request.tool_values = values
+    stop = _guard(mod, t, url_for("dash.tools", target=t["id"], tool=mod.id))
+    if stop:
+        return stop
+    try:
+        params = _check_types(mod, values)
+    except ValueError as e:
+        flash(str(e), "error")
+        return _tool_page(t, targets, mod, values)
+
+    box = {}
+
+    def call(target_):
+        result = mod.run(target_, params)
+        if not isinstance(result, ToolResult):
+            raise TypeError("도구 모듈의 run() 은 ToolResult 를 돌려줘야 합니다")
+        box["result"] = result
+        new = sum(_save_finding(mod, t["id"], f) for f in result.findings)
+        return result.summary + (f" · 결과 {len(result.findings)}건(새로 {new})" if result.findings else "")
+
+    _execute(mod, t, params, call)
+    return _tool_page(t, targets, mod, values, box.get("result"))
 
 
 # ── 요청 기록(보낸 요청·받은 응답) ───────────────────────────
@@ -566,7 +666,8 @@ def report_json(tid):
     mods = _modules()
     data = {
         "tool": "vuln-check-dashboard", "version": current_app.jinja_env.globals["VERSION"], "generated_at": now_iso(),
-        "target": {"name": t["name"], "url": t["url"], "project": _project_of(t).name},
+        "target": {"name": t["name"], "url": t["url"], "project": _project_of(t).name,
+                   "role": _role_label(t)},
         "findings": [{
             "title": r["title"], "severity": r["severity"], "status": r["status"], "location": r["location"],
             "module": mods[r["module_id"]].name if r["module_id"] in mods else r["module_id"],
@@ -583,7 +684,8 @@ def report_json(tid):
 def report(tid):
     t, rows, exchanges = _report_rows(tid)
     mods = _modules()
-    lines = [f"# 점검 결과 — {t['name']}", "", f"- 프로젝트: {_project_of(t).name}", f"- 대상: {t['url']}",
+    lines = [f"# 점검 결과 — {t['name']}", "", f"- 프로젝트: {_project_of(t).name}",
+             f"- 대상: {t['url']}" + (f" ({_role_label(t)})" if _role_label(t) else ""),
              f"- 작성: {fmt_kst(now_iso())} (KST)", f"- 발견: {len(rows)}건", "",
              "| # | 심각도 | 항목 | 위치 | ATT&CK | 상태 |", "|---|---|---|---|---|---|"]
     for i, r in enumerate(rows, 1):
