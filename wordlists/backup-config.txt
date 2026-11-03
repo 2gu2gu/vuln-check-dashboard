@@ -1,0 +1,26 @@
+# 백업·설정 파일 — 배포 후 지워야 하는 것들
+.env
+.env.local
+.env.production
+api.env
+application.yml
+application.properties
+application-prod.yml
+config.json
+settings.json
+web.config
+docker-compose.yml
+Dockerfile
+backup.sql
+dump.sql
+database.sql
+db.sql
+backup.zip
+backup.tar.gz
+www.zip
+site.zip
+index.php.bak
+index.jsp.bak
+web.xml.bak
+.bash_history
+id_rsa

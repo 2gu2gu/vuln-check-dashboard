@@ -8,6 +8,7 @@
 | /api/items?keyword= | JSON 으로                    | 잠재          |
 | /about?ref=       | 돌려주지 않음                  | 안전          |
 | POST /guestbook   | 받은 글을 그대로(저장 안 함)     | 취약          |
+| /admin, /config.json | 링크 없음 — 사전으로만 찾힘 | —            |
 """
 import json
 import os
@@ -100,6 +101,19 @@ def about():
 @app.post("/guestbook")
 def guestbook():
     return f"<p>{request.form.get('name', '')}: {request.form.get('message', '')}</p>"  # 저장하지 않고 돌려주기만
+
+
+# ── 링크로는 어디서도 가리키지 않는 경로 ────────────
+# 페이지를 따라가는 수집으로는 찾지 못하고, 사전으로 이름을 찍어야 나온다.
+
+@app.get("/admin")
+def admin():
+    return "<h1>관리 화면(연습용)</h1><p>아무 데서도 여기로 링크하지 않는다.</p>"
+
+
+@app.get("/config.json")
+def config_json():
+    return Response(json.dumps({"app": "demo", "debug": True}), mimetype="application/json")
 
 
 # ── 새싹에듀와 같은 모양의 허점 두 개 ─────────────────────────

@@ -32,6 +32,7 @@ python -m venv .venv
 | `DASH_SCOPE` | localhost,127.0.0.1 | 범용 대상의 허용 범위 |
 | `DASH_DELAY_MS` | 100 | 실행 하나에서 요청 사이 간격 |
 | `DASH_MAX_REQUESTS` | 2000 | 실행 하나의 요청 수 한도(넘으면 멈춤) |
+| `DASH_WORDLISTS` | — | 사전을 더 둘 폴더. `;` 로 여러 개 (예: SecLists 의 `Discovery/Web-Content`) |
 
 **연습용 대상**(`demo_target.py`): 실서버 대신 모듈을 시험한다. 반사 확인을 돌리면 취약 4 · 잠재 2 · 안전 1 이 나오도록 만들었다(파일 맨 위 표). 127.0.0.1 에서만 열고 아무것도 저장하지 않는다.
 
@@ -120,6 +121,11 @@ modules/                       범용 모듈 — 어느 대상에나 보인다
   http_security_headers.py     [대상 점검]
   tech_fingerprint.py          [대상 점검]
   host_report.py               [도구] 서버 명령 출력 읽기(요청 안 보냄)
+  port_check.py                [도구] 열린 포트 확인(TCP)
+  content_discovery.py         [수집] 사전으로 숨은 경로 찾기
+  payload_probe.py             [지점 점검] 사전으로 패턴 넣어 보기
+  import_tool_output.py        [도구] 칼리 도구 결과 가져오기
+wordlists/                     사전 씨앗 목록 — SecLists 는 DASH_WORDLISTS 로 붙인다
 projects/
   sesacedu/                    프로젝트 팩 하나 = 폴더 하나
     __init__.py                PROJECT = {name, scope, description}

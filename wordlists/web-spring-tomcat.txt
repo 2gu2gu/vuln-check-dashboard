@@ -1,0 +1,25 @@
+# Spring Boot · Tomcat 구성에서 나오는 경로
+actuator
+actuator/health
+actuator/env
+actuator/beans
+actuator/mappings
+actuator/configprops
+actuator/heapdump
+actuator/threaddump
+actuator/loggers
+actuator/metrics
+v3/api-docs
+v2/api-docs
+swagger-ui/index.html
+swagger-ui.html
+manager/html
+manager/status
+manager/text/list
+host-manager/html
+examples/servlets/servlet/HelloWorldExample
+docs/
+WEB-INF/web.xml
+META-INF/context.xml
+_next/static
+_next/image

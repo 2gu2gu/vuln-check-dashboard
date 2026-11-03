@@ -1,11 +1,12 @@
 import json
 import re
+import sqlite3
 from urllib.parse import urlsplit
 
 from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
                    render_template, request, url_for)
 
-from . import scope
+from . import scope, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -137,6 +138,8 @@ def targets():
                        [pid, role, name, url, request.form.get("note", "").strip(), now_iso()])
             db.commit()
             flash(f"대상을 등록했습니다: {name}", "ok")
+        except sqlite3.IntegrityError:
+            flash(f"이미 등록된 주소입니다: {url}", "error")
         except Exception as e:  # noqa: BLE001
             flash(str(e), "error")
         return redirect(url_for("dash.targets"))
@@ -230,6 +233,8 @@ def _check_types(mod, values):
             raise ValueError(f"'{label}' 에는 숫자를 넣어 주세요")
         if p.get("type") == "select" and val not in [o["value"] for o in p.get("options", [])]:
             raise ValueError(f"'{label}' 은 목록에 있는 값이어야 합니다")
+        if p.get("type") == "wordlist" and val not in [o["value"] for o in wordlists.available()]:
+            raise ValueError(f"'{label}' 에 고른 사전을 찾을 수 없습니다")
     return values
 
 
@@ -537,7 +542,13 @@ def tool_run():
             raise TypeError("도구 모듈의 run() 은 ToolResult 를 돌려줘야 합니다")
         box["result"] = result
         new = sum(_save_finding(mod, t["id"], f) for f in result.findings)
-        return result.summary + (f" · 결과 {len(result.findings)}건(새로 {new})" if result.findings else "")
+        msg = result.summary + (f" · 결과 {len(result.findings)}건(새로 {new})" if result.findings else "")
+        if result.points:
+            kept, skipped = _save_points(mod, t["id"], result.points)
+            msg += f" · 표면에 {len(result.points) - skipped}개(새로 {kept})"
+            if skipped:
+                msg += f", 범위 밖 {skipped}개 제외"
+        return msg
 
     _execute(mod, t, params, call)
     return _tool_page(t, targets, mod, values, box.get("result"))

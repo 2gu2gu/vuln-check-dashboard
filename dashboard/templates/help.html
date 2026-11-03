@@ -12,7 +12,7 @@
   <a href="#targets">대상</a><a href="#modules">모듈</a><a href="#surface">표면</a><a href="#tools">도구</a>
   <a href="#results">결과</a><a href="#history">요청 기록</a><a href="#attack">ATT&CK</a><a href="#scenario">시나리오</a>
   <span class="toc-gap">알아 둘 것</span>
-  <a href="#roles">역할</a><a href="#auth">로그인</a><a href="#limits">요청 한도</a><a href="#hostscope">어디까지 하나</a><a href="#safety">안전장치</a>
+  <a href="#wordlists">사전</a><a href="#roles">역할</a><a href="#auth">로그인</a><a href="#limits">요청 한도</a><a href="#hostscope">어디까지 하나</a><a href="#safety">안전장치</a>
   <span class="toc-gap">만들기</span>
   <a href="#packs">범용과 팩</a><a href="#write">모듈 만들기</a><a href="#todo">아직 없는 것</a>
 </nav>
@@ -116,6 +116,9 @@
       <tr><td>열린 포트 확인</td>
           <td>확인할 포트 · 열려 있어도 되는 포트</td>
           <td>적어 둔 포트에만, 한 번에 30개까지. 연결만 하고 끊습니다</td></tr>
+      <tr><td>칼리 도구 결과 가져오기</td>
+          <td>ffuf json · gobuster 출력 · nuclei jsonl · URL 목록</td>
+          <td>요청을 보내지 않습니다. 표면으로 옮기고 nuclei 는 결과로도</td></tr>
     </tbody>
   </table>
   </div>
@@ -172,6 +175,25 @@
 </section>
 
 <h2 class="help-group">알아 둘 것</h2>
+
+<section id="wordlists">
+  <h2>사전(wordlist)</h2>
+  <p>사전은 경로나 입력값을 줄단위로 적어 둔 파일입니다. 두 곣에서 씁니다.</p>
+  <dl class="facts">
+    <dt>숪은 경로 찾기</dt><dd>사전의 경로를 하나씩 요청해 <b>링크에 없는</b> 엔드포인트를 찾습니다.
+      페이지를 따라가는 수집은 링크로 이어진 곳만 찾으니 둘을 같이 돌리세요.</dd>
+    <dt>패턴 넣어 보기</dt><dd>사전의 입력을 지점마다 차례로 넣고, 그대로 돌아오는지·오류가 새는지 봅니다.</dd>
+    <dt><code>{T}</code></dt><dd>보낼 때 그 요청의 표식으로 바뀝니다. 응답에서 되돌아온 자리를 찾는 데 씁니다.</dd>
+    <dt>특수문자 없으면</dt><dd>표식만 돌아온 것은 ‘반사되는 자리’라는 뜻이라 <b>잠재</b>로 둡니다.
+      걸러져야 할 글자(<code>&lt; &gt; " ‘ &amp;</code> 등)가 그대로 돌아와야 취약입니다.</dd>
+    <dt>응답이 HTML 이 아니면</dt><dd>JSON 같은 응답은 <code>&lt;&gt;</code> 가 살아 있어도 바로 XSS 는 아닙니다.
+      근거에 응답 종류를 적어 둡니다.</dd>
+    <dt>늘리려면</dt><dd>SecLists 를 받아 <code>DASH_WORDLISTS</code> 에 폴더를 알려 주면 고르는 칸에 같이 뜨겁니다
+      (<code>wordlists/README.md</code>).</dd>
+    <dt>요청 수</dt><dd>숪은 경로 찾기는 경로 하나에 요청 한 번, 패턴 넣기는 지점 수 × 사전 수입니다.
+      ‘몇 개까지’로 끊어 돌리세요.</dd>
+  </dl>
+</section>
 
 <section id="roles">
   <h2>역할 — 서버가 여럿일 때</h2>

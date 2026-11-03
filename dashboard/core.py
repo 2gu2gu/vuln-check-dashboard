@@ -100,6 +100,7 @@ class ToolResult:
     findings: list = field(default_factory=list)      # 결과 탭에도 남길 것
     note: str = ""                                    # 화면 아래 주의 문구
     more: dict = field(default_factory=dict)          # 있으면 '다음 N개' 단추가 생긴다
+    points: list = field(default_factory=list)        # 표면에도 쌓을 지점
 
 
 @dataclass
