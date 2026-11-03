@@ -14,8 +14,14 @@ def target_id(app, url):
 
 
 def test_pages_render_empty(client):
-    for path in ("/", "/targets", "/modules", "/attack", "/scenario"):
+    for path in ("/", "/targets", "/modules", "/attack", "/scenario", "/help"):
         assert client.get(path).status_code == 200, path
+
+
+def test_help_link_points_to_current_screen(client):
+    page = client.get("/modules").get_data(as_text=True)
+    assert "/help#modules" in page
+    assert 'id="modules"' in client.get("/help").get_data(as_text=True)
 
 
 def test_target_scope_per_project(client):

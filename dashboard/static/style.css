@@ -61,6 +61,7 @@ h3 { font-size: 14px; margin: 0; }
 .brand { font-weight: 700; font-size: 15px; padding: 0 8px; }
 .brand span { display: block; font-weight: 400; font-size: 12px; color: var(--sub); }
 .side nav { display: flex; flex-direction: column; gap: 2px; }
+.side nav.nav-sub { border-top: 1px solid var(--line); padding-top: 10px; margin-top: -8px; }
 .side nav a { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px; color: var(--text); }
 .side nav a:hover { background: var(--surface-2); text-decoration: none; }
 .side nav a.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
@@ -194,6 +195,16 @@ table.grid { width: 100%; border-collapse: collapse; }
 .flow-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .step { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--surface); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
 .flow ul { margin: 0; padding-left: 34px; display: flex; flex-direction: column; gap: 4px; }
+
+/* 사용법 */
+.help { max-width: 860px; }
+.help section { margin-bottom: 26px; scroll-margin-top: 72px; }
+.help section:target h2 { color: var(--accent); }
+.help h2 { font-size: 16px; margin: 0 0 8px; }
+.help ul, .help ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.help p { margin: 8px 0 0; }
+.help pre { margin: 10px 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; font: 12.5px/1.6 var(--mono); overflow-x: auto; }
+.help .table-wrap { margin-top: 4px; }
 
 .empty { background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius); padding: 32px; text-align: center; color: var(--sub); }
 .empty-title { color: var(--text); font-weight: 600; font-size: 15px; margin: 0 0 4px; }
