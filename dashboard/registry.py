@@ -55,7 +55,27 @@ class ProjectInfo:
     scope: list
     description: str = ""
     source: str = ""
-    roles: dict = field(default_factory=dict)  # {역할 id: 보일 이름}
+    roles: dict = field(default_factory=dict)  # {역할 id: {"name": 보일 이름, "scope": [허용 범위]}}
+
+    def role_name(self, role: str) -> str:
+        return self.roles.get(role, {}).get("name", role)
+
+    def role_scope(self, role: str) -> list:
+        """그 역할의 범위. 역할을 안 골랐거나 범위를 안 적었으면 프로젝트 범위."""
+        return self.roles.get(role, {}).get("scope") or self.scope
+
+
+def _norm_roles(roles):
+    """역할은 이름만 주어도 되고, 범위까지 주어도 된다."""
+    out = {}
+    for rid, value in (roles or {}).items():
+        if isinstance(value, str):
+            out[rid] = {"name": value, "scope": None}
+        elif isinstance(value, dict) and value.get("name"):
+            out[rid] = {"name": value["name"], "scope": value.get("scope")}
+        else:
+            raise ValueError(f"역할 {rid} 은 이름 문자열이거나 name 을 가진 dict 여야 합니다")
+    return out
 
 
 def _validate(meta: dict) -> None:
@@ -117,7 +137,7 @@ def discover_projects(package_name: str = "projects"):
                 raise ValueError("PROJECT(dict) 에 name·scope 가 필요합니다")
             projects[pid] = ProjectInfo(id=pid, name=meta["name"], scope=[h.lower() for h in meta["scope"]],
                                         description=meta.get("description", ""), source=source,
-                                        roles=meta.get("roles", {}))
+                                        roles=_norm_roles(meta.get("roles", {})))
         except Exception as e:  # noqa: BLE001
             errors.append((source, str(e)))
             continue
