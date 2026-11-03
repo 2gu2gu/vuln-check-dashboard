@@ -6,7 +6,7 @@ from pathlib import Path
 from flask import Flask, abort, request, session
 from markupsafe import Markup, escape
 
-from . import db
+from . import db, wordlists
 from .core import SEVERITY_LABEL, fmt_kst
 from .registry import load_catalog
 
@@ -77,7 +77,8 @@ def create_app(test_config=None):
         return Markup('<input type="hidden" name="_csrf" value="%s">' % escape(csrf_token()))
 
     app.jinja_env.globals.update(SEVERITY_LABEL=SEVERITY_LABEL, STATUSES=db.STATUSES, PROJECTS=app.config["PROJECTS"],
-                                 csrf_token=csrf_token, csrf_field=csrf_field, VERSION=__version__)
+                                 csrf_token=csrf_token, csrf_field=csrf_field, VERSION=__version__,
+                                 wordlist_options=wordlists.available)
 
     from .routes import bp
     app.register_blueprint(bp)
