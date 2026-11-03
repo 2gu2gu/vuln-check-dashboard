@@ -21,6 +21,23 @@
     });
   });
 
+  // 요청 기록: 줄 누르면 원문으로
+  var hist = document.getElementById("history");
+  if (hist) {
+    var go = function (e) {
+      var tr = e.target.closest("tbody tr");
+      if (tr && (e.type === "click" || e.key === "Enter")) location.href = tr.dataset.href;
+    };
+    hist.addEventListener("click", go);
+    hist.addEventListener("keydown", go);
+  }
+  document.querySelectorAll("[data-copy]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var text = document.getElementById(b.dataset.copy).textContent;
+      try { navigator.clipboard.writeText(text); b.textContent = "복사됨"; } catch (e) {}
+    });
+  });
+
   // 표면: 전체 선택 · 선택 수 · 모듈별 입력칸
   var probeForm = document.getElementById("probe-form");
   if (probeForm) {
@@ -65,6 +82,9 @@
     $("d-tech").href = f.technique_url || "#";
     $("d-evi").textContent = f.evidence || "—";
     $("d-rec").textContent = f.recommendation || "—";
+    var ex = $("d-ex");
+    ex.hidden = !f.exchange_id;
+    if (f.exchange_id) ex.href = "/history/" + f.exchange_id;
     $("d-status").value = f.status;
     $("d-form").action = "/findings/" + f.id + "/status";
     panel.hidden = false;

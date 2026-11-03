@@ -42,7 +42,7 @@ def run(target, points, params):
         else:
             lines += [f"반사 위치: {probe.CONTEXT_LABEL[ctx]}", f"…{excerpt}…"]
         out.append(Check(
-            point=p, verdict=verdict, evidence="\n".join(lines),
+            point=p, verdict=verdict, evidence="\n".join(lines), response=r,
             title=f"입력값이 그대로 반사됨({probe.CONTEXT_LABEL.get(ctx, '')})" if verdict == "vuln" else "",
             recommendation="출력 위치에 맞게 인코딩합니다(본문은 HTML 엔티티, 속성은 따옴표 포함 인코딩, 스크립트 안은 JS 문자열 이스케이프). "
                            "템플릿 자동 이스케이프를 끄지 않았는지, innerHTML 로 넣지 않는지 확인합니다."))

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_macros.html" import empty %}
+{% block title %}요청 기록{% endblock %}
+{% block content %}
+<h1>요청 기록</h1>
+<p class="lead">모듈이 이 대상에 보낸 요청과 받은 응답입니다(최근 300개). 줄을 누르면 원문을 봅니다.
+  인증 값(Cookie·Authorization 등)은 *** 로 남깁니다.</p>
+
+{% if not target %}
+  {{ empty("대상을 먼저 등록하세요", "요청 기록은 대상별로 쌓입니다.", url_for('dash.targets'), "대상 등록") }}
+{% else %}
+<form method="get" class="filters">
+  <input type="hidden" name="target" value="{{ target.id }}">
+  {% if args.run %}<input type="hidden" name="run" value="{{ args.run }}"><a class="btn ghost" href="{{ url_for('dash.history', target=target.id) }}">실행 #{{ args.run }} 만 보는 중 ✕</a>{% endif %}
+  <select name="module_id" data-autosubmit aria-label="모듈">
+    <option value="">모듈 전체</option>
+    {% for m in modules.values() %}<option value="{{ m.id }}" {{ 'selected' if args.module_id == m.id }}>{{ m.name }}</option>{% endfor %}
+  </select>
+  <select name="status" data-autosubmit aria-label="응답 코드">
+    <option value="">응답 전체</option>
+    {% for k in status_filter %}<option value="{{ k }}" {{ 'selected' if args.status == k }}>{{ "연결 실패" if k == "err" else k }}</option>{% endfor %}
+  </select>
+  <input type="search" name="q" value="{{ args.q or '' }}" placeholder="주소·본문 검색 후 Enter" aria-label="주소·본문 검색">
+</form>
+
+{% if not rows %}
+  {{ empty("기록이 없습니다", "모듈을 실행하면 보낸 요청이 여기에 쌓입니다.", url_for('dash.modules', target=target.id), "모듈로 가기") }}
+{% else %}
+<div class="table-wrap">
+<table class="grid" id="history">
+  <thead><tr><th>#</th><th>시각</th><th>모듈</th><th>메서드</th><th>주소</th><th>응답</th><th>크기</th><th>시간</th></tr></thead>
+  <tbody>
+  {% for x in rows %}
+    <tr data-href="{{ url_for('dash.history_detail', xid=x.id) }}" tabindex="0">
+      <td class="sub mono">{{ x.id }}</td>
+      <td class="sub nowrap">{{ x.created_at | kst }}</td>
+      <td>{{ all_modules[x.module_id].name if x.module_id in all_modules else x.module_id }}</td>
+      <td class="mono">{{ x.method }}</td>
+      <td class="mono loc wide" title="{{ x.url }}">{{ x.url | replace(target.url, "") or "/" }}</td>
+      <td class="mono">{% if x.error %}<span class="code code-err">실패</span>{% else %}<span class="code code-{{ (x.status // 100) }}xx">{{ x.status }}</span>{% endif %}</td>
+      <td class="sub mono nowrap">{{ "{:,}".format(x.size) }}</td>
+      <td class="sub mono nowrap">{{ x.ms }}ms</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -1,5 +1,5 @@
 """HTTP 보안 헤더·쿠키 속성 점검. 페이지 하나의 응답 헤더만 읽는다."""
-from dashboard.core import Finding, fetch
+from dashboard.core import Finding, fetch, join
 
 META = {
     "id": "http_security_headers",
@@ -28,7 +28,7 @@ HEADERS = [
 
 
 def run(target, params):
-    r = fetch(target.url + (params.get("path") or "/"))
+    r = fetch(join(target.url, params.get("path") or "/"))
     https = r.url.startswith("https://")
     status_line = f"GET {r.url} → {r.status}"
     out = []
@@ -38,14 +38,14 @@ def run(target, params):
             continue
         if not r.header(name):
             out.append(Finding(title=title, severity=sev, location=r.url,
-                               evidence=f"{status_line}\n{name}: (없음)", recommendation=rec))
+                               evidence=f"{status_line}\n{name}: (없음)", recommendation=rec, response=r))
 
     csp = r.header("Content-Security-Policy").lower()
     if not r.header("X-Frame-Options") and "frame-ancestors" not in csp:
         out.append(Finding(
             title="클릭재킹 방어 헤더 없음", severity="medium", location=r.url,
             evidence=f"{status_line}\nX-Frame-Options: (없음)\nCSP frame-ancestors: (없음)",
-            recommendation="X-Frame-Options: DENY 또는 CSP frame-ancestors 'none' 을 붙입니다."))
+            recommendation="X-Frame-Options: DENY 또는 CSP frame-ancestors 'none' 을 붙입니다.", response=r))
 
     for raw in r.header_all("Set-Cookie"):
         cookie_name = raw.split("=", 1)[0].strip()
@@ -63,5 +63,5 @@ def run(target, params):
                 title=f"쿠키 속성 누락: {cookie_name}", severity="low", location=r.url,
                 evidence=f"{status_line}\nSet-Cookie: {cookie_name}=…; " + "; ".join(attrs) + f"\n누락: {', '.join(missing)}",
                 recommendation=f"{cookie_name} 쿠키에 {', '.join(missing)} 속성을 붙입니다.",
-                technique="T1539"))
+                technique="T1539", response=r))
     return out

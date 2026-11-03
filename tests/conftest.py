@@ -6,7 +6,8 @@ from dashboard.core import Response
 
 @pytest.fixture
 def app(tmp_path):
-    return create_app({"TESTING": True, "SECRET_KEY": "test", "DATABASE": str(tmp_path / "t.sqlite3")})
+    return create_app({"TESTING": True, "SECRET_KEY": "test", "DATABASE": str(tmp_path / "t.sqlite3"),
+                       "CSRF": False, "DELAY_MS": 0})
 
 
 @pytest.fixture

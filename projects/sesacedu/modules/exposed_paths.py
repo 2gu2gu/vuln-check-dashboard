@@ -48,12 +48,12 @@ def run(target, params):
     baseline = fetch(f"{target.url}/__dashboard_{uuid.uuid4().hex[:8]}")
     out = []
     for path, sev, title, tech, hit, rec in PATHS:
-        r = fetch(target.url + path)
+        r = fetch(target.url + path, record_body=path != "/.env")  # .env 본문은 요청 기록에도 남기지 않는다
         if r.status == 200 and baseline.status == 200 and r.body == baseline.body:
             continue
         if hit(r):
             # 본문은 비밀값이 섞일 수 있어 남기지 않는다
             out.append(Finding(
-                title=title, severity=sev, location=r.url, technique=tech, recommendation=rec,
+                title=title, severity=sev, location=r.url, technique=tech, recommendation=rec, response=r,
                 evidence=f"GET {r.url} → {r.status}\nContent-Type: {r.header('Content-Type') or '-'}\n본문 {len(r.body)}자(내용 미저장)"))
     return out

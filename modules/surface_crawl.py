@@ -15,7 +15,7 @@ META = {
     "description": "링크(쿼리 파라미터), 폼(입력칸 이름·메서드), 스크립트 안의 /api 경로를 모읍니다. 폼은 제출하지 않습니다.",
     "params": [
         {"name": "start", "label": "시작 경로", "default": "/"},
-        {"name": "max_pages", "label": "최대 페이지", "default": "30"},
+        {"name": "max_pages", "label": "최대 페이지", "default": "30", "type": "int"},
         {"name": "skip", "label": "제외할 말(쉼표)", "default": "logout,signout,delete,remove"},
     ],
 }

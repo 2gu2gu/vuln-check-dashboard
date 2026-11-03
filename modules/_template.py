@@ -19,7 +19,7 @@
   3. 대상에 쓰기·변경을 일으키거나 요청이 많은 모듈은 kind 를 "active" 로 둔다(실행 전 확인 체크).
   4. id 는 전체(범용+모든 프로젝트)에서 하나여야 한다.
 """
-from dashboard.core import Finding, fetch
+from dashboard.core import Finding, fetch, join
 
 META = {
     "id": "robots_txt",                  # 고유 id (파일 이름과 같게)
@@ -38,7 +38,7 @@ META = {
 
 def run(target, params):
     """target: Target(id, name, url) / params: {이름: 문자열} → Finding 목록"""
-    r = fetch(target.url + params.get("path", "/robots.txt"))
+    r = fetch(join(target.url, params.get("path", "/robots.txt")))  # join: 경로에 / 가 없어도 붙는다
     if r.status != 200:
         return []
     paths = [line.split(":", 1)[1].strip() for line in r.body.splitlines()
@@ -52,4 +52,5 @@ def run(target, params):
         evidence="\n".join(paths[:30]),
         recommendation="숨기려는 경로라면 robots.txt 대신 접근 제어로 막습니다.",
         # technique="T1595.003",         # 비우면 META attack 첫 항목
+        response=r,                       # 넣으면 결과에서 '요청·응답 보기'로 이어진다
     )]

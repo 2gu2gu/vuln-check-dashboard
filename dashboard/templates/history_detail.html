@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_macros.html" import sev, verdict %}
+{% block title %}요청 #{{ x.id }}{% endblock %}
+{% block content %}
+<div class="detail-nav">
+  <a href="{{ url_for('dash.history', target=x.target_id, run=x.run_id) }}">← 이 실행의 요청 목록</a>
+  <span class="sub">
+    {% if prev %}<a href="{{ url_for('dash.history_detail', xid=prev) }}">이전</a>{% endif %}
+    {% if nxt %} · <a href="{{ url_for('dash.history_detail', xid=nxt) }}">다음</a>{% endif %}
+  </span>
+</div>
+<h1>요청 #{{ x.id }} <span class="mono sub">{{ x.method }} {{ x.url }}</span></h1>
+<p class="lead">
+  {{ all_modules[x.module_id].name if x.module_id in all_modules else x.module_id }} · 실행 #{{ x.run_id }} · {{ x.created_at | kst }} ·
+  {% if x.error %}<span class="code code-err">연결 실패</span>{% else %}<span class="code code-{{ x.status // 100 }}xx">{{ x.status }}</span>{% endif %}
+  · {{ "{:,}".format(x.size) }}자 · {{ x.ms }}ms
+  {% for c in checks %} · {{ verdict(c.verdict) }} <span class="mono">{{ c.param }}</span>{% endfor %}
+  {% for f in linked %} · 결과 {{ sev(f.severity) }} <a href="{{ url_for('dash.results', target=x.target_id) }}">{{ f.title }}</a>{% endfor %}
+</p>
+<p class="sub small">노란 표시(<mark>vcd…</mark>)는 점검 모듈이 넣은 표식입니다. 응답에서 표식이 어디에 어떻게 돌아왔는지 보면 판정 이유를 확인할 수 있습니다.</p>
+
+<div class="exchange">
+  <section>
+    <header><b>보낸 요청</b><button class="btn ghost small-btn" type="button" data-copy="raw-req">복사</button></header>
+    <pre id="raw-req">{{ raw_req | mark_tokens }}</pre>
+  </section>
+  <section>
+    <header><b>받은 응답</b><button class="btn ghost small-btn" type="button" data-copy="raw-resp">복사</button></header>
+    <pre id="raw-resp">{{ raw_resp | mark_tokens }}</pre>
+  </section>
+</div>
+{% endblock %}
