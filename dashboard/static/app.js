@@ -21,6 +21,27 @@
     });
   });
 
+  // 표면: 전체 선택 · 선택 수 · 모듈별 입력칸
+  var probeForm = document.getElementById("probe-form");
+  if (probeForm) {
+    var boxes = probeForm.querySelectorAll("input[name=point]");
+    var picked = document.getElementById("picked");
+    var count = function () {
+      var n = 0;
+      boxes.forEach(function (b) { if (b.checked) n++; });
+      picked.textContent = n + "개 선택";
+    };
+    document.getElementById("pick-all").addEventListener("change", function (e) {
+      boxes.forEach(function (b) { b.checked = e.target.checked; });
+      count();
+    });
+    boxes.forEach(function (b) { b.addEventListener("change", count); });
+    var sel = document.getElementById("probe-module");
+    if (sel) sel.addEventListener("change", function () {
+      probeForm.querySelectorAll(".probe-params").forEach(function (d) { d.hidden = d.dataset.for !== sel.value; });
+    });
+  }
+
   // 결과 표 → 오른쪽 상세 패널
   var dataEl = document.getElementById("findings-data");
   var table = document.getElementById("findings");

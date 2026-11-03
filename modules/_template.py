@@ -4,6 +4,13 @@
   modules/xxx.py                     범용 — 어느 대상에나 쓸 수 있는 점검
   projects/<프로젝트>/modules/xxx.py   전용 — 그 프로젝트의 경로·구성을 아는 점검
 
+모듈 단계(META "stage")
+  check   (기본) run(target, params) → [Finding]          대상 하나를 통째로 점검 — 이 파일
+  collect        run(target, params) → [Point]            표면 수집 — 예: modules/surface_crawl.py
+  probe          run(target, points, params) → [Check]    표면 탭에서 고른 지점마다 판정 — 예: modules/reflection_check.py
+  유형별 점검(SQLi·XSS·경로 조작 등)은 probe 로 만들면 표면 수집 결과를 그대로 받아 쓴다.
+  값 넣어 보내기·반사 판정은 dashboard/probe.py 의 send()·judge_reflection() 을 쓴다.
+
 지킬 것
   1. 요청은 반드시 core.fetch 로만 보낸다(범위 검사·리다이렉트 차단이 여기서 걸린다).
      requests/urllib 를 직접 쓰거나 기존 도구를 subprocess 로 부를 때는 대상 주소를

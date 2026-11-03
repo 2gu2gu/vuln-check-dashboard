@@ -11,7 +11,9 @@
   <ol class="steps">
     <li><a href="{{ url_for('dash.targets') }}">대상</a> 탭에서 프로젝트를 고르고 주소를 등록합니다. 프로젝트 허용 범위 밖 주소는 등록되지 않습니다.</li>
     <li>위쪽 <b>대상</b> 칸에서 점검할 대상을 고릅니다. 모든 탭이 이 대상 기준으로 바뀝니다.</li>
-    <li><a href="{{ url_for('dash.modules') }}">모듈</a> 탭에서 <b>실행</b>을 누릅니다. 능동 모듈은 '자체 환경 확인'에 체크해야 실행됩니다.</li>
+    <li><a href="{{ url_for('dash.modules') }}">모듈</a> 탭에서 <span class="stage stage-collect">표면 수집</span> 모듈을 돌려 엔드포인트·파라미터를 모읍니다.</li>
+    <li><a href="{{ url_for('dash.surface') }}">표면</a> 탭에서 지점을 골라 <span class="stage stage-probe">지점 점검</span> 모듈을 돌립니다. 지점마다 취약 · 잠재 · 안전이 붙습니다.</li>
+    <li><span class="stage">대상 점검</span> 모듈(보안 헤더 등)은 모듈 탭에서 바로 <b>실행</b>합니다. 능동 모듈은 '자체 환경 확인'에 체크해야 실행됩니다.</li>
     <li><a href="{{ url_for('dash.results') }}">결과</a> 탭에서 행을 눌러 근거·조치를 보고 상태(미확인·확인됨·조치됨·오탐)를 정합니다.</li>
     <li>ATT&CK·시나리오 탭으로 흐름을 보고, 위쪽 <b>보고서 내려받기</b>로 Markdown 을 받습니다.</li>
   </ol>
@@ -23,6 +25,24 @@
     <li>요약 카드는 조치됨·오탐을 뺀 수입니다. 카드를 누르면 그 심각도만 봅니다.</li>
     <li>심각도·모듈·상태 필터는 고르면 바로 적용됩니다. 검색칸은 지금 표 안에서만 찾습니다.</li>
     <li>행을 누르거나 Enter 를 누르면 오른쪽에 상세가 열립니다. 상태는 여기서 바꿉니다.</li>
+    <li>같은 모듈이 같은 위치에서 같은 걸 다시 찾으면 줄이 늘지 않고 갱신됩니다. <b>조치됨</b>으로 바꾼 결과가 다시 나오면 <b>미확인</b>으로 돌아갑니다(재발).</li>
+    <li>경로가 다르면 다른 줄입니다. 보안 헤더를 세 경로에서 돌리면 같은 항목이 경로마다 하나씩 생깁니다.</li>
+  </ul>
+</section>
+
+<section id="surface">
+  <h2>표면</h2>
+  <ul>
+    <li>엔드포인트(회색 줄) 아래에 그 주소의 파라미터가 놓입니다. 위치는 <b>쿼리</b>(URL ?뒤) · <b>폼 본문</b>(POST) 입니다.</li>
+    <li>출처: <code>link</code> 페이지 링크, <code>form</code> 폼 입력칸, <code>js</code> 스크립트 안 /api 경로, <code>import</code> 붙여 넣은 목록.
+      다른 도구(Burp·katana 등)로 모은 URL 은 <b>URL 목록 가져오기</b> 모듈에 붙여 넣으면 됩니다.</li>
+    <li>판정은 지점 점검 모듈마다 따로 붙습니다. 마우스를 올리면 근거(보낸 요청·응답 발췌)가 보입니다.
+      <span class="verdict v-vuln">취약</span> 넣은 값이 그대로 돌아옴(후보) ·
+      <span class="verdict v-potential">잠재</span> 돌아오긴 하는데 바뀜(필터 있음, 다른 패턴으로 더 볼 곳) ·
+      <span class="verdict v-safe">안전</span> 돌아오지 않음.</li>
+    <li>취약만 결과 탭에 쌓입니다. 점검 때 같은 요청의 다른 파라미터는 발견 당시 값으로 채웁니다.</li>
+    <li><b>POST 지점은 기본으로 보내지 않습니다.</b> 폼을 실제로 제출하면 글·데이터가 저장될 수 있어서, 모듈 입력칸에 POST 를 넣을 때는 테스트 계정·테스트 행에서만 씁니다.</li>
+    <li><b>수집 지점 비우기</b>는 지점과 판정만 지웁니다. 결과 탭의 결과는 남습니다.</li>
   </ul>
 </section>
 
@@ -76,7 +96,19 @@
 
 <section id="write">
   <h2>모듈 만들기</h2>
-  <ol class="steps">
+  <div class="table-wrap">
+  <table class="grid">
+    <thead><tr><th>단계 (META stage)</th><th>run 모양</th><th>예</th></tr></thead>
+    <tbody>
+      <tr><td><span class="stage stage-collect">표면 수집</span> <code>collect</code></td><td class="mono">run(target, params) → [Point]</td><td class="mono">modules/surface_crawl.py</td></tr>
+      <tr><td><span class="stage stage-probe">지점 점검</span> <code>probe</code></td><td class="mono">run(target, points, params) → [Check]</td><td class="mono">modules/reflection_check.py</td></tr>
+      <tr><td><span class="stage">대상 점검</span> <code>check</code>(기본)</td><td class="mono">run(target, params) → [Finding]</td><td class="mono">modules/_template.py</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>SQLi·XSS·경로 조작처럼 <b>유형별 점검은 지점 점검(probe)으로</b> 만들면 표면 수집 결과를 그대로 받아 씁니다.
+    값 넣어 보내기는 <code>probe.send(point, 값)</code>, 반사 판정은 <code>probe.judge_reflection()</code> 을 씁니다. 판정 기준(패턴)만 바꾸면 됩니다.</p>
+  <ol class="steps" style="margin-top:10px">
     <li><code>modules/_template.py</code> 를 복사해 범용이면 <code>modules/</code>, 전용이면 <code>projects/&lt;id&gt;/modules/</code> 에 둡니다. 파일 이름이 <code>_</code> 로 시작하면 등록되지 않습니다.</li>
     <li><code>META</code> 를 채우고 <code>run(target, params)</code> 에서 <code>Finding</code> 목록을 돌려줍니다.</li>
     <li>대시보드를 다시 실행하면 모듈 탭에 나타납니다. 오류가 있으면 모듈 탭 맨 위에 이유가 뜹니다.</li>
@@ -114,8 +146,9 @@ def run(target, params):
 <section id="todo">
   <h2>아직 없는 것</h2>
   <ul>
-    <li><b>표면 수집 → 점검 연결</b>: 수집 모듈이 모은 엔드포인트·파라미터를 저장하고, 점검 모듈이 그 지점을 골라 패턴을 넣는 구조(회의록 3절 도구 ②). 지금은 모듈마다 따로 돕니다.</li>
-    <li>위치·파라미터별 취약 / 잠재 / 안전 구분, 타임라인, CVE 탭.</li>
+    <li>유형별 페이로드 모듈(SQLi·XSS·경로 조작 등) — 담당 팀원이 지점 점검 틀로 추가.</li>
+    <li>로그인한 상태로 수집·점검(쿠키·토큰 넣기). 지금은 로그인 없이 보이는 곳만.</li>
+    <li>타임라인, CVE 탭.</li>
     <li>실행은 끝날 때까지 화면이 기다립니다(동기).</li>
   </ul>
 </section>

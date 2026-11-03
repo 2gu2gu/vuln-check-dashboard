@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "_macros.html" import empty, verdict, param_input %}
+{% block title %}표면{% endblock %}
+{% block content %}
+<h1>표면</h1>
+<p class="lead">수집 모듈이 모은 엔드포인트·파라미터입니다. 지점을 골라 지점 점검 모듈을 돌리면 지점마다 취약 · 잠재 · 안전으로 판정하고, 취약은 결과 탭에도 쌓입니다.</p>
+
+{% if not target %}
+  {{ empty("대상을 먼저 등록하세요", "표면은 대상별로 쌓입니다.", url_for('dash.targets'), "대상 등록") }}
+{% else %}
+<section class="cards">
+  <div class="card"><small>엔드포인트</small><strong>{{ totals.endpoints }}</strong></div>
+  <div class="card"><small>파라미터</small><strong>{{ totals.params }}</strong></div>
+  {% for v in ("vuln", "potential", "safe") %}
+  <div class="card">{{ verdict(v) }}<strong>{{ totals[v] }}</strong><small>판정 수</small></div>
+  {% endfor %}
+</section>
+
+{% if not groups %}
+  {{ empty("수집된 지점이 없습니다",
+           "모듈 탭의 표면 수집 모듈(" ~ (collectors | map(attribute='name') | join(', ') or '없음') ~ ")을 먼저 돌리세요.",
+           url_for('dash.modules', target=target.id), "모듈로 가기") }}
+{% else %}
+<form method="post" action="{{ url_for('dash.surface_probe') }}" id="probe-form">
+  <input type="hidden" name="target_id" value="{{ target.id }}">
+  <div class="panel probe-bar">
+    <label class="check"><input type="checkbox" id="pick-all"> 전체 선택</label>
+    <span class="sub" id="picked">0개 선택</span>
+    {% if probes %}
+    <select name="module_id" id="probe-module" aria-label="지점 점검 모듈">
+      {% for m in probes.values() %}<option value="{{ m.id }}" data-kind="{{ m.kind }}">{{ m.name }}</option>{% endfor %}
+    </select>
+    {% for m in probes.values() %}
+    <div class="probe-params" data-for="{{ m.id }}" {{ 'hidden' if not loop.first }}>
+      {% for p in m.params %}{{ param_input(p, m.id ~ "__") }}{% endfor %}
+    </div>
+    {% endfor %}
+    <label class="check"><input type="checkbox" name="confirm" value="yes"> 자체 환경({{ target.name }})임을 확인했습니다</label>
+    <button class="btn" type="submit">선택 지점 점검</button>
+    {% else %}
+    <span class="sub">이 대상에 쓸 지점 점검 모듈이 없습니다.</span>
+    {% endif %}
+  </div>
+
+  <div class="table-wrap">
+  <table class="grid surface">
+    <thead><tr><th></th><th>메서드</th><th>파라미터</th><th>위치</th><th>발견 값</th><th>출처</th><th>판정</th></tr></thead>
+    {% for gr in groups %}
+    <tbody>
+      <tr class="ep">
+        <td></td>
+        <td class="mono nowrap">{{ gr.methods | sort | join(" · ") }}</td>
+        <td colspan="5"><span class="mono">{{ gr.path }}</span>
+          <span class="sub small">{{ gr.params | length }}개 파라미터 · {{ gr.sources | reject("equalto", "") | sort | join(", ") }}</span></td>
+      </tr>
+      {% for p in gr.params %}
+      <tr>
+        <td><input type="checkbox" name="point" value="{{ p.id }}" aria-label="{{ gr.path }} {{ p.param }} 선택"></td>
+        <td class="mono sub">{{ p.method }}</td>
+        <td class="mono">{{ p.param }}</td>
+        <td class="sub">{{ {"query": "쿼리", "form": "폼 본문", "path": "경로"}[p.place] }}</td>
+        <td class="mono sub loc" title="{{ p.sample }}">{{ p.sample }}</td>
+        <td class="sub">{{ p.source }}</td>
+        <td>{% for c in p.checks %}<span class="vchip" title="{{ c.module }}&#10;{{ c.evidence }}">{{ verdict(c.verdict) }}<small>{{ c.module }}</small></span>{% else %}<span class="sub small">미점검</span>{% endfor %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    {% endfor %}
+  </table>
+  </div>
+</form>
+
+<form method="post" action="{{ url_for('dash.surface_clear') }}" class="clear-form" data-confirm="{{ target.name }} 의 수집 지점과 판정을 모두 지울까요? 결과 탭의 결과는 남습니다.">
+  <input type="hidden" name="target_id" value="{{ target.id }}">
+  <button class="btn ghost danger" type="submit">수집 지점 비우기</button>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}

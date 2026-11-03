@@ -2,6 +2,18 @@
 <span class="sev sev-{{ s }}"><i aria-hidden="true"></i>{{ SEVERITY_LABEL[s] }}</span>
 {%- endmacro %}
 
+{% macro param_input(p, prefix="") -%}
+<label>{{ p.label or p.name }}
+  {% if p.type == "textarea" %}<textarea name="{{ prefix }}{{ p.name }}" rows="4" class="mono" placeholder="{{ p.placeholder or '' }}">{{ p.default }}</textarea>
+  {% else %}<input name="{{ prefix }}{{ p.name }}" value="{{ p.default }}" class="mono">{% endif %}
+  {% if p.help %}<small class="sub">{{ p.help }}</small>{% endif %}
+</label>
+{%- endmacro %}
+
+{% macro verdict(v) -%}
+<span class="verdict v-{{ v }}">{{ {"vuln": "취약", "potential": "잠재", "safe": "안전"}[v] }}</span>
+{%- endmacro %}
+
 {% macro empty(title, body, href=none, cta=none) -%}
 <div class="empty">
   <p class="empty-title">{{ title }}</p>

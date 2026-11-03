@@ -10,9 +10,15 @@ import pkgutil
 from dataclasses import dataclass, field
 
 from .attack import TACTIC_ORDER
+from .core import SEVERITIES
 
 REQUIRED = ("id", "name", "category", "kind", "attack", "description")
 KINDS = ("passive", "active")
+# collect: run(target, params) → [Point]  표면 수집
+# check:   run(target, params) → [Finding]  대상 단위 점검(기본)
+# probe:   run(target, points, params) → [Check]  수집된 지점 단위 점검
+STAGES = ("collect", "check", "probe")
+STAGE_LABEL = {"collect": "표면 수집", "check": "대상 점검", "probe": "지점 점검"}
 GENERAL = "general"  # 어느 프로젝트에도 속하지 않는 대상
 
 
@@ -28,6 +34,12 @@ class ModuleInfo:
     params: list = field(default_factory=list)
     source: str = ""
     project: str = ""  # "" = 범용
+    stage: str = "check"
+    severity: str = "medium"  # probe 가 '취약'을 낼 때 기본 심각도
+
+    @property
+    def stage_label(self) -> str:
+        return STAGE_LABEL[self.stage]
 
     @property
     def first_tactic_order(self) -> int:
@@ -49,6 +61,10 @@ def _validate(meta: dict) -> None:
         raise ValueError(f"META 에 {', '.join(missing)} 가 없습니다")
     if meta["kind"] not in KINDS:
         raise ValueError(f"kind 는 {KINDS} 중 하나여야 합니다")
+    if meta.get("stage", "check") not in STAGES:
+        raise ValueError(f"stage 는 {STAGES} 중 하나여야 합니다")
+    if meta.get("severity", "medium") not in SEVERITIES:
+        raise ValueError(f"severity 는 {SEVERITIES} 중 하나여야 합니다")
     for a in meta["attack"]:
         if a.get("tactic") not in TACTIC_ORDER or not a.get("technique"):
             raise ValueError(f"attack 항목이 잘못됐습니다: {a}")
@@ -74,6 +90,7 @@ def discover(package_name: str = "modules", project: str = ""):
                 id=meta["id"], name=meta["name"], category=meta["category"],
                 kind=meta["kind"], attack=meta["attack"], description=meta["description"],
                 params=meta.get("params", []), run=mod.run, source=source, project=project,
+                stage=meta.get("stage", "check"), severity=meta.get("severity", "medium"),
             )
         except Exception as e:  # noqa: BLE001 — 깨진 모듈은 화면에 오류로 보여 준다
             errors.append((source, str(e)))
