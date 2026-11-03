@@ -24,7 +24,10 @@ def _pkg(root, name, files):
 def test_real_catalog_loads():
     projects, modules, errors = load_catalog(["localhost"])
     assert errors == []
-    assert {"http_security_headers", "tech_fingerprint", "sesacedu_exposed_paths"} <= set(modules)
+    assert {"http_security_headers", "tech_fingerprint", "sesacedu_exposed_paths",
+            "surface_crawl", "surface_import", "reflection_check"} <= set(modules)
+    assert modules["surface_crawl"].stage == "collect" and modules["reflection_check"].stage == "probe"
+    assert modules["http_security_headers"].stage == "check"
     assert "sesacedu" in projects and GENERAL in projects
     assert modules["sesacedu_exposed_paths"].project == "sesacedu"
     assert "robots_txt" not in modules  # _template.py 는 건너뜀

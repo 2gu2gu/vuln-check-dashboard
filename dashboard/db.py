@@ -33,7 +33,30 @@ CREATE TABLE IF NOT EXISTS findings (
     recommendation TEXT NOT NULL DEFAULT '',
     technique TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'open',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    last_seen TEXT
+);
+CREATE TABLE IF NOT EXISTS points (
+    id INTEGER PRIMARY KEY,
+    target_id INTEGER NOT NULL REFERENCES targets(id) ON DELETE CASCADE,
+    method TEXT NOT NULL,
+    url TEXT NOT NULL,
+    param TEXT NOT NULL DEFAULT '',
+    place TEXT NOT NULL DEFAULT 'path',
+    sample TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT '',
+    module_id TEXT NOT NULL DEFAULT '',
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    UNIQUE (target_id, method, url, param, place)
+);
+CREATE TABLE IF NOT EXISTS point_checks (
+    point_id INTEGER NOT NULL REFERENCES points(id) ON DELETE CASCADE,
+    module_id TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    evidence TEXT NOT NULL DEFAULT '',
+    checked_at TEXT NOT NULL,
+    PRIMARY KEY (point_id, module_id)
 );
 """
 
@@ -55,4 +78,10 @@ def close_db(_exc=None):
 
 
 def init_db():
-    get_db().executescript(SCHEMA)
+    db = get_db()
+    db.executescript(SCHEMA)
+    # 프로토타입 초기 DB 에 없던 열 추가
+    cols = {r["name"] for r in db.execute("PRAGMA table_info(findings)")}
+    if "last_seen" not in cols:
+        db.execute("ALTER TABLE findings ADD COLUMN last_seen TEXT")
+        db.commit()

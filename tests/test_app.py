@@ -14,7 +14,7 @@ def target_id(app, url):
 
 
 def test_pages_render_empty(client):
-    for path in ("/", "/targets", "/modules", "/attack", "/scenario", "/help"):
+    for path in ("/", "/targets", "/modules", "/surface", "/attack", "/scenario", "/help"):
         assert client.get(path).status_code == 200, path
 
 

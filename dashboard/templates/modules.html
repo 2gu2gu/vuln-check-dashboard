@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import empty %}
+{% from "_macros.html" import empty, param_input %}
 {% block title %}모듈{% endblock %}
 {% block content %}
 <h1>모듈</h1>
@@ -25,7 +25,8 @@
 {% for m in mods %}
   <article class="panel mod">
     <header>
-      <span class="kind kind-{{ m.kind }}">{{ "수동(읽기)" if m.kind == "passive" else "능동" }}</span>
+      <span><span class="stage stage-{{ m.stage }}">{{ m.stage_label }}</span>
+        <span class="kind kind-{{ m.kind }}">{{ "수동(읽기)" if m.kind == "passive" else "능동" }}</span></span>
       <span class="sub">{{ m.category }}</span>
     </header>
     <h3>{{ m.name }}</h3>
@@ -35,16 +36,16 @@
       <span class="tag" title="{{ a.name }}"><b>{{ tactic_name[a.tactic] }}</b> <span class="mono">{{ a.technique }}</span></span>
       {% endfor %}
     </div>
-    {% if target %}
+    {% if target and m.stage == "probe" %}
+    <div class="run"><a class="btn ghost" href="{{ url_for('dash.surface', target=target.id) }}">표면 탭에서 지점을 골라 실행 →</a></div>
+    {% elif target %}
     <form method="post" action="{{ url_for('dash.module_run', mid=m.id) }}" class="run">
       <input type="hidden" name="target_id" value="{{ target.id }}">
-      {% for p in m.params %}
-      <label>{{ p.label or p.name }}<input name="{{ p.name }}" value="{{ p.default }}" class="mono"></label>
-      {% endfor %}
+      {% for p in m.params %}{{ param_input(p) }}{% endfor %}
       {% if m.kind == "active" %}
       <label class="check"><input type="checkbox" name="confirm" value="yes"> 자체 환경({{ target.name }})임을 확인했습니다</label>
       {% endif %}
-      <button class="btn" type="submit">실행 → {{ target.name }}</button>
+      <button class="btn" type="submit">{{ "수집" if m.stage == "collect" else "실행" }} → {{ target.name }}</button>
     </form>
     {% endif %}
     <footer class="sub mono small">{{ m.source }}</footer>
