@@ -3,176 +3,260 @@
 {% block content %}
 <div class="help">
 <h1>사용법</h1>
-<p class="lead"><b>DAST</b>(동적 애플리케이션 보안 테스트) 도구입니다. 소스 없이 실행 중인 서비스에 요청을 보내 응답으로 판정합니다 —
-  ① 표면 수집 → ② 수집 지점에 패턴 주입 → ③ 응답 판정(취약·잠재·안전) → ④ 보고.<br>
-  지금 등록된 모듈 {{ counts.modules }}개(범용 {{ counts.general }} · 프로젝트 전용 {{ counts.specific }}), 프로젝트 팩 {{ counts.projects }}개.
-  자세한 설명은 저장소 <code>README.md</code>.</p>
+<p class="lead">실행 중인 서비스에 요청을 보내고 <b>응답을 보고</b> 취약점을 찾는 도구입니다(DAST).
+  소스 코드를 읽지 않습니다. 지금 모듈 {{ counts.modules }}개 · 프로젝트 팩 {{ counts.projects }}개.</p>
+
+<nav class="help-toc" aria-label="사용법 목차">
+  <a href="#start">처음 쓰는 순서</a>
+  <span class="toc-gap">화면</span>
+  <a href="#targets">대상</a><a href="#modules">모듈</a><a href="#surface">표면</a><a href="#tools">도구</a>
+  <a href="#results">결과</a><a href="#history">요청 기록</a><a href="#attack">ATT&CK</a><a href="#scenario">시나리오</a>
+  <span class="toc-gap">알아 둘 것</span>
+  <a href="#roles">역할</a><a href="#auth">로그인</a><a href="#limits">요청 한도</a><a href="#hostscope">어디까지 하나</a><a href="#safety">안전장치</a>
+  <span class="toc-gap">만들기</span>
+  <a href="#packs">범용과 팩</a><a href="#write">모듈 만들기</a><a href="#todo">아직 없는 것</a>
+</nav>
 
 <section id="start">
   <h2>처음 쓰는 순서</h2>
+  <p>크게 보면 네 단계입니다. <b>공격 지점을 모으고 → 패턴을 넣어 보고 → 응답으로 판정하고 → 보고서로 냅니다.</b></p>
   <ol class="steps">
-    <li><a href="{{ url_for('dash.targets') }}">대상</a> 탭에서 프로젝트를 고르고 주소를 등록합니다. 프로젝트 허용 범위 밖 주소는 등록되지 않습니다.</li>
-    <li>위쪽 <b>대상</b> 칸에서 점검할 대상을 고릅니다. 모든 탭이 이 대상 기준으로 바뀝니다.</li>
-    <li><a href="{{ url_for('dash.modules') }}">모듈</a> 탭에서 <span class="stage stage-collect">표면 수집</span> 모듈을 돌려 엔드포인트·파라미터를 모읍니다.</li>
-    <li><a href="{{ url_for('dash.surface') }}">표면</a> 탭에서 지점을 골라 <span class="stage stage-probe">지점 점검</span> 모듈을 돌립니다. 지점마다 취약 · 잠재 · 안전이 붙습니다.</li>
-    <li><span class="stage">대상 점검</span> 모듈(보안 헤더 등)은 모듈 탭에서 바로 <b>실행</b>합니다. 능동 모듈은 '자체 환경 확인'에 체크해야 실행됩니다.</li>
-    <li><a href="{{ url_for('dash.results') }}">결과</a> 탭에서 행을 눌러 근거·조치를 보고 상태(미확인·확인됨·조치됨·오탐)를 정합니다.</li>
-    <li>ATT&CK·시나리오 탭으로 흐름을 보고, 위쪽 <b>보고서 내려받기</b>로 Markdown 을 받습니다.</li>
+    <li><b><a href="{{ url_for('dash.targets') }}">대상</a> 등록</b> — 프로젝트와 역할을 고르고 주소를 넣습니다.
+      그다음 위쪽 <b>대상</b> 칸에서 고르면 모든 화면이 그 대상 기준이 됩니다.</li>
+    <li><b>표면 수집</b> — <a href="{{ url_for('dash.modules') }}">모듈</a> 탭에서
+      <span class="stage stage-collect">표면 수집</span> 모듈을 돌려 엔드포인트·파라미터를 모읍니다.</li>
+    <li><b>지점 점검</b> — <a href="{{ url_for('dash.surface') }}">표면</a> 탭에서 점검할 지점을 골라
+      <span class="stage stage-probe">지점 점검</span> 모듈을 돌립니다. 지점마다 취약·잠재·안전이 붙습니다.</li>
+    <li><b>확인과 보고</b> — <a href="{{ url_for('dash.results') }}">결과</a> 탭에서 근거를 보고 상태를 정한 뒤,
+      위쪽 <b>보고서 내려받기</b>로 받습니다.</li>
   </ol>
+  <p class="sub">보안 헤더처럼 지점이 필요 없는 점검은 <span class="stage">대상 점검</span> 모듈이라 모듈 탭에서 바로 돌립니다.
+    값을 직접 넣어 가며 보는 것은 <span class="stage stage-tool">도구</span> 탭입니다.</p>
 </section>
 
-<section id="results">
-  <h2>결과</h2>
-  <ul>
-    <li>요약 카드는 조치됨·오탐을 뺀 수입니다. 카드를 누르면 그 심각도만 봅니다.</li>
-    <li>심각도·모듈·상태 필터는 고르면 바로 적용됩니다. 검색칸은 지금 표 안에서만 찾습니다.</li>
-    <li>행을 누르거나 Enter 를 누르면 오른쪽에 상세가 열립니다. 상태는 여기서 바꿉니다.</li>
-    <li>같은 모듈이 같은 위치에서 같은 걸 다시 찾으면 줄이 늘지 않고 갱신됩니다. <b>조치됨</b>으로 바꾼 결과가 다시 나오면 <b>미확인</b>으로 돌아갑니다(재발).</li>
-    <li>경로가 다르면 다른 줄입니다. 보안 헤더를 세 경로에서 돌리면 같은 항목이 경로마다 하나씩 생깁니다.</li>
-  </ul>
-</section>
-
-<section id="tools">
-  <h2>도구</h2>
-  <ul>
-    <li>값을 넣고 바로 결과를 보는 모듈입니다. 표의 <b>이어서 보기</b>를 누르면 그 행의 값으로 다시 돌립니다 —
-      테이블 목록 → 그 테이블의 컬럼 → 그 컬럼의 값 순으로 눌러 들어갑니다.</li>
-    <li>한 번 읽은 값은 기억해 둬서 다시 묻지 않습니다. 같은 것을 또 돌리면 요청 0번으로 끝납니다.</li>
-    <li>찾은 것은 결과 탭에도 쌓이고, 쓴 요청·응답은 요청 기록에 남습니다.</li>
-    <li><b>경로 조작</b>은 읽을 경로를 한 줄에 하나씩 넣습니다. 인코딩을 고르면 그 형태로 바꿔 보냅니다
-      (새싹에듀에서는 <code>%25%32%65…</code> 형태가 통합니다 — ../ 를 지운 뒤에 디코딩하는 순서라서).</li>
-    <li><b>SQL 주입</b>은 ①주입되는지 확인(요청 2번)부터 하고, 된 다음에 ②테이블 → ③컬럼 → ④값으로 갑니다.
-      한 글자씩 묻는 방식이라 느립니다 — 이름 하나에 100번쯤 듭니다. 몇 개씩만 끊어 읽으세요.</li>
-  </ul>
-</section>
-
-<section id="roles">
-  <h2>역할 — 같은 프로젝트 안에 서버가 여럿일 때</h2>
-  <ul>
-    <li>한 프로젝트에 사용자 웹·관리자 웹·Wazuh 가 같이 있고, 터널로 열면 셋 다 <code>localhost</code> 로 보입니다.
-      <b>다른 것은 포트뿐</b>이라 호스트만으로는 구분되지 않습니다. 그래서 대상마다 <b>역할</b>을 골라 둡니다.</li>
-    <li>역할은 <b>포트까지 묶습니다</b>. 관리자 웹 대상으로 돌린 모듈은 <code>localhost:3000</code> 에만 나가고
-      <code>localhost:8443</code>(Wazuh)으로는 나가지 못합니다 — 등록할 때도, 실행 중에도 막습니다.</li>
-    <li>범위 한 줄에 포트를 안 적으면(<code>sesacedu.store</code>) 포트를 가리지 않고,
-      적으면(<code>localhost:3000</code>) 그 포트만 허용합니다.</li>
-    <li>모듈은 자기가 맞는 역할을 정해 둡니다. 안 맞는 대상에서는 보이지 않고, 억지로 돌려도 거부합니다
-      (예: 강의 목록 SQL 주입은 사용자 웹에만).</li>
-    <li>보고서에는 주소와 함께 역할이 찍힙니다. <code>localhost:3000</code> 만 적혀 있으면 나중에 어디였는지 모릅니다.</li>
-    <li>역할은 프로젝트 팩의 <code>PROJECT["roles"]</code> 에, 모듈 쪽은 <code>META["roles"]</code> 에 적습니다.</li>
-  </ul>
-</section>
-
-<section id="hostscope">
-  <h2>이 도구는 어디까지 하나</h2>
-  <p class="sub">웹 서비스 DAST 입니다. 거의 모든 모듈이 HTTP 로만 나갑니다. 그 밖의 것은 문을 따로 내고 검사를 달리합니다.</p>
-  <div class="table-wrap">
-  <table class="grid">
-    <thead><tr><th>나가는 길</th><th>범위 검사</th><th>예</th></tr></thead>
-    <tbody>
-      <tr><td>HTTP</td><td>대상 <b>역할</b>의 범위(호스트+포트)</td><td>보안 헤더 · 표면 수집 · SQL 주입 · 경로 조작</td></tr>
-      <tr><td>TCP 연결만</td><td>프로젝트 <b>호스트</b> 목록(포트는 안 따짐)</td><td>열린 포트 확인</td></tr>
-      <tr><td>안 나감</td><td>—</td><td>서버 명령 출력 읽기</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <ul>
-    <li><b>포트 확인</b>은 모르는 포트를 찾는 일이라 역할의 포트 제한을 쓸 수 없습니다. 호스트만 검사하고,
-      대신 적어 둔 포트에만 한 번에 30개까지 연결해 봅니다. 연결 요청만 보내고 바로 끊습니다.</li>
-    <li><code>ss -tlnp</code> 는 서버가 <b>무엇을 듣는지</b>, 포트 확인은 <b>밖에서 무엇이 닿는지</b> 를 봅니다.
-      둘을 견주면 보안 그룹이 제 일을 하는지 보입니다.</li>
-    <li><b>SSH 명령 실행은 넣지 않았습니다.</b> 넣으면 범위 검사가 닿지 않는 원격 실행 도구가 됩니다.
-      서버 설정 점검은 <b>서버 명령 출력 읽기</b>로 받습니다 — 요청을 보내지 않습니다.</li>
-    <li>패킷 캡처도 넣지 않았습니다. HTTPS 라 평문이 안 보이고, 요청 기록이 같은 일을 합니다.</li>
-    <li>비밀번호·키가 섞인 출력은 붙여 넣지 마세요. 붙여 넣은 글은 결과의 근거로 DB 에 남습니다.</li>
-  </ul>
-</section>
-
-<section id="surface">
-  <h2>표면</h2>
-  <ul>
-    <li>엔드포인트(회색 줄) 아래에 그 주소의 파라미터가 놓입니다. 위치는 <b>쿼리</b>(URL ?뒤) · <b>폼 본문</b>(POST) 입니다.</li>
-    <li>출처: <code>link</code> 페이지 링크, <code>form</code> 폼 입력칸, <code>js</code> 스크립트 안 /api 경로, <code>import</code> 붙여 넣은 목록.
-      다른 도구(Burp·katana 등)로 모은 URL 은 <b>URL 목록 가져오기</b> 모듈에 붙여 넣으면 됩니다.</li>
-    <li>판정은 지점 점검 모듈마다 따로 붙습니다. 마우스를 올리면 근거(보낸 요청·응답 발췌)가 보입니다.
-      <span class="verdict v-vuln">취약</span> 넣은 값이 그대로 돌아옴(후보) ·
-      <span class="verdict v-potential">잠재</span> 돌아오긴 하는데 바뀜(필터 있음, 다른 패턴으로 더 볼 곳) ·
-      <span class="verdict v-safe">안전</span> 돌아오지 않음.</li>
-    <li><b>발견 값</b>은 수집할 때 그 칸에 들어 있던 값입니다(링크의 <code>?target=1</code> 의 1, 숨은 입력칸의 값, 체크박스 value 의 yes 등).
-      한 파라미터를 점검할 때 같은 요청의 나머지 파라미터를 이 값으로 채워 정상 요청 모양을 유지합니다. 비밀번호·토큰처럼 보이는 이름은 값을 저장하지 않습니다.</li>
-    <li><b>점검한 뒤</b>: 취약은 결과 탭에 쌓이고(같은 건 갱신), 잠재는 표면 탭에만 남아 다른 패턴으로 더 볼 곳으로 표시됩니다. 판정 칩을 누르면 그 판정에 쓴 요청·응답 원문이 열립니다.</li>
-    <li><b>POST 지점은 기본으로 보내지 않습니다.</b> 폼을 실제로 제출하면 글·데이터가 저장될 수 있어서, 모듈 입력칸에 POST 를 넣을 때는 테스트 계정·테스트 행에서만 씁니다.</li>
-    <li><b>수집 지점 비우기</b>는 지점과 판정만 지웁니다. 결과 탭의 결과는 남습니다.</li>
-  </ul>
-</section>
+<h2 class="help-group">화면</h2>
 
 <section id="targets">
   <h2>대상</h2>
-  <ul>
-    <li>대상은 프로젝트 하나에 묶입니다. 프로젝트마다 허용 범위가 위에 보입니다.</li>
-    <li>대상을 지우면 그 대상의 실행 기록과 결과도 함께 지워집니다.</li>
-  </ul>
+  <p>점검할 서버 하나가 대상 하나입니다. 프로젝트와 역할에 묶입니다.</p>
+  <dl class="facts">
+    <dt>프로젝트</dt><dd>점검 대상이 되는 서비스 한 벌. 허용 범위(어디까지 요청해도 되는지)를 갖습니다.</dd>
+    <dt>역할</dt><dd>그 서비스 안에서 이 서버가 무엇인지(사용자 웹·관리자 웹·Wazuh). 아래 <a href="#roles">역할</a> 참고.</dd>
+    <dt>인증 헤더</dt><dd>로그인이 필요한 곳을 점검할 때 넣습니다. 아래 <a href="#auth">로그인</a> 참고.</dd>
+    <dt>지우면</dt><dd>그 대상의 실행 기록·결과·수집 지점이 같이 지워집니다.</dd>
+  </dl>
 </section>
 
 <section id="modules">
   <h2>모듈</h2>
-  <ul>
-    <li><b>범용 모듈</b>은 모든 대상에, <b>프로젝트 전용</b>은 그 프로젝트 대상에만 보입니다.</li>
-    <li>태그는 그 모듈이 다루는 ATT&CK 전술·기법입니다. <span class="kind kind-passive">수동(읽기)</span> 은 응답만 읽고, <span class="kind kind-active">능동</span> 은 요청을 더 보내 실행 전 확인이 필요합니다.</li>
-    <li>아래 <b>최근 실행</b>에 15개까지 남고, 실패하면 이유도 보입니다. 불러오지 못한 모듈은 맨 위 상자에 뜹니다.</li>
-  </ul>
+  <p>점검 하나가 모듈 파일 하나입니다. 폴더에 넣으면 자동으로 등록됩니다.</p>
+  <dl class="facts">
+    <dt>범용 / 전용</dt><dd><b>범용</b>은 모든 대상에, <b>프로젝트 전용</b>은 그 프로젝트 대상에만 보입니다.</dd>
+    <dt><span class="kind kind-passive">수동(읽기)</span></dt><dd>응답을 읽기만 합니다.</dd>
+    <dt><span class="kind kind-active">능동</span></dt><dd>요청을 더 보냅니다. 실행 전 <b>자체 환경 확인</b>에 체크해야 돌아갑니다.</dd>
+    <dt>태그</dt><dd>그 모듈이 다루는 ATT&CK 전술·기법.</dd>
+    <dt>최근 실행</dt><dd>15개까지 남습니다. 실패하면 이유가, 보낸 요청이 있으면 <b>요청 N개 보기</b>가 붙습니다.</dd>
+    <dt>안 보이는 모듈</dt><dd>다른 프로젝트 전용이거나 다른 역할용입니다. 맨 윗줄에 몇 개가 숨었는지 나옵니다.</dd>
+  </dl>
 </section>
 
-<section id="attack">
-  <h2>ATT&CK</h2>
-  <ul>
-    <li>14개 전술이 공격 진행 순서로 놓입니다. 칸 하나가 모듈이 다루는 기법 하나입니다.</li>
-    <li>주황 칸은 지금 대상에서 발견된 기법입니다(오탐 제외). 칸을 누르면 MITRE 설명 페이지가 열립니다.</li>
-  </ul>
+<section id="surface">
+  <h2>표면</h2>
+  <p>수집 모듈이 모아 둔 <b>공격 지점</b> 목록입니다. 여기서 골라 지점 점검 모듈을 돌립니다.</p>
+  <dl class="facts">
+    <dt>묶음</dt><dd>회색 줄이 엔드포인트, 그 아래가 그 주소의 파라미터입니다.</dd>
+    <dt>위치</dt><dd><b>쿼리</b>(URL 의 ? 뒤) 또는 <b>폼 본문</b>(POST).</dd>
+    <dt>발견 값</dt><dd>수집할 때 그 칸에 있던 값. 한 파라미터를 점검할 때 나머지 칸을 이 값으로 채워
+      정상 요청 모양을 유지합니다. 비밀번호·토큰처럼 보이는 이름은 값을 저장하지 않습니다.</dd>
+    <dt>출처</dt><dd><code>link</code> 페이지 링크 · <code>form</code> 폼 입력칸 ·
+      <code>js</code> 스크립트 안 API 경로 · <code>import</code> 붙여 넣은 목록.
+      Burp·katana 로 모은 URL 은 <b>URL 목록 가져오기</b> 모듈에 붙여 넣으면 됩니다.</dd>
+  </dl>
+  <h3>판정 세 가지</h3>
+  <div class="table-wrap">
+  <table class="grid">
+    <thead><tr><th>판정</th><th>응답이 이랬다</th><th>뜻</th></tr></thead>
+    <tbody>
+      <tr><td>{% from "_macros.html" import verdict %}{{ verdict("vuln") }}</td>
+          <td>넣은 값이 글자 그대로 돌아옴</td><td>후보. 결과 탭에도 쌓입니다</td></tr>
+      <tr><td>{{ verdict("potential") }}</td>
+          <td>돌아오긴 하는데 바뀜(인코딩됨)</td><td>필터가 있음. 다른 패턴으로 더 볼 곳</td></tr>
+      <tr><td>{{ verdict("safe") }}</td>
+          <td>넣은 값이 안 보임</td><td>반사되지 않음</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="callout"><b>취약은 후보지 증명이 아닙니다.</b> 특수문자가 살아 돌아왔다는 것까지만 봅니다.
+    스크립트가 실제로 실행되는지는 브라우저로 따로 확인해야 합니다.</p>
+  <dl class="facts">
+    <dt>판정 칩</dt><dd>누르면 그 판정에 쓴 요청·응답 원문이 열립니다.</dd>
+    <dt>POST 지점</dt><dd><b>기본으로 보내지 않습니다.</b> 폼을 실제로 제출하면 글·데이터가 저장될 수 있어서,
+      모듈 입력칸에 POST 를 넣을 때는 테스트 계정·테스트 행에서만 씁니다.</dd>
+    <dt>지점 비우기</dt><dd>지점과 판정만 지웁니다. 결과 탭의 결과는 남습니다.</dd>
+  </dl>
 </section>
 
-<section id="scenario">
-  <h2>시나리오</h2>
-  <ul>
-    <li>미확인·확인됨 결과를 전술 순서로 묶은 초안입니다. 순서만 잡아 주고, 무엇이 무엇으로 이어지는지는 팀이 판단합니다.</li>
-    <li>보고서는 오탐을 뺀 결과를 심각도 순으로 담습니다.</li>
-  </ul>
+<section id="tools">
+  <h2>도구</h2>
+  <p>값을 넣고 <b>바로 결과를 보는</b> 모듈입니다. 표의 <b>이어서 보기</b>를 누르면 그 행의 값으로 다시 돌립니다 —
+    테이블 목록 → 그 테이블의 컬럼 → 그 컬럼의 값 순으로 눌러 들어갑니다.</p>
+  <div class="table-wrap">
+  <table class="grid">
+    <thead><tr><th>도구</th><th>넣는 값</th><th>주의</th></tr></thead>
+    <tbody>
+      <tr><td>자료 다운로드 경로 조작</td>
+          <td>읽을 경로(한 줄에 하나) · 인코딩 · 올라갈 단계</td>
+          <td>여러 줄은 응답 코드만, 한 줄이면 내용까지. 파일 내용은 화면에만 남습니다</td></tr>
+      <tr><td>강의 목록 SQL 주입</td>
+          <td>①주입 확인 → ②테이블 → ③컬럼 → ④값 · DB 제품</td>
+          <td>한 글자씩 묻습니다. 이름 하나에 100번쯤 — 몇 개씩 끊어 읽으세요. SELECT 만 나갑니다</td></tr>
+      <tr><td>서버 명령 출력 읽기</td>
+          <td><code>sudo --version</code> · <code>ss -tlnp</code> 출력</td>
+          <td>요청을 보내지 않습니다. 비밀번호·키가 섞인 출력은 넣지 마세요</td></tr>
+      <tr><td>열린 포트 확인</td>
+          <td>확인할 포트 · 열려 있어도 되는 포트</td>
+          <td>적어 둔 포트에만, 한 번에 30개까지. 연결만 하고 끊습니다</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <dl class="facts">
+    <dt>기억해 둠</dt><dd>한 번 읽은 값은 다시 묻지 않습니다. 같은 것을 또 돌리면 <b>요청 0번</b>으로 끝납니다.</dd>
+    <dt>인코딩</dt><dd>새싹에듀 자료 다운로드는 <code>../</code> 를 지운 <b>뒤에</b> 디코딩합니다.
+      그래서 한 번 더 감싼 <code>%25%32%65…</code> 형태가 지우기를 지나쳐 <code>../</code> 로 되살아납니다.</dd>
+    <dt>남는 곳</dt><dd>찾은 것은 결과 탭에, 보낸 요청·받은 응답은 요청 기록에.</dd>
+  </dl>
+</section>
+
+<section id="results">
+  <h2>결과</h2>
+  <p>찾은 것이 쌓이는 곳입니다. 여기서 확인하고 상태를 정합니다.</p>
+  <dl class="facts">
+    <dt>요약 카드</dt><dd>조치됨·오탐을 뺀 수입니다. 누르면 그 심각도만 봅니다.</dd>
+    <dt>필터·검색</dt><dd>심각도·모듈·상태는 고르면 바로 적용됩니다. 검색칸은 지금 보이는 표 안에서만 찾습니다.</dd>
+    <dt>상세</dt><dd>행을 누르거나 Enter 를 누르면 오른쪽에 열립니다. 근거·조치를 보고 상태를 바꿉니다.</dd>
+    <dt>상태</dt><dd>미확인 → 확인됨 → 조치됨. 아니라고 판단하면 오탐.</dd>
+    <dt>중복</dt><dd>같은 모듈이 같은 위치에서 같은 걸 또 찾으면 줄이 늘지 않고 갱신됩니다.
+      <b>경로가 다르면 다른 줄</b>입니다 — 보안 헤더를 세 경로에서 돌리면 경로마다 하나씩 생깁니다.</dd>
+    <dt>재발</dt><dd><b>조치됨</b>으로 바꾼 것이 다시 나오면 <b>미확인</b>으로 되돌아갑니다. 조치판 점검에 씁니다.</dd>
+  </dl>
 </section>
 
 <section id="history">
   <h2>요청 기록</h2>
-  <ul>
-    <li>모듈이 보낸 모든 요청과 받은 응답이 남습니다(패킷이 아니라 HTTP 요청·응답 단위). 줄을 누르면 원문, 노란 표시는 점검 표식입니다.</li>
-    <li>모듈 탭 '최근 실행'의 <b>요청 N개 보기</b>, 결과 상세의 <b>보낸 요청 · 받은 응답 보기</b>, 표면 판정 칩에서 바로 들어옵니다.</li>
-    <li>Cookie · Authorization 같은 인증 값과 응답의 Set-Cookie 값은 *** 로 남깁니다. <code>.env</code> 처럼 비밀이 섞일 응답은 본문을 남기지 않습니다.</li>
-    <li>보고서(Markdown·JSON)에도 결과마다 요청 원문과 응답 앞부분이 들어갑니다.</li>
-  </ul>
+  <p>모듈이 <b>보낸 요청과 받은 응답</b>이 그대로 남습니다. 판정이 맞는지 사람이 확인하는 곳입니다.</p>
+  <dl class="facts">
+    <dt>단위</dt><dd>패킷이 아니라 HTTP 요청·응답 하나씩입니다(포트 확인은 <code>TCP</code> 로 남습니다).</dd>
+    <dt>원문</dt><dd>줄을 누르면 열립니다. <mark>노란 표시</mark>는 점검 모듈이 넣은 표식이라,
+      응답에서 그 표식이 어떻게 돌아왔는지 보면 판정 이유가 바로 보입니다.</dd>
+    <dt>들어오는 길</dt><dd>모듈 탭의 <b>요청 N개 보기</b> · 결과 상세의 <b>보낸 요청·받은 응답 보기</b> · 표면의 판정 칩.</dd>
+    <dt>가리는 것</dt><dd>Cookie·Authorization 과 응답의 Set-Cookie 값은 <code>***</code> 로 남깁니다.
+      <code>.env</code> 처럼 비밀이 섞일 응답은 본문을 저장하지 않습니다.</dd>
+    <dt>보고서</dt><dd>Markdown·JSON 에도 결과마다 요청 원문과 응답 앞부분이 들어갑니다.</dd>
+  </dl>
+</section>
+
+<section id="attack">
+  <h2>ATT&CK</h2>
+  <p>찾은 것을 공격 단계에 놓아 보는 화면입니다.</p>
+  <dl class="facts">
+    <dt>가로</dt><dd>14개 전술이 공격 진행 순서대로.</dd>
+    <dt>칸</dt><dd>모듈이 다루는 기법 하나. 누르면 MITRE 설명이 열립니다.</dd>
+    <dt>주황 칸</dt><dd>지금 대상에서 실제로 발견된 기법(오탐 제외).</dd>
+  </dl>
+</section>
+
+<section id="scenario">
+  <h2>시나리오</h2>
+  <p>미확인·확인됨 결과를 전술 순서로 묶은 <b>초안</b>입니다.
+    순서만 잡아 주고, 무엇이 무엇으로 이어지는지는 팀이 판단합니다.</p>
+</section>
+
+<h2 class="help-group">알아 둘 것</h2>
+
+<section id="roles">
+  <h2>역할 — 서버가 여럿일 때</h2>
+  <p>한 프로젝트에 사용자 웹·관리자 웹·Wazuh 가 같이 있습니다. 터널로 열면 셋 다 <code>localhost</code> 라
+    <b>다른 것은 포트뿐</b>입니다. 그래서 대상마다 역할을 골라 둡니다.</p>
+  <dl class="facts">
+    <dt>포트를 묶음</dt><dd>관리자 웹 대상으로 돌린 모듈은 <code>localhost:3000</code> 에만 나가고
+      <code>localhost:8443</code>(Wazuh)으로는 못 나갑니다. 등록할 때도, 실행 중에도 막습니다.</dd>
+    <dt>범위 적는 법</dt><dd>포트를 안 적으면(<code>sesacedu.store</code>) 포트를 안 가리고,
+      적으면(<code>localhost:3000</code>) 그 포트만 허용합니다.</dd>
+    <dt>모듈 쪽</dt><dd>모듈도 맞는 역할을 정해 둡니다. 안 맞는 대상에서는 보이지 않고 억지로 돌려도 거부합니다.</dd>
+    <dt>보고서</dt><dd>주소와 함께 역할이 찍힙니다 — <code>localhost:3000</code> 만 남으면 나중에 어디였는지 모릅니다.</dd>
+    <dt>적는 곳</dt><dd>프로젝트 팩의 <code>PROJECT["roles"]</code>, 모듈의 <code>META["roles"]</code>.</dd>
+  </dl>
 </section>
 
 <section id="auth">
   <h2>로그인한 상태로 점검</h2>
-  <ul>
-    <li>대상 탭의 <b>인증 헤더</b>에 <code>Cookie: ...</code> 나 <code>Authorization: Bearer ...</code> 를 넣으면 그 대상 주소로 가는 요청에만 붙습니다. 다른 주소로는 나가지 않습니다.</li>
-    <li>값은 이 PC 의 <code>instance/</code> DB 에만 있고 화면·기록에는 이름만 보입니다. 테스트 계정 토큰만 넣습니다.</li>
-  </ul>
+  <p>대상 탭의 <b>인증 헤더</b>에 <code>Cookie: …</code> 나 <code>Authorization: Bearer …</code> 를 한 줄에 하나씩 넣습니다.</p>
+  <dl class="facts">
+    <dt>붙는 곳</dt><dd>그 대상 주소로 가는 요청에만. 다른 주소로는 나가지 않습니다.</dd>
+    <dt>보관</dt><dd>이 PC 의 <code>instance/</code> DB 에만 있고, 화면·기록에는 이름만 보입니다.</dd>
+    <dt>주의</dt><dd>테스트 계정 토큰만 넣습니다.</dd>
+  </dl>
 </section>
 
 <section id="limits">
   <h2>요청 간격 · 한도</h2>
-  <ul>
-    <li>실행 하나에서 요청 사이 {{ config.DELAY_MS }}ms 를 쉬고, {{ "{:,}".format(config.MAX_REQUESTS) }}개를 넘으면 멈춥니다. 공유 서버를 덜 괴롭히기 위해서입니다.</li>
-    <li>바꾸려면 실행 전에 환경변수 <code>DASH_DELAY_MS</code> · <code>DASH_MAX_REQUESTS</code> 를 줍니다.</li>
-    <li>대시보드 자신(127.0.0.1:{{ config.SELF_PORT }})은 대상이 될 수 없습니다. 자기 폼을 점검하면 실행·삭제가 실제로 일어나기 때문입니다. 시험은 <b>연습용 대상</b>(<code>python demo_target.py</code> → 127.0.0.1:5051)으로 합니다.</li>
-  </ul>
+  <p>공유 서버를 덜 괴롭히려고 속도를 묶어 뒀습니다.</p>
+  <dl class="facts">
+    <dt>간격</dt><dd>요청 사이 {{ config.DELAY_MS }}ms 를 쉽니다.</dd>
+    <dt>한도</dt><dd>실행 하나가 {{ "{:,}".format(config.MAX_REQUESTS) }}개를 넘으면 멈춥니다.</dd>
+    <dt>바꾸려면</dt><dd>실행 전에 환경변수 <code>DASH_DELAY_MS</code> · <code>DASH_MAX_REQUESTS</code>.</dd>
+    <dt>자기 점검 금지</dt><dd>대시보드 자신(127.0.0.1:{{ config.SELF_PORT }})은 대상이 될 수 없습니다 —
+      자기 폼을 점검하면 실행·삭제가 진짜로 일어납니다. 시험은 <b>연습용 대상</b>(<code>python demo_target.py</code> → 5051)으로.</dd>
+  </dl>
 </section>
 
+<section id="hostscope">
+  <h2>어디까지 하나</h2>
+  <p><b>웹 서비스 DAST 입니다.</b> 거의 모든 모듈이 HTTP 로만 나갑니다. 그 밖의 것은 문을 따로 내고 검사를 달리합니다.</p>
+  <div class="table-wrap">
+  <table class="grid">
+    <thead><tr><th>나가는 길</th><th>범위 검사</th><th>모듈</th></tr></thead>
+    <tbody>
+      <tr><td>HTTP</td><td>대상 <b>역할</b>의 범위 — 호스트 + <b>포트</b></td>
+          <td>보안 헤더 · 표면 수집 · SQL 주입 · 경로 조작</td></tr>
+      <tr><td>TCP 연결만</td><td>프로젝트 <b>호스트</b> 목록 — 포트는 안 따짐</td><td>열린 포트 확인</td></tr>
+      <tr><td>안 나감</td><td>—</td><td>서버 명령 출력 읽기</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <dl class="facts">
+    <dt>왜 TCP 는 따로</dt><dd>포트 확인은 <b>모르는 포트를 찾는 일</b>이라 역할의 포트 제한을 쓸 수 없습니다.
+      호스트만 검사하고, 대신 적어 둔 포트에만 한 번에 30개까지 연결해 봅니다.</dd>
+    <dt>둘을 견주면</dt><dd><code>ss -tlnp</code> 는 서버가 <b>무엇을 듣는지</b>,
+      포트 확인은 <b>밖에서 무엇이 닿는지</b>. 차이에서 보안 그룹이 제 일을 하는지 보입니다.</dd>
+    <dt>SSH 실행 없음</dt><dd>넣으면 범위 검사가 닿지 않는 원격 실행 도구가 됩니다.
+      서버 설정은 출력을 붙여 넣어 받습니다.</dd>
+    <dt>패킷 캡처 없음</dt><dd>HTTPS 라 평문이 안 보이고, 요청 기록이 같은 일을 합니다.</dd>
+  </dl>
+</section>
+
+<section id="safety">
+  <h2>안전장치</h2>
+  <dl class="facts">
+    <dt>대시보드</dt><dd>127.0.0.1 에서만 열립니다. 다른 이름(Host)으로 온 요청과
+      다른 사이트가 몰래 보낸 POST(CSRF)는 거부합니다.</dd>
+    <dt>나가는 요청</dt><dd>허용 범위 밖이면 <b>보내기 전에</b> 막습니다. 리다이렉트는 따라가지 않습니다.</dd>
+    <dt>기록</dt><dd>인증 값·비밀이 섞일 응답 본문은 남기지 않습니다.</dd>
+    <dt>고장</dt><dd>모듈 하나가 깨져도 나머지는 뜨고, 실패도 실행 기록에 남습니다.</dd>
+  </dl>
+</section>
+
+<h2 class="help-group">만들기</h2>
+
 <section id="packs">
-  <h2>범용 모듈과 프로젝트 팩</h2>
+  <h2>범용과 프로젝트 팩</h2>
+  <p>앱 본체는 특정 서비스를 모릅니다. 서비스를 아는 점검은 팩으로 갈아 끼웁니다.</p>
   <div class="table-wrap">
   <table class="grid">
     <thead><tr><th>구분</th><th>위치</th><th>넣는 것</th></tr></thead>
     <tbody>
       <tr><td>범용</td><td class="mono">modules/</td><td>어느 서비스에나 쓰는 점검. 특정 주소·경로·계정은 넣지 않음</td></tr>
-      <tr><td>프로젝트 팩</td><td class="mono">projects/&lt;id&gt;/__init__.py</td><td>PROJECT = 이름 · 허용 범위(scope) · 설명</td></tr>
+      <tr><td>프로젝트 팩</td><td class="mono">projects/&lt;id&gt;/__init__.py</td><td>이름 · 허용 범위 · 역할</td></tr>
       <tr><td>전용 모듈</td><td class="mono">projects/&lt;id&gt;/modules/</td><td>그 서비스 구성을 아는 점검</td></tr>
     </tbody>
   </table>
@@ -182,59 +266,63 @@
 
 <section id="write">
   <h2>모듈 만들기</h2>
+  <p>어떤 모양으로 만들지는 <b>단계</b>가 정합니다.</p>
   <div class="table-wrap">
   <table class="grid">
-    <thead><tr><th>단계 (META stage)</th><th>run 모양</th><th>예</th></tr></thead>
+    <thead><tr><th>단계 (<code>META["stage"]</code>)</th><th>run 모양</th><th>본보기</th></tr></thead>
     <tbody>
-      <tr><td><span class="stage stage-collect">표면 수집</span> <code>collect</code></td><td class="mono">run(target, params) → [Point]</td><td class="mono">modules/surface_crawl.py</td></tr>
-      <tr><td><span class="stage stage-probe">지점 점검</span> <code>probe</code></td><td class="mono">run(target, points, params) → [Check]</td><td class="mono">modules/reflection_check.py</td></tr>
-      <tr><td><span class="stage">대상 점검</span> <code>check</code>(기본)</td><td class="mono">run(target, params) → [Finding]</td><td class="mono">modules/_template.py</td></tr>
+      <tr><td><span class="stage stage-collect">표면 수집</span> <code>collect</code></td>
+          <td class="mono">run(target, params) → [Point]</td><td class="mono">modules/surface_crawl.py</td></tr>
+      <tr><td><span class="stage stage-probe">지점 점검</span> <code>probe</code></td>
+          <td class="mono">run(target, points, params) → [Check]</td><td class="mono">modules/reflection_check.py</td></tr>
+      <tr><td><span class="stage">대상 점검</span> <code>check</code> (기본)</td>
+          <td class="mono">run(target, params) → [Finding]</td><td class="mono">modules/_template.py</td></tr>
+      <tr><td><span class="stage stage-tool">도구</span> <code>tool</code></td>
+          <td class="mono">run(target, params) → ToolResult</td><td class="mono">modules/host_report.py</td></tr>
     </tbody>
   </table>
   </div>
-  <p>SQLi·XSS·경로 조작처럼 <b>유형별 점검은 지점 점검(probe)으로</b> 만들면 표면 수집 결과를 그대로 받아 씁니다.
-    값 넣어 보내기는 <code>probe.send(point, 값)</code>, 반사 판정은 <code>probe.judge_reflection()</code> 을 씁니다. 판정 기준(패턴)만 바꾸면 됩니다.</p>
-  <ol class="steps" style="margin-top:10px">
-    <li><code>modules/_template.py</code> 를 복사해 범용이면 <code>modules/</code>, 전용이면 <code>projects/&lt;id&gt;/modules/</code> 에 둡니다. 파일 이름이 <code>_</code> 로 시작하면 등록되지 않습니다.</li>
-    <li><code>META</code> 를 채우고 <code>run(target, params)</code> 에서 <code>Finding</code> 목록을 돌려줍니다.</li>
-    <li>대시보드를 다시 실행하면 모듈 탭에 나타납니다. 오류가 있으면 모듈 탭 맨 위에 이유가 뜹니다.</li>
+  <p class="callout">SQLi·XSS·경로 조작처럼 <b>유형별 점검은 지점 점검(<code>probe</code>)으로</b> 만들면
+    표면 수집 결과를 그대로 받아 씁니다. 값 넣어 보내기는 <code>probe.send()</code>,
+    반사 판정은 <code>probe.judge_reflection()</code> — 판정 기준(패턴)만 바꾸면 됩니다.</p>
+  <ol class="steps">
+    <li><code>modules/_template.py</code> 를 복사해 범용이면 <code>modules/</code>,
+      전용이면 <code>projects/&lt;id&gt;/modules/</code> 에 둡니다. 이름이 <code>_</code> 로 시작하면 등록되지 않습니다.</li>
+    <li><code>META</code> 를 채우고 <code>run()</code> 에서 단계에 맞는 값을 돌려줍니다.</li>
+    <li>대시보드를 다시 실행하면 나타납니다. 잘못 썼으면 모듈 탭 맨 위에 이유가 뜹니다.</li>
   </ol>
 <pre>META = {
-    "id": "xss_reflect",            # 전체에서 하나
+    "id": "xss_reflect",            # 전체에서 하나뿐이어야 한다
     "name": "XSS 반사 확인",
     "category": "입력 검증",
-    "kind": "active",               # passive / active
+    "stage": "probe",               # collect / check / probe / tool
+    "kind": "active",               # passive(읽기만) / active(실행 전 확인 체크)
+    "roles": ["user_web"],          # 비우면 어느 역할에나 보인다
     "attack": [{"tactic": "TA0001", "technique": "T1190", "name": "..."}],
     "description": "한 줄 설명",
     "params": [{"name": "path", "label": "경로", "default": "/"}],
 }
 
-def run(target, params):
-    r = fetch(target.url + params["path"])   # 요청은 fetch 로만
-    return [Finding(title="...", severity="medium", location=r.url,
-                    evidence="요청·응답 근거", recommendation="조치")]</pre>
-  <ul>
-    <li>요청은 <code>core.fetch</code> 로만 보냅니다. 범위 검사와 리다이렉트 차단이 여기서 걸립니다. 기존 도구를 감싸면 대상 주소를 <code>scope.ensure_in_scope(url)</code> 로 먼저 검사합니다.</li>
-    <li>근거에 쿠키 값·토큰·<code>.env</code> 내용 같은 비밀값을 남기지 않습니다.</li>
-    <li>심각도는 critical · high · medium · low · info 중 하나입니다.</li>
-  </ul>
-</section>
-
-<section id="safety">
-  <h2>안전장치</h2>
-  <ul>
-    <li>대시보드는 127.0.0.1 에서만 열립니다. 다른 이름(Host)으로 들어온 요청과, 다른 사이트가 몰래 보낸 POST(CSRF)는 거부합니다.</li>
-    <li>모듈 실행 중 요청은 그 대상 프로젝트의 허용 범위 밖으로 나가기 전에 막힙니다.</li>
-    <li>모듈 하나가 깨져도 나머지는 뜨고, 실패도 실행 기록에 남습니다.</li>
-  </ul>
+def run(target, points, params):
+    r = probe.send(points[0], "값")          # 요청은 fetch·probe.send 로만
+    verdict, where, excerpt = probe.judge_reflection(r.body, 표식, 보낸값)
+    return [Check(point=points[0], verdict=verdict, evidence="...", response=r)]</pre>
+  <dl class="facts">
+    <dt>요청</dt><dd><code>core.fetch</code> 로만 보냅니다 — 범위 검사·리다이렉트 차단이 여기 걸립니다.
+      기존 도구를 감싸면 <code>scope.ensure_in_scope(url)</code> 로 먼저 검사하세요.</dd>
+    <dt>근거</dt><dd>쿠키 값·토큰·<code>.env</code> 내용 같은 비밀값은 남기지 않습니다.
+      <code>response=r</code> 를 넣으면 결과에서 요청·응답 원문으로 이어집니다.</dd>
+    <dt>심각도</dt><dd>critical · high · medium · low · info 중 하나.</dd>
+    <dt>입력칸</dt><dd><code>params</code> 의 <code>type</code> 은 text · int · select · textarea.</dd>
+  </dl>
 </section>
 
 <section id="todo">
   <h2>아직 없는 것</h2>
   <ul>
-    <li>유형별 페이로드 모듈(SQLi·XSS·경로 조작 등)과 오류·시간·길이 차이 판정기 — 담당 팀원이 지점 점검 틀로 추가.</li>
-    <li>오래 걸리는 실행을 뒤에서 돌리고 진행률 보기, 실행 간 비교, 로그인 토큰 자동 갱신.</li>
-    <li>타임라인, CVE 탭, Word/PDF 보고서.</li>
+    <li>유형별 페이로드 모듈(SQLi·XSS·경로 조작)과 오류·시간·길이 차이 판정기 — 담당 팀원이 지점 점검 틀로 추가.</li>
+    <li>오래 걸리는 실행을 뒤에서 돌리기·진행률 보기, 실행 간 비교, 로그인 토큰 자동 갱신.</li>
+    <li>타임라인, CVE 탭, Word/PDF 보고서, 설치 파일.</li>
   </ul>
 </section>
 </div>
