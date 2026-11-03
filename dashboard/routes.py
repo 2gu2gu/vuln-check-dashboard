@@ -247,6 +247,15 @@ def scenario():
     return render_template("scenario.html", steps=steps, target=target, targets=targets)
 
 
+@bp.get("/help", endpoint="help")
+def help_page():
+    target, targets = _current_target()
+    mods = _modules().values()
+    counts = {"modules": len(mods), "general": sum(1 for m in mods if not m.project),
+              "specific": sum(1 for m in mods if m.project), "projects": len(_projects()) - 1}
+    return render_template("help.html", counts=counts, target=target, targets=targets)
+
+
 @bp.get("/report/<int:tid>.md")
 def report(tid):
     db = get_db()

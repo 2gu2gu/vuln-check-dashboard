@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}사용법{% endblock %}
+{% block content %}
+<div class="help">
+<h1>사용법</h1>
+<p class="lead">지금 등록된 모듈 {{ counts.modules }}개(범용 {{ counts.general }} · 프로젝트 전용 {{ counts.specific }}), 프로젝트 팩 {{ counts.projects }}개.
+  자세한 설명은 저장소 <code>README.md</code>.</p>
+
+<section id="start">
+  <h2>처음 쓰는 순서</h2>
+  <ol class="steps">
+    <li><a href="{{ url_for('dash.targets') }}">대상</a> 탭에서 프로젝트를 고르고 주소를 등록합니다. 프로젝트 허용 범위 밖 주소는 등록되지 않습니다.</li>
+    <li>위쪽 <b>대상</b> 칸에서 점검할 대상을 고릅니다. 모든 탭이 이 대상 기준으로 바뀝니다.</li>
+    <li><a href="{{ url_for('dash.modules') }}">모듈</a> 탭에서 <b>실행</b>을 누릅니다. 능동 모듈은 '자체 환경 확인'에 체크해야 실행됩니다.</li>
+    <li><a href="{{ url_for('dash.results') }}">결과</a> 탭에서 행을 눌러 근거·조치를 보고 상태(미확인·확인됨·조치됨·오탐)를 정합니다.</li>
+    <li>ATT&CK·시나리오 탭으로 흐름을 보고, 위쪽 <b>보고서 내려받기</b>로 Markdown 을 받습니다.</li>
+  </ol>
+</section>
+
+<section id="results">
+  <h2>결과</h2>
+  <ul>
+    <li>요약 카드는 조치됨·오탐을 뺀 수입니다. 카드를 누르면 그 심각도만 봅니다.</li>
+    <li>심각도·모듈·상태 필터는 고르면 바로 적용됩니다. 검색칸은 지금 표 안에서만 찾습니다.</li>
+    <li>행을 누르거나 Enter 를 누르면 오른쪽에 상세가 열립니다. 상태는 여기서 바꿉니다.</li>
+  </ul>
+</section>
+
+<section id="targets">
+  <h2>대상</h2>
+  <ul>
+    <li>대상은 프로젝트 하나에 묶입니다. 프로젝트마다 허용 범위가 위에 보입니다.</li>
+    <li>대상을 지우면 그 대상의 실행 기록과 결과도 함께 지워집니다.</li>
+  </ul>
+</section>
+
+<section id="modules">
+  <h2>모듈</h2>
+  <ul>
+    <li><b>범용 모듈</b>은 모든 대상에, <b>프로젝트 전용</b>은 그 프로젝트 대상에만 보입니다.</li>
+    <li>태그는 그 모듈이 다루는 ATT&CK 전술·기법입니다. <span class="kind kind-passive">수동(읽기)</span> 은 응답만 읽고, <span class="kind kind-active">능동</span> 은 요청을 더 보내 실행 전 확인이 필요합니다.</li>
+    <li>아래 <b>최근 실행</b>에 15개까지 남고, 실패하면 이유도 보입니다. 불러오지 못한 모듈은 맨 위 상자에 뜹니다.</li>
+  </ul>
+</section>
+
+<section id="attack">
+  <h2>ATT&CK</h2>
+  <ul>
+    <li>14개 전술이 공격 진행 순서로 놓입니다. 칸 하나가 모듈이 다루는 기법 하나입니다.</li>
+    <li>주황 칸은 지금 대상에서 발견된 기법입니다(오탐 제외). 칸을 누르면 MITRE 설명 페이지가 열립니다.</li>
+  </ul>
+</section>
+
+<section id="scenario">
+  <h2>시나리오</h2>
+  <ul>
+    <li>미확인·확인됨 결과를 전술 순서로 묶은 초안입니다. 순서만 잡아 주고, 무엇이 무엇으로 이어지는지는 팀이 판단합니다.</li>
+    <li>보고서는 오탐을 뺀 결과를 심각도 순으로 담습니다.</li>
+  </ul>
+</section>
+
+<section id="packs">
+  <h2>범용 모듈과 프로젝트 팩</h2>
+  <div class="table-wrap">
+  <table class="grid">
+    <thead><tr><th>구분</th><th>위치</th><th>넣는 것</th></tr></thead>
+    <tbody>
+      <tr><td>범용</td><td class="mono">modules/</td><td>어느 서비스에나 쓰는 점검. 특정 주소·경로·계정은 넣지 않음</td></tr>
+      <tr><td>프로젝트 팩</td><td class="mono">projects/&lt;id&gt;/__init__.py</td><td>PROJECT = 이름 · 허용 범위(scope) · 설명</td></tr>
+      <tr><td>전용 모듈</td><td class="mono">projects/&lt;id&gt;/modules/</td><td>그 서비스 구성을 아는 점검</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>다른 서비스를 점검하게 되면 <code>projects/</code> 아래에 폴더를 하나 만들면 됩니다. 앱 코드는 고치지 않습니다.</p>
+</section>
+
+<section id="write">
+  <h2>모듈 만들기</h2>
+  <ol class="steps">
+    <li><code>modules/_template.py</code> 를 복사해 범용이면 <code>modules/</code>, 전용이면 <code>projects/&lt;id&gt;/modules/</code> 에 둡니다. 파일 이름이 <code>_</code> 로 시작하면 등록되지 않습니다.</li>
+    <li><code>META</code> 를 채우고 <code>run(target, params)</code> 에서 <code>Finding</code> 목록을 돌려줍니다.</li>
+    <li>대시보드를 다시 실행하면 모듈 탭에 나타납니다. 오류가 있으면 모듈 탭 맨 위에 이유가 뜹니다.</li>
+  </ol>
+<pre>META = {
+    "id": "xss_reflect",            # 전체에서 하나
+    "name": "XSS 반사 확인",
+    "category": "입력 검증",
+    "kind": "active",               # passive / active
+    "attack": [{"tactic": "TA0001", "technique": "T1190", "name": "..."}],
+    "description": "한 줄 설명",
+    "params": [{"name": "path", "label": "경로", "default": "/"}],
+}
+
+def run(target, params):
+    r = fetch(target.url + params["path"])   # 요청은 fetch 로만
+    return [Finding(title="...", severity="medium", location=r.url,
+                    evidence="요청·응답 근거", recommendation="조치")]</pre>
+  <ul>
+    <li>요청은 <code>core.fetch</code> 로만 보냅니다. 범위 검사와 리다이렉트 차단이 여기서 걸립니다. 기존 도구를 감싸면 대상 주소를 <code>scope.ensure_in_scope(url)</code> 로 먼저 검사합니다.</li>
+    <li>근거에 쿠키 값·토큰·<code>.env</code> 내용 같은 비밀값을 남기지 않습니다.</li>
+    <li>심각도는 critical · high · medium · low · info 중 하나입니다.</li>
+  </ul>
+</section>
+
+<section id="safety">
+  <h2>안전장치</h2>
+  <ul>
+    <li>대시보드는 127.0.0.1 에서만 열립니다.</li>
+    <li>모듈 실행 중 요청은 그 대상 프로젝트의 허용 범위 밖으로 나가기 전에 막힙니다.</li>
+    <li>모듈 하나가 깨져도 나머지는 뜨고, 실패도 실행 기록에 남습니다.</li>
+  </ul>
+</section>
+
+<section id="todo">
+  <h2>아직 없는 것</h2>
+  <ul>
+    <li><b>표면 수집 → 점검 연결</b>: 수집 모듈이 모은 엔드포인트·파라미터를 저장하고, 점검 모듈이 그 지점을 골라 패턴을 넣는 구조(회의록 3절 도구 ②). 지금은 모듈마다 따로 돕니다.</li>
+    <li>위치·파라미터별 취약 / 잠재 / 안전 구분, 타임라인, CVE 탭.</li>
+    <li>실행은 끝날 때까지 화면이 기다립니다(동기).</li>
+  </ul>
+</section>
+</div>
+{% endblock %}
