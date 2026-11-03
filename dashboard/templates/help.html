@@ -3,7 +3,9 @@
 {% block content %}
 <div class="help">
 <h1>사용법</h1>
-<p class="lead">지금 등록된 모듈 {{ counts.modules }}개(범용 {{ counts.general }} · 프로젝트 전용 {{ counts.specific }}), 프로젝트 팩 {{ counts.projects }}개.
+<p class="lead"><b>DAST</b>(동적 애플리케이션 보안 테스트) 도구입니다. 소스 없이 실행 중인 서비스에 요청을 보내 응답으로 판정합니다 —
+  ① 표면 수집 → ② 수집 지점에 패턴 주입 → ③ 응답 판정(취약·잠재·안전) → ④ 보고.<br>
+  지금 등록된 모듈 {{ counts.modules }}개(범용 {{ counts.general }} · 프로젝트 전용 {{ counts.specific }}), 프로젝트 팩 {{ counts.projects }}개.
   자세한 설명은 저장소 <code>README.md</code>.</p>
 
 <section id="start">
