@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% from "_macros.html" import empty, param_input, sev %}
+{% block title %}도구{% endblock %}
+{% block content %}
+<h1>도구</h1>
+<p class="lead">값을 넣고 바로 결과를 보는 모듈입니다. 표의 <b>이어서 보기</b>를 누르면 그 값으로 다시 돌립니다.
+  찾은 것은 결과 탭에도 쌓입니다.</p>
+
+{% if not target %}
+  {{ empty("대상을 먼저 등록하세요", "도구는 등록된 대상에만 실행됩니다.", url_for('dash.targets'), "대상 등록") }}
+{% elif not tools %}
+  {{ empty("이 대상에 쓸 도구가 없습니다", "도구 모듈은 프로젝트 팩에 들어 있습니다.", url_for('dash.modules', target=target.id), "모듈 보기") }}
+{% else %}
+<div class="tool-pick">
+  {% for m in tools.values() %}
+  <a class="tool-tab {{ 'on' if mod and m.id == mod.id }}" href="{{ url_for('dash.tools', target=target.id, tool=m.id) }}">
+    {{ m.name }}<small>{{ m.category }}</small>
+  </a>
+  {% endfor %}
+</div>
+
+{% if mod %}
+<div class="panel tool-form">
+  <p class="sub">{{ mod.description }}
+    {% for a in mod.attack %}<span class="tag"><span class="mono">{{ a.technique }}</span></span>{% endfor %}
+  </p>
+  <form method="post" action="{{ url_for('dash.tool_run') }}" id="tool-form">
+    {{ csrf_field() }}
+    <input type="hidden" name="target_id" value="{{ target.id }}">
+    <input type="hidden" name="module_id" value="{{ mod.id }}">
+    <div class="fields">
+      {% for p in mod.params %}{{ param_input(p, values=values) }}{% endfor %}
+    </div>
+    <div class="run-row">
+      {% if mod.kind == "active" %}
+      <label class="check"><input type="checkbox" name="confirm" value="yes" required> 자체 환경({{ target.name }})임을 확인했습니다</label>
+      {% endif %}
+      <button class="btn" type="submit">실행 → {{ target.name }}</button>
+      <span class="sub small mono">{{ mod.source }}</span>
+    </div>
+  </form>
+</div>
+
+{% if result %}
+<div class="panel tool-result">
+  <h2>{{ result.summary }}</h2>
+
+  {% if result.rows %}
+  <div class="table-wrap">
+  <table class="grid">
+    <thead><tr>{% for c in result.columns %}<th>{{ c }}</th>{% endfor %}{% if result.drills %}<th></th>{% endif %}</tr></thead>
+    <tbody>
+    {% for row in result.rows %}
+      <tr>
+        {% for cell in row %}<td class="mono wrapcell">{{ cell }}</td>{% endfor %}
+        {% if result.drills %}<td class="nowrap">
+          {% set drill = result.drills[loop.index0] if result.drills | length > loop.index0 else none %}
+          {% if drill %}{% for label, p in drill.items() %}
+            <button class="btn ghost small-btn" type="submit" form="tool-form"
+                    formaction="{{ url_for('dash.tool_run') }}"
+                    name="_drill" value="{{ p | tojson }}">{{ label }}</button>
+          {% endfor %}{% endif %}
+        </td>{% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  {% if result.more %}
+  <button class="btn ghost" type="submit" form="tool-form" name="_drill" value="{{ result.more | tojson }}">다음 것 더 보기 →</button>
+  {% endif %}
+
+  {% if result.text %}<h3>내용</h3><pre class="tool-text">{{ result.text }}</pre>{% endif %}
+
+  {% if result.findings %}
+  <h3>결과 탭에 남긴 것</h3>
+  <ul class="plain">{% for f in result.findings %}<li>{{ sev(f.severity) }} {{ f.title }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if result.note %}<p class="sub small">{{ result.note }}</p>{% endif %}
+</div>
+{% endif %}
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -17,8 +17,9 @@ KINDS = ("passive", "active")
 # collect: run(target, params) → [Point]  표면 수집
 # check:   run(target, params) → [Finding]  대상 단위 점검(기본)
 # probe:   run(target, points, params) → [Check]  수집된 지점 단위 점검
-STAGES = ("collect", "check", "probe")
-STAGE_LABEL = {"collect": "표면 수집", "check": "대상 점검", "probe": "지점 점검"}
+# tool:    run(target, params) → ToolResult  도구 탭에서 값을 넣고 바로 결과를 보는 것
+STAGES = ("collect", "check", "probe", "tool")
+STAGE_LABEL = {"collect": "표면 수집", "check": "대상 점검", "probe": "지점 점검", "tool": "도구"}
 GENERAL = "general"  # 어느 프로젝트에도 속하지 않는 대상
 
 
@@ -34,6 +35,7 @@ class ModuleInfo:
     params: list = field(default_factory=list)
     source: str = ""
     project: str = ""  # "" = 범용
+    roles: list = field(default_factory=list)  # 비우면 어떤 역할의 대상에도 보인다
     stage: str = "check"
     severity: str = "medium"  # probe 가 '취약'을 낼 때 기본 심각도
 
@@ -53,6 +55,7 @@ class ProjectInfo:
     scope: list
     description: str = ""
     source: str = ""
+    roles: dict = field(default_factory=dict)  # {역할 id: 보일 이름}
 
 
 def _validate(meta: dict) -> None:
@@ -91,6 +94,7 @@ def discover(package_name: str = "modules", project: str = ""):
                 kind=meta["kind"], attack=meta["attack"], description=meta["description"],
                 params=meta.get("params", []), run=mod.run, source=source, project=project,
                 stage=meta.get("stage", "check"), severity=meta.get("severity", "medium"),
+                roles=meta.get("roles", []),
             )
         except Exception as e:  # noqa: BLE001 — 깨진 모듈은 화면에 오류로 보여 준다
             errors.append((source, str(e)))
@@ -112,7 +116,8 @@ def discover_projects(package_name: str = "projects"):
             if not isinstance(meta, dict) or not meta.get("name") or not meta.get("scope"):
                 raise ValueError("PROJECT(dict) 에 name·scope 가 필요합니다")
             projects[pid] = ProjectInfo(id=pid, name=meta["name"], scope=[h.lower() for h in meta["scope"]],
-                                        description=meta.get("description", ""), source=source)
+                                        description=meta.get("description", ""), source=source,
+                                        roles=meta.get("roles", {}))
         except Exception as e:  # noqa: BLE001
             errors.append((source, str(e)))
             continue
@@ -140,6 +145,11 @@ def load_catalog(general_scope, modules_pkg: str = "modules", projects_pkg: str 
     return projects, ordered, errors
 
 
-def modules_for(modules: dict, project_id: str) -> dict:
-    """그 프로젝트 대상에 쓸 수 있는 모듈 = 범용 + 그 프로젝트 전용."""
-    return {k: m for k, m in modules.items() if m.project in ("", project_id)}
+def modules_for(modules: dict, project_id: str, role: str = "") -> dict:
+    """이 대상에 쓸 수 있는 모듈.
+
+    범용 + 그 프로젝트 전용 중에서, 모듈이 역할을 정해 두었으면
+    대상의 역할과 맞는 것만. 대상에 역할을 안 골랐으면 가리지 않는다.
+    """
+    return {k: m for k, m in modules.items()
+            if m.project in ("", project_id) and (not m.roles or not role or role in m.roles)}

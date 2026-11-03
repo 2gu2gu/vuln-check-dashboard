@@ -10,6 +10,7 @@
     <b>{{ p.name }}</b>
     <span class="sub">{{ p.description }}</span>
     <span class="mono small">{% for h in p.scope %}{{ h }}{{ ", " if not loop.last }}{% endfor %}</span>
+    {% if p.roles %}<span class="sub small">역할: {{ p.roles.values() | join(" · ") }}</span>{% endif %}
   </div>
   {% endfor %}
 </div>
@@ -18,8 +19,16 @@
   {{ csrf_field() }}
   {% set default_pid = target.project if target else ((PROJECTS.keys() | reject("equalto", "general") | first) or "general") %}
   <label>프로젝트
-    <select name="project">
+    <select name="project" id="project-pick">
       {% for p in PROJECTS.values() %}<option value="{{ p.id }}" {{ 'selected' if p.id == default_pid }}>{{ p.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>역할
+    <select name="role" id="role-pick">
+      {% for p in PROJECTS.values() %}{% for rid, rname in p.roles.items() %}
+      <option value="{{ rid }}" data-project="{{ p.id }}" {{ 'hidden' if p.id != default_pid }}>{{ rname }}</option>
+      {% endfor %}{% endfor %}
+      <option value="" data-project="general">— 역할 없음</option>
     </select>
   </label>
   <label>이름<input name="name" required placeholder="사용자 웹"></label>
@@ -31,11 +40,12 @@
 {% if targets %}
 <div class="table-wrap">
 <table class="grid">
-  <thead><tr><th>프로젝트</th><th>이름</th><th>주소</th><th>인증 헤더</th><th>메모</th><th>등록</th><th></th></tr></thead>
+  <thead><tr><th>프로젝트</th><th>역할</th><th>이름</th><th>주소</th><th>인증 헤더</th><th>메모</th><th>등록</th><th></th></tr></thead>
   <tbody>
   {% for t in targets %}
     <tr>
       <td><span class="proj-badge">{{ PROJECTS[t.project].name if t.project in PROJECTS else t.project ~ " (팩 없음)" }}</span></td>
+      <td class="sub">{{ PROJECTS[t.project].roles.get(t.role, t.role) if t.project in PROJECTS else t.role }}</td>
       <td><a href="{{ url_for('dash.results', target=t.id) }}">{{ t.name }}</a></td>
       <td class="mono">{{ t.url }}</td>
       <td>

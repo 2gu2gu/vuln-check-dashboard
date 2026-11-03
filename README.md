@@ -43,6 +43,7 @@ python -m venv .venv
 | 대상 | 프로젝트를 골라 대상 주소 등록. 프로젝트 범위 밖 주소는 거부 |
 | 모듈 | 범용 / 프로젝트 전용으로 나눠 보이고, 대상에 바로 실행. 불러오기 실패한 모듈도 여기 표시 |
 | 표면 | 수집된 엔드포인트·파라미터. 골라서 지점 점검 모듈을 돌리면 지점마다 취약·잠재·안전 |
+| 도구 | 값을 넣고 바로 결과를 보는 모듈. 표에서 눌러 들어감(테이블 → 컬럼 → 값). 읽은 값은 기억해 둔다 |
 | 요청 기록 | 모듈이 보낸 요청·받은 응답 원문(Burp HTTP history 처럼). 점검 표식은 노란색, 인증 값은 *** |
 | 사용법 | 화면별 설명. 위쪽 ? 버튼은 지금 화면 설명으로 바로 간다 |
 | ATT&CK | 14개 전술 매트릭스. 모듈이 다루는 기법만 칸으로, 이 대상에서 발견된 기법은 강조 |
@@ -68,6 +69,29 @@ python -m venv .venv
 - POST 지점은 기본으로 보내지 않는다. 폼을 실제로 제출하면 공유 DB 에 저장될 수 있다.
 - 로그인이 필요한 곳은 아직 못 본다(쿠키·토큰 넣기 미구현).
 
+## 역할 — 한 프로젝트에 서버가 여럿일 때
+
+사용자 웹은 `sesacedu.store`, 관리자 웹은 SSH 터널로 `localhost:3000`, Wazuh 는 `localhost:8443`.
+호스트만 보면 뒤 둘은 구분되지 않는다. 그래서 **대상마다 역할을 고르고, 모듈은 맞는 역할에만 뜬다.**
+
+```python
+# projects/sesacedu/__init__.py
+PROJECT = {"roles": {"user_web": "사용자 웹 (EC2 ①)", "admin_web": "관리자 웹 (EC2 ②, 터널)", ...}}
+
+# projects/sesacedu/modules/lecture_sqli.py
+META = {"roles": ["user_web", "practice"]}   # 비우면 어느 역할에나 보인다
+```
+
+- 안 맞는 대상에서는 모듈이 보이지 않고, 직접 호출해도 거부한다.
+- 보고서에 주소와 함께 역할이 찍힌다 — `localhost:3000` 만 남으면 나중에 어디였는지 모른다.
+
+## 서버 안쪽은 어디까지
+
+대시보드가 직접 보내는 것은 **HTTP 요청뿐**이다. SSH 로 명령을 대신 실행하지 않는다 —
+그렇게 만들면 범위 검사가 닿지 않는 원격 실행 도구가 된다.
+서버 설정 점검은 `modules/host_report.py`(서버 명령 출력 읽기)로, 사람이 받아 온
+`sudo --version`·`ss -tlnp` 출력을 붙여 넣어 결과로 바꾼다. 요청은 보내지 않는다.
+
 ## 구조: 범용은 고정, 프로젝트 것은 갈아끼운다
 
 ```
@@ -78,11 +102,14 @@ modules/                       범용 모듈 — 어느 대상에나 보인다
   reflection_check.py          [지점 점검] 입력값 반사 확인
   http_security_headers.py     [대상 점검]
   tech_fingerprint.py          [대상 점검]
+  host_report.py               [도구] 서버 명령 출력 읽기(요청 안 보냄)
 projects/
   sesacedu/                    프로젝트 팩 하나 = 폴더 하나
     __init__.py                PROJECT = {name, scope, description}
     modules/
-      exposed_paths.py         새싹에듀 구성(Tomcat·Spring)을 아는 전용 모듈
+      exposed_paths.py         [대상 점검] 관리·개발 경로 노출
+      lecture_sqli.py          [도구] 강의 목록 SQL 주입 — 테이블→컬럼→값
+      material_traversal.py    [도구] 자료 다운로드 경로 조작 — 읽을 경로 입력
 dashboard/                     앱 본체(대상·실행·저장·화면) — 모듈 추가로는 손대지 않는다
 ```
 
@@ -95,7 +122,9 @@ dashboard/                     앱 본체(대상·실행·저장·화면) — �
 
 1. `modules/_template.py` 를 복사해 범용이면 `modules/`, 전용이면 `projects/<프로젝트>/modules/` 에 둔다.
 2. `META` 를 채운다.
-   - `stage`: `collect`(수집, `run(target, params) → [Point]`) / `probe`(지점 점검, `run(target, points, params) → [Check]`) / `check`(기본, `run(target, params) → [Finding]`). 유형별 점검(SQLi·XSS·경로 조작)은 `probe` 로 — 값 보내기 `probe.send()`, 반사 판정 `probe.judge_reflection()`
+   - `stage`: `collect`(수집, `→ [Point]`) / `probe`(지점 점검, `run(target, points, params) → [Check]`) / `check`(기본, `→ [Finding]`) / `tool`(도구 탭, `→ ToolResult`)
+   - `roles`: 이 모듈이 맞는 대상 역할. 비우면 어디서나
+   - 값 보내기 `probe.send()`, 반사 판정 `probe.judge_reflection()`, 인코딩 `payloads.traversal()`, 블라인드 추출 `blind.Oracle`
    - `kind`: `passive`(읽기만) / `active`(실행 전 "자체 환경 확인" 체크 필요)
    - `severity`: `probe` 가 취약을 낼 때 기본 심각도
    - `attack`: `[{tactic: "TA0043", technique: "T1595.002", name: ...}]` — 매트릭스·시나리오가 이걸로 그려진다

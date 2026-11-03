@@ -4,8 +4,9 @@ from modules import http_security_headers
 from projects.sesacedu.modules import exposed_paths
 
 
-def add_target(client, url, project="sesacedu", name="웹"):
-    return client.post("/targets", data={"project": project, "name": name, "url": url}, follow_redirects=True)
+def add_target(client, url, project="sesacedu", name="웹", role="user_web"):
+    return client.post("/targets", data={"project": project, "role": role, "name": name, "url": url},
+                       follow_redirects=True)
 
 
 def target_id(app, url):
@@ -27,7 +28,7 @@ def test_help_link_points_to_current_screen(client):
 def test_target_scope_per_project(client):
     assert "등록했습니다" in add_target(client, "https://sesacedu.store").get_data(as_text=True)
     # 범용 프로젝트 범위(localhost)에는 sesacedu.store 가 없다
-    assert "허용 범위 밖" in add_target(client, "https://www.sesacedu.store", project="general").get_data(as_text=True)
+    assert "허용 범위 밖" in add_target(client, "https://www.sesacedu.store", project="general", role="").get_data(as_text=True)
     assert "허용 범위 밖" in add_target(client, "https://example.com").get_data(as_text=True)
 
 
@@ -64,7 +65,7 @@ def test_active_module_needs_confirm(app, client, monkeypatch, fake_fetch):
 
 
 def test_project_module_blocked_on_other_project(app, client):
-    add_target(client, "http://127.0.0.1:9", project="general", name="로컬")
+    add_target(client, "http://127.0.0.1:9", project="general", name="로컬", role="")
     tid = target_id(app, "http://127.0.0.1:9")
     page = client.post("/modules/sesacedu_exposed_paths/run", data={"target_id": tid, "confirm": "yes"},
                        follow_redirects=True).get_data(as_text=True)
