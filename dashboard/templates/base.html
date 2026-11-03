@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}결과{% endblock %} · 점검 대시보드</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+{% set nav = [
+  ("dash.results", "결과", "M4 6h16M4 12h16M4 18h10"),
+  ("dash.targets", "대상", "M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18zm0 5a4 4 0 1 0 0 8a4 4 0 0 0 0-8z"),
+  ("dash.modules", "모듈", "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"),
+  ("dash.attack", "ATT&CK", "M3 5h4v14H3zM10 5h4v14h-4zM17 5h4v14h-4z"),
+  ("dash.scenario", "시나리오", "M5 5h4v4H5zM15 15h4v4h-4zM9 7h4a2 2 0 0 1 2 2v6"),
+] %}
+<div class="shell">
+  <aside class="side">
+    <div class="brand">점검 대시보드<span>vuln-check-dashboard</span></div>
+    <nav>
+      {% for ep, label, d in nav %}
+      <a href="{{ url_for(ep, target=target.id if target else none) }}" class="{{ 'on' if request.endpoint == ep }}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="{{ d }}"/></svg>{{ label }}
+      </a>
+      {% endfor %}
+    </nav>
+    <div class="side-foot">범위: 자체 실습 환경만<br><span class="mono">127.0.0.1 전용</span></div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      {% if targets is defined and targets %}
+      <form method="get" class="target-pick">
+        <label for="target">대상</label>
+        <select id="target" name="target" data-autosubmit>
+          {% for pid, group in targets | groupby("project") %}
+          <optgroup label="{{ PROJECTS[pid].name if pid in PROJECTS else pid }}">
+            {% for t in group %}
+            <option value="{{ t.id }}" {{ 'selected' if target and t.id == target.id }}>{{ t.name }} — {{ t.url }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endfor %}
+        </select>
+      </form>
+      {% if target %}<span class="proj-badge">{{ PROJECTS[target.project].name if target.project in PROJECTS else target.project }}</span>{% endif %}
+      {% endif %}
+      <div class="top-spacer"></div>
+      {% if target %}<a class="btn ghost" href="{{ url_for('dash.report', tid=target.id) }}">보고서 내려받기</a>{% endif %}
+      <button class="btn ghost icon" id="theme" type="button" aria-label="화면 테마 바꾸기">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9a7 7 0 0 1-9-9z"/></svg>
+      </button>
+    </header>
+
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in msgs %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+    {% endwith %}
+
+    <main class="content">{% block content %}{% endblock %}</main>
+  </div>
+</div>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

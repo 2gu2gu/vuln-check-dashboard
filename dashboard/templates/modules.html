@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% from "_macros.html" import empty %}
+{% block title %}모듈{% endblock %}
+{% block content %}
+<h1>모듈</h1>
+<p class="lead">범용 모듈은 <code>modules/</code>, 프로젝트 전용은 <code>projects/&lt;프로젝트&gt;/modules/</code> 에 파일을 넣고 다시 실행하면 등록됩니다.
+  작성법은 <code>modules/_template.py</code>.
+  {% if target and hidden %}<br>다른 프로젝트 전용 모듈 {{ hidden }}개는 이 대상에서 숨겼습니다.{% endif %}</p>
+
+{% if errors %}
+<div class="panel warn">
+  <strong>불러오지 못한 모듈 {{ errors | length }}개</strong>
+  <ul>{% for src, err in errors %}<li><code>{{ src }}</code> — {{ err }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if not target %}
+  {{ empty("대상을 먼저 등록하세요", "모듈은 등록된 대상에만 실행됩니다.", url_for('dash.targets'), "대상 등록") }}
+{% endif %}
+
+{% for title, hint, mods in groups %}
+<div class="group-head"><h2>{{ title }}</h2><span class="sub mono small">{{ hint }}</span></div>
+{% if not mods %}<p class="sub">아직 모듈이 없습니다.</p>{% endif %}
+<div class="mod-grid">
+{% for m in mods %}
+  <article class="panel mod">
+    <header>
+      <span class="kind kind-{{ m.kind }}">{{ "수동(읽기)" if m.kind == "passive" else "능동" }}</span>
+      <span class="sub">{{ m.category }}</span>
+    </header>
+    <h3>{{ m.name }}</h3>
+    <p>{{ m.description }}</p>
+    <div class="tags">
+      {% for a in m.attack %}
+      <span class="tag" title="{{ a.name }}"><b>{{ tactic_name[a.tactic] }}</b> <span class="mono">{{ a.technique }}</span></span>
+      {% endfor %}
+    </div>
+    {% if target %}
+    <form method="post" action="{{ url_for('dash.module_run', mid=m.id) }}" class="run">
+      <input type="hidden" name="target_id" value="{{ target.id }}">
+      {% for p in m.params %}
+      <label>{{ p.label or p.name }}<input name="{{ p.name }}" value="{{ p.default }}" class="mono"></label>
+      {% endfor %}
+      {% if m.kind == "active" %}
+      <label class="check"><input type="checkbox" name="confirm" value="yes"> 자체 환경({{ target.name }})임을 확인했습니다</label>
+      {% endif %}
+      <button class="btn" type="submit">실행 → {{ target.name }}</button>
+    </form>
+    {% endif %}
+    <footer class="sub mono small">{{ m.source }}</footer>
+  </article>
+{% endfor %}
+</div>
+{% endfor %}
+
+{% if runs %}
+<div class="group-head"><h2>최근 실행</h2></div>
+<div class="table-wrap">
+<table class="grid">
+  <thead><tr><th>시각</th><th>대상</th><th>모듈</th><th>결과</th><th>상태</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+    <tr>
+      <td class="sub">{{ r.started_at | kst }}</td>
+      <td>{{ r.target_name }}</td>
+      <td>{{ all_modules[r.module_id].name if r.module_id in all_modules else r.module_id }}</td>
+      <td>{{ r.n }}건</td>
+      <td>{% if r.status == "error" %}<span class="status st-error">실패</span>
+          {% elif r.status == "done" %}<span class="status st-fixed">완료</span>
+          {% else %}<span class="status">{{ r.status }}</span>{% endif %}
+          {% if r.error %}<div class="sub small">{{ r.error }}</div>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

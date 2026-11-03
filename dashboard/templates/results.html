@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "_macros.html" import sev, empty %}
+{% block title %}결과{% endblock %}
+{% block content %}
+{% if not target %}
+  {{ empty("등록된 대상이 없습니다", "먼저 점검할 자체 환경 주소를 등록하세요.", url_for('dash.targets'), "대상 등록") }}
+{% else %}
+<section class="cards">
+  {% for s in severities %}
+  <a class="card" href="{{ url_for('dash.results', target=target.id, severity=s) }}">
+    {{ sev(s) }}
+    <strong>{{ counts[s] }}</strong>
+    <small>미조치</small>
+  </a>
+  {% endfor %}
+</section>
+
+<form method="get" class="filters">
+  <input type="hidden" name="target" value="{{ target.id }}">
+  <select name="severity" data-autosubmit aria-label="심각도">
+    <option value="">심각도 전체</option>
+    {% for s in severities %}<option value="{{ s }}" {{ 'selected' if args.severity == s }}>{{ SEVERITY_LABEL[s] }}</option>{% endfor %}
+  </select>
+  <select name="module_id" data-autosubmit aria-label="모듈">
+    <option value="">모듈 전체</option>
+    {% for m in modules.values() %}<option value="{{ m.id }}" {{ 'selected' if args.module_id == m.id }}>{{ m.name }}</option>{% endfor %}
+  </select>
+  <select name="status" data-autosubmit aria-label="상태">
+    <option value="">상태 전체</option>
+    {% for k, v in STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if args.status == k }}>{{ v }}</option>{% endfor %}
+  </select>
+  <input type="search" id="q" placeholder="항목·위치 검색" aria-label="표 안에서 검색">
+  {% if args.severity or args.module_id or args.status %}
+  <a class="btn ghost" href="{{ url_for('dash.results', target=target.id) }}">필터 지우기</a>
+  {% endif %}
+</form>
+
+{% if not findings %}
+  {{ empty("결과가 없습니다", "모듈 탭에서 점검을 실행하면 여기에 쌓입니다.", url_for('dash.modules', target=target.id), "모듈로 가기") }}
+{% else %}
+<div class="split">
+  <div class="table-wrap">
+    <table class="grid" id="findings">
+      <thead><tr><th>심각도</th><th>항목</th><th>경로</th><th class="col-opt">모듈</th><th>ATT&CK</th><th>상태</th><th class="col-opt">발견</th></tr></thead>
+      <tbody>
+      {% for f in findings %}
+        <tr data-id="{{ f.id }}" tabindex="0">
+          <td>{{ sev(f.severity) }}</td>
+          <td>{{ f.title }}</td>
+          <td class="mono loc" title="{{ f.location }}">{{ f.path }}</td>
+          <td class="col-opt">{{ f.module_name }}</td>
+          <td class="mono nowrap">{{ f.technique }}</td>
+          <td class="nowrap"><span class="status st-{{ f.status }}">{{ f.status_label }}</span></td>
+          <td class="sub nowrap col-opt">{{ f.created }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <aside class="detail" id="detail" hidden>
+    <div class="detail-head">
+      <div id="d-sev"></div>
+      <button class="btn ghost icon" type="button" id="d-close" aria-label="닫기">✕</button>
+    </div>
+    <h2 id="d-title"></h2>
+    <dl>
+      <dt>위치</dt><dd class="mono" id="d-loc"></dd>
+      <dt>모듈</dt><dd id="d-mod"></dd>
+      <dt>ATT&CK</dt><dd><a id="d-tech" target="_blank" rel="noopener"></a></dd>
+    </dl>
+    <h3>근거</h3>
+    <pre id="d-evi"></pre>
+    <h3>조치 방안</h3>
+    <p id="d-rec"></p>
+    <form method="post" id="d-form" class="status-form">
+      <label for="d-status">상태</label>
+      <select name="status" id="d-status">
+        {% for k, v in STATUSES.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      </select>
+      <button class="btn" type="submit">저장</button>
+    </form>
+  </aside>
+</div>
+<script type="application/json" id="findings-data">{{ findings | tojson }}</script>
+{% endif %}
+{% endif %}
+{% endblock %}

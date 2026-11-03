@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import sev, empty %}
+{% block title %}시나리오{% endblock %}
+{% block content %}
+<h1>시나리오 초안</h1>
+<p class="lead">미확인·확인됨 결과를 ATT&CK 전술 순서로 늘어놓았습니다. 실제 시나리오는 팀이 이 흐름을 보고 정합니다.</p>
+
+{% if not steps %}
+  {{ empty("이어 붙일 결과가 없습니다", "점검 결과가 쌓이면 전술 단계별로 묶여 보입니다.", url_for('dash.modules', target=target.id if target else none), "모듈로 가기") }}
+{% else %}
+<ol class="flow">
+  {% for s in steps %}
+  <li>
+    <div class="flow-head"><span class="step">{{ loop.index }}</span><b>{{ s.name }}</b><span class="mono sub">{{ s.tactic }}</span></div>
+    <ul>
+      {% for f in s.findings %}
+      <li>{{ sev(f.severity) }} {{ f.title }} <span class="mono sub">{{ f.location }} · {{ f.technique }}</span></li>
+      {% endfor %}
+    </ul>
+  </li>
+  {% endfor %}
+</ol>
+{% endif %}
+{% endblock %}

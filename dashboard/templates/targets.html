@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}대상{% endblock %}
+{% block content %}
+<h1>대상</h1>
+<p class="lead">대상은 프로젝트에 묶입니다. 프로젝트마다 허용 범위가 달라서, 범위 밖 주소는 등록되지 않습니다.</p>
+
+<div class="proj-list">
+  {% for p in PROJECTS.values() %}
+  <div class="panel proj">
+    <b>{{ p.name }}</b>
+    <span class="sub">{{ p.description }}</span>
+    <span class="mono small">{% for h in p.scope %}{{ h }}{{ ", " if not loop.last }}{% endfor %}</span>
+  </div>
+  {% endfor %}
+</div>
+
+<form method="post" class="panel form-row">
+  {% set default_pid = target.project if target else ((PROJECTS.keys() | reject("equalto", "general") | first) or "general") %}
+  <label>프로젝트
+    <select name="project">
+      {% for p in PROJECTS.values() %}<option value="{{ p.id }}" {{ 'selected' if p.id == default_pid }}>{{ p.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>이름<input name="name" required placeholder="사용자 웹"></label>
+  <label class="grow">주소<input name="url" required placeholder="https://example.test" class="mono"></label>
+  <label class="grow">메모<input name="note" placeholder="선택"></label>
+  <button class="btn" type="submit">등록</button>
+</form>
+
+{% if targets %}
+<div class="table-wrap">
+<table class="grid">
+  <thead><tr><th>프로젝트</th><th>이름</th><th>주소</th><th>메모</th><th>등록</th><th></th></tr></thead>
+  <tbody>
+  {% for t in targets %}
+    <tr>
+      <td><span class="proj-badge">{{ PROJECTS[t.project].name if t.project in PROJECTS else t.project ~ " (팩 없음)" }}</span></td>
+      <td><a href="{{ url_for('dash.results', target=t.id) }}">{{ t.name }}</a></td>
+      <td class="mono">{{ t.url }}</td>
+      <td class="sub">{{ t.note }}</td>
+      <td class="sub">{{ t.created_at | kst }}</td>
+      <td class="right">
+        <form method="post" action="{{ url_for('dash.target_delete', tid=t.id) }}" data-confirm="{{ t.name }} 과 그 결과를 모두 지울까요?">
+          <button class="btn ghost danger" type="submit">삭제</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

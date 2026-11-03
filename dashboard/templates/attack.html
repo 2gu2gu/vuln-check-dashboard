@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}ATT&CK{% endblock %}
+{% block content %}
+<h1>ATT&CK 매트릭스</h1>
+<p class="lead">모듈이 다루는 기법만 칸으로 보입니다.
+  <span class="legend"><i class="cell-dot"></i>모듈 있음</span>
+  <span class="legend"><i class="cell-dot hit"></i>이 대상에서 발견됨</span></p>
+
+<div class="matrix">
+  {% for c in columns %}
+  <section class="col {{ 'empty-col' if not c.cells }}">
+    <header><b>{{ c.ko }}</b><small>{{ c.en }}</small><small class="mono">{{ c.id }}</small></header>
+    {% for cell in c.cells %}
+    <a class="cell {{ 'hit' if cell.hit }}" href="{{ cell.url }}" target="_blank" rel="noopener"
+       title="{{ cell.modules | join(', ') }}">
+      <span class="mono">{{ cell.technique }}</span>
+      <span>{{ cell.name }}</span>
+      <small>{{ cell.modules | length }}개 모듈{{ " · 발견" if cell.hit }}</small>
+    </a>
+    {% else %}
+    <p class="col-empty">—</p>
+    {% endfor %}
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}
