@@ -83,3 +83,17 @@ def test_module_cannot_leave_project_scope(app, client, monkeypatch):
     assert "허용 범위 밖" in page
     with app.app_context():
         assert get_db().execute("SELECT status FROM runs").fetchone()["status"] == "error"
+
+
+# ── 기본 화면은 밝게 (데스크톱 설정을 따르지 않는다) ─────────────────
+# 점검 화면은 발표·캡처에 그대로 들어가므로 기본을 한 가지로 고정한다.
+# 어두운 화면은 위쪽 버튼으로 켤 때만 쓴다.
+
+def test_dark_theme_only_when_asked():
+    from pathlib import Path
+    css = (Path(__file__).resolve().parent.parent / "dashboard/static/style.css").read_text(encoding="utf-8")
+    assert "prefers-color-scheme" not in css, "데스크톱 설정을 따라가면 기본이 밝은 화면이 아니게 된다"
+    assert ':root[data-theme="dark"]' in css
+
+    js = (Path(__file__).resolve().parent.parent / "dashboard/static/app.js").read_text(encoding="utf-8")
+    assert "prefers-color-scheme" not in js

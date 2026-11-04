@@ -25,6 +25,11 @@ META = {
         {"tactic": "TA0004", "technique": "T1068", "name": "Exploitation for Privilege Escalation"},
     ],
     "description": "서버에서 받은 sudo --version · ss -tlnp 출력을 붙여 넣으면 버전과 열린 포트를 정리하고 기준에 못 미치는 것을 표시합니다. 요청은 보내지 않습니다.",
+    "needs": [
+        {"kind": "account", "name": "서버 접속",
+         "why": "대시보드는 SSH 명령을 대신 실행하지 않습니다 — 범위 검사가 닿지 않는 원격 실행 도구가 되기 때문입니다",
+         "how": "서버에 직접 들어가 sudo --version 과 ss -tlnp 를 돌리고 그 출력을 붙여 넣습니다"},
+    ],
     "params": [
         {"name": "output", "label": "명령 출력 붙여 넣기", "type": "textarea", "default": "",
          "placeholder": "$ sudo --version\nSudo version 1.9.15p5\n\n$ ss -tlnp\nLISTEN 0 4096 0.0.0.0:22 0.0.0.0:* users:((\"sshd\",pid=1,fd=3))"},

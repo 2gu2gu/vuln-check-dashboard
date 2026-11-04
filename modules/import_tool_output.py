@@ -24,6 +24,11 @@ META = {
     "severity": "medium",
     "attack": [{"tactic": "TA0043", "technique": "T1595.003", "name": "Active Scanning: Wordlist Scanning"}],
     "description": "ffuf·gobuster·nuclei 결과나 URL 목록을 붙여 넣으면 표면 지점으로 옮깁니다. nuclei 결과는 결과 탭에도 올립니다. 요청은 보내지 않습니다.",
+    "needs": [
+        {"kind": "tool", "name": "ffuf · gobuster · nuclei",
+         "why": "대시보드가 바깥 도구를 대신 실행하지 않습니다 — 그러면 범위 검사가 그 도구가 보내는 것까지 닿지 못합니다",
+         "how": "칼리에서 직접 돌리고(ffuf 는 -of json, nuclei 는 -jsonl) 나온 결과를 붙여 넣습니다"},
+    ],
     "params": [
         {"name": "output", "label": "도구 결과 붙여 넣기", "type": "textarea", "default": "",
          "placeholder": '{"results":[{"url":"https://example.test/admin","status":200,"length":1234}]}\n'

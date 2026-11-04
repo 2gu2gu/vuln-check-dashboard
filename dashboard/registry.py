@@ -38,6 +38,7 @@ class ModuleInfo:
     roles: list = field(default_factory=list)  # 비우면 어떤 역할의 대상에도 보인다
     stage: str = "check"
     severity: str = "medium"  # probe 가 '취약'을 낼 때 기본 심각도
+    needs: list = field(default_factory=list)  # 실행 전에 미리 준비해야 하는 것(토큰·환경변수 등)
 
     @property
     def stage_label(self) -> str:
@@ -78,6 +79,9 @@ def _norm_roles(roles):
     return out
 
 
+from dashboard import needs as needs_mod
+
+
 def _validate(meta: dict) -> None:
     missing = [k for k in REQUIRED if k not in meta]
     if missing:
@@ -114,7 +118,7 @@ def discover(package_name: str = "modules", project: str = ""):
                 kind=meta["kind"], attack=meta["attack"], description=meta["description"],
                 params=meta.get("params", []), run=mod.run, source=source, project=project,
                 stage=meta.get("stage", "check"), severity=meta.get("severity", "medium"),
-                roles=meta.get("roles", []),
+                roles=meta.get("roles", []), needs=needs_mod.validate(meta.get("needs")),
             )
         except Exception as e:  # noqa: BLE001 — 깨진 모듈은 화면에 오류로 보여 준다
             errors.append((source, str(e)))

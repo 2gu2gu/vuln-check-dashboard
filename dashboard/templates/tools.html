@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import empty, param_input, sev %}
+{% from "_macros.html" import empty, param_input, sev, needs_block %}
 {% block title %}도구{% endblock %}
 {% block content %}
 <h1>도구</h1>
@@ -24,6 +24,7 @@
   <p class="sub">{{ mod.description }}
     {% for a in mod.attack %}<span class="tag"><span class="mono">{{ a.technique }}</span></span>{% endfor %}
   </p>
+  {% if target %}{{ needs_block(module_needs(mod, target), target) }}{% endif %}
   <form method="post" action="{{ url_for('dash.tool_run') }}" id="tool-form">
     {{ csrf_field() }}
     <input type="hidden" name="target_id" value="{{ target.id }}">

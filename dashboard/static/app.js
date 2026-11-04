@@ -1,11 +1,9 @@
 (function () {
-  // 테마: 시스템 설정 → 버튼으로 바꾸면 기억(저장 못 해도 동작)
+  // 테마: 기본은 밝은 화면. 버튼으로 바꾸면 기억한다(저장 못 해도 동작)
   var root = document.documentElement;
   var btn = document.getElementById("theme");
   if (btn) btn.addEventListener("click", function () {
-    var dark = root.dataset.theme
-      ? root.dataset.theme === "dark"
-      : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    var dark = root.dataset.theme === "dark";
     root.dataset.theme = dark ? "light" : "dark";
     try { localStorage.setItem("theme", root.dataset.theme); } catch (e) {}
   });
