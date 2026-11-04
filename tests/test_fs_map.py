@@ -15,14 +15,17 @@ SAMPLE = {
              "depth": 9, "scheme": "double-full", "window": "2026-11-04 23:10:00 ~ 23:12:30"},
     "stats": {"요청": 142},
     "nodes": [
-        {"path": "/etc", "class": "exists", "status": 500, "size": 0, "is_dir": True,
-         "note": "설정 루트", "severity": "info"},
+        {"path": "/etc", "class": "exists", "status": 500, "size": 0, "kind": "dir",
+         "is_dir": True, "note": "설정 루트", "severity": "info"},
         {"path": "/etc/passwd", "class": "readable", "status": 200, "size": 1990,
-         "is_dir": False, "note": "계정 목록", "severity": "medium"},
+         "kind": None, "is_dir": None, "note": "계정 목록", "severity": "medium"},
         {"path": "/etc/shadow", "class": "exists", "status": 500, "size": 0,
-         "is_dir": False, "note": "권한 정상", "severity": "critical"},
+         "kind": "opaque", "is_dir": None, "note": "권한 정상", "severity": "critical"},
         {"path": "/opt/tomcat/conf/tomcat-users.xml", "class": "readable", "status": 200,
-         "size": 2048, "is_dir": False, "note": "관리 계정", "severity": "critical"},
+         "size": 2048, "kind": None, "is_dir": None, "note": "관리 계정", "severity": "critical"},
+        {"path": "/srv", "class": "exists", "status": 500, "size": 0, "kind": "dir",
+         "is_dir": True, "probed_children": 300, "child_hits": 0, "blocked": True,
+         "note": "", "severity": "info"},
     ],
     "stopped": "",
 }
@@ -37,11 +40,11 @@ def run(params=None):
 def test_reads_fsmap_and_counts_states():
     r = run()
     assert isinstance(r, ToolResult)
+    assert "존재 5" in r.summary
     assert "읽힘 2" in r.summary
-    assert "디렉터리 1" in r.summary
-    # '권한으로 막힌 파일' = 있으나(500) 디렉터리가 아닌 것 → /etc/shadow 하나
-    assert "권한으로 막힌 파일 1" in r.summary
-    assert "존재 4" in r.summary
+    assert "디렉터리 2" in r.summary      # /etc, /srv
+    assert "못 들어감 1" in r.summary     # /etc/shadow
+    assert "막힌 가지 1" in r.summary     # /srv
 
 
 def test_draws_a_tree_with_intermediate_paths():
@@ -56,7 +59,41 @@ def test_draws_a_tree_with_intermediate_paths():
 def test_tree_marks_unreadable_separately_from_readable():
     text = run().text
     assert "[200 · 1.9KB]" in text
-    assert "[500 · 권한 없음]" in text
+    assert "못 들어감: 파일/디렉터리 구분 불가" in text
+
+
+def test_does_not_claim_opaque_is_a_file():
+    """500 + '/..' 404 는 못 읽는 파일일 수도, 못 들어가는 디렉터리일 수도 있다."""
+    r = run()
+    assert "권한 없음]" not in r.text
+    shadow = [row for row in r.rows if row[0] == "/etc/shadow"][0]
+    assert shadow[3] == "못 들어감"      # '파일' 이라고 적지 않는다
+
+
+def test_does_not_claim_a_blocked_directory_is_empty():
+    r = run()
+    assert "안쪽 전부 404" in r.text
+    srv = [row for row in r.rows if row[0] == "/srv"][0]
+    assert srv[5] == "있음 · 안쪽 전부 404"
+    assert "비었거나 탐색 권한 없음" in r.text
+
+
+def test_note_warns_that_404_is_not_absence():
+    note = run().note
+    assert "404" in note and "탐색 권한" in note
+
+
+def test_legend_warns_that_404_is_not_absence():
+    assert "탐색 권한 없음" in run().text
+
+
+def test_old_format_is_dir_false_is_not_trusted_as_file():
+    """예전 fsmap 은 is_dir=False 로 '파일'이라 단정했다. 그 값을 믿지 않는다."""
+    sample = {"nodes": [{"path": "/root", "class": "exists", "status": 500, "size": 0,
+                         "is_dir": False, "severity": "high"}]}
+    r = material_fs_map.run(T, {"fsmap": json.dumps(sample), "min_severity": "high"})
+    assert "못 들어감 0" in r.summary       # opaque 로도 세지 않는다
+    assert "종류 미판별" in r.text          # 모른다고 적는다
 
 
 def test_findings_summary_plus_sensitive_files():

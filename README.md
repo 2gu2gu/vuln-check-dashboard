@@ -72,15 +72,15 @@ python -m venv .venv
 
 ## 역할 — 한 프로젝트에 서버가 여럿일 때
 
-사용자 웹은 `sesacedu.store`, 관리자 웹은 SSH 터널로 `localhost:3000`, Wazuh 는 `localhost:8443`.
-터널로 열면 호스트가 전부 `localhost` 라 **다른 것은 포트뿐**이다. 그래서 대상마다 역할을 고르고,
-**역할이 허용 포트까지 정한다.**
+사용자 웹은 `sesacedu.store`, 관리자 웹은 `admin.sesacedu.store`(11-04 8443 포트에서 옮김), Wazuh 는 SSH 터널로 `localhost:8443`.
+터널로 열면 호스트가 전부 `localhost` 라 **다른 것은 포트뿐**이고, 하위 도메인으로 가르면 **호스트 이름이 서로를 덮는다**.
+그래서 대상마다 역할을 고르고, **역할이 허용 호스트와 포트를 함께 정한다.**
 
 ```python
 # projects/sesacedu/__init__.py
 PROJECT = {"roles": {
-    "user_web":  {"name": "사용자 웹 (EC2 ①)",        "scope": ["sesacedu.store"]},
-    "admin_web": {"name": "관리자 웹 (EC2 ②, 터널 3000)", "scope": ["localhost:3000", "127.0.0.1:3000"]},
+    "user_web":  {"name": "사용자 웹 (EC2 ①)",  "scope": ["=sesacedu.store", "=www.sesacedu.store"]},
+    "admin_web": {"name": "관리자 웹 (EC2 ②)", "scope": ["=admin.sesacedu.store", "localhost:3000"]},
 }}
 
 # projects/sesacedu/modules/lecture_sqli.py
@@ -88,7 +88,9 @@ META = {"roles": ["user_web", "practice"]}   # 비우면 어느 역할에나 보
 ```
 
 - 범위 한 줄에 포트를 안 적으면 포트를 가리지 않고, 적으면 그 포트만 허용한다.
-- 관리자 웹 대상으로 돌린 모듈은 `localhost:8443`(Wazuh)으로 나가지 못한다 — 등록할 때도, 실행 중에도 막는다.
+- 호스트 앞에 `=` 를 붙이면 **그 호스트만** — 하위 도메인은 빠진다. 안 붙이면 하위 도메인까지 포함한다.
+  프로젝트 전체 범위는 넓게(`sesacedu.store`), 역할 범위는 `=` 로 좁게 쓴다 — 그래야 사용자 웹 대상으로 돌린 모듈이 `admin.sesacedu.store` 로 나가지 못한다.
+- 관리자 웹 대상으로 돌린 모듈은 `localhost:8443`(Wazuh)으로도, 사용자 웹 대상으로 돌린 모듈은 `admin.sesacedu.store` 로도 나가지 못한다 — 등록할 때도, 실행 중에도 막는다.
 - 모듈이 안 맞는 역할의 대상에서는 보이지 않고, 직접 호출해도 거부한다.
 - 보고서에 주소와 함께 역할이 찍힌다 — `localhost:3000` 만 남으면 나중에 어디였는지 모른다.
 

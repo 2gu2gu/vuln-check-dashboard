@@ -20,8 +20,21 @@ def host_port_of(url: str):
     return parts.hostname.lower(), parts.port or (443 if parts.scheme == "https" else 80)
 
 
+def _host_matches(host: str, entry: str) -> bool:
+    """범위 한 줄의 호스트 부분과 맞는지.
+
+    `sesacedu.store`   그 호스트와 하위 도메인까지 (admin.sesacedu.store 포함)
+    `=sesacedu.store`  그 호스트만 — 하위 도메인은 제외
+    프로젝트 전체 범위는 넓게(하위 도메인 포함), 역할 범위는 `=` 로 좁혀 쓴다.
+    사용자 웹 대상으로 돌린 모듈이 관리자 하위 도메인으로 나가지 못하게 하기 위해서다.
+    """
+    if entry.startswith("="):
+        return host == entry[1:]
+    return host == entry or host.endswith("." + entry)
+
+
 def _matches(host: str, port: int, entry: str) -> bool:
-    """범위 한 줄과 맞는지. 'example.com' 은 포트를 가리지 않고,
+    """범위 한 줄과 맞는지. 포트를 안 적으면 포트를 가리지 않고,
     'localhost:3000' 은 그 포트만 허용한다(터널로 여러 서버를 같은 호스트에 열기 때문)."""
     entry = entry.strip().lower()
     head, sep, tail = entry.rpartition(":")
@@ -29,9 +42,7 @@ def _matches(host: str, port: int, entry: str) -> bool:
         entry, want_port = head, int(tail)
     else:
         want_port = None
-    if not (host == entry or host.endswith("." + entry)):
-        return False
-    return want_port is None or port == want_port
+    return _host_matches(host, entry) and (want_port is None or port == want_port)
 
 
 def is_in_scope(url: str, entries) -> bool:
@@ -67,7 +78,7 @@ def ensure_host_allowed(host: str, hosts=None) -> None:
     host = (host or "").strip().lower()
     allowed = hosts_of(hosts if hosts is not None
                        else (g.get("host_scope") or current_app.config["SCOPE_HOSTS"]))
-    if not any(host == h or host.endswith("." + h) for h in allowed):
+    if not any(_host_matches(host, h) for h in allowed):
         raise OutOfScope(f"허용 범위 밖 호스트입니다: {host} (허용: {', '.join(allowed)})")
 
 

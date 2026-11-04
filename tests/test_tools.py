@@ -309,7 +309,7 @@ def test_role_shown_in_report(app, client):
     with app.app_context():
         tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
     md = client.get(f"/report/{tid}.md").get_data(as_text=True)
-    assert "관리자 웹 (EC2 ②, 터널 3000)" in md   # 주소만으론 어디인지 모른다
+    assert "관리자 웹 (EC2 ②, admin.sesacedu.store)" in md   # 주소만으론 어디인지 모른다
     assert json.loads(client.get(f"/report/{tid}.json").get_data(as_text=True))["target"]["role"]
 
 

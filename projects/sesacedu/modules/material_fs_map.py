@@ -11,11 +11,18 @@ fsmap 은 자료 다운로드 경로 조작으로 서버 디렉터리 구조를 
 칼리에서 사람이 돌리고, 결과만 여기로 옮긴다.
 
 왜 응답 코드로 구조를 알 수 있나
-    404  그 경로 없음           → 가지를 끊는다
-    500  있는데 파일로 못 보냄   → 디렉터리이거나 읽기 권한이 없다
+    404  stat 실패 — **없음, 또는 상위 경로에 탐색 권한이 없음**
+    500  있는데 파일로 못 보냄 — 디렉터리이거나 읽기 권한이 없다
     200  파일이고 읽혔다
   디렉터리 목록을 주는 취약점이 아니라서, 코드 자체를 오라클로 쓴다.
-  500 은 둘 다 뜻하므로 fsmap 이 '<경로>/..' 를 한 번 더 물어 갈라 둔다.
+
+두 가지를 단정하지 않는다.
+  · 404 를 '없음'으로 읽지 않는다. 리눅스에서 /a/b 를 stat 하려면 /a 에 실행(탐색)
+    권한이 필요하고, 없으면 EACCES 로 실패해 404 가 된다. /root 가 0700 이면
+    /root/.bashrc 는 **있는데도 404** 다. 그래서 404 경로는 표에 올리지 않는다.
+  · 500 을 '읽기 권한 없는 파일'로 읽지 않는다. 못 읽는 파일(ENOTDIR)과
+    못 들어가는 디렉터리(EACCES)가 '<경로>/..' 에 **같은 응답**을 준다.
+    fsmap 은 이 경우를 kind="opaque" 로 넘기고, 여기서도 그대로 '못 들어감'으로 적는다.
 """
 import json
 
@@ -55,6 +62,21 @@ SEV_MARK = {"critical": "!!", "high": "! ", "medium": "~ ", "low": "  ", "info":
 MAX_NODES = 4000
 MAX_ROWS = 200
 
+DIR = "dir"        # 들어갈 수 있는 디렉터리
+OPAQUE = "opaque"  # 있지만 못 들어감 — 못 읽는 파일인지 못 들어가는 디렉터리인지 가릴 수 없다
+KIND_LABEL = {DIR: "디렉터리", OPAQUE: "못 들어감"}
+
+
+def _kind(node):
+    """fsmap 의 kind. 예전 형식(is_dir)만 있으면 True 일 때만 디렉터리로 본다.
+
+    예전 형식의 is_dir=False 는 '파일'이라는 **틀린 단정**이었으므로 믿지 않는다.
+    """
+    kind = node.get("kind")
+    if kind in (DIR, OPAQUE):
+        return kind
+    return DIR if node.get("is_dir") is True else None
+
 
 def _size(n):
     if n >= 1048576:
@@ -88,12 +110,18 @@ def _tree(nodes):
                 label, tail, mark = name + "/", "  (중간 경로)", "  "
             else:
                 mark = SEV_MARK.get(node.get("severity", "info"), "  ")
-                if node.get("is_dir") or (node.get("class") == "exists" and kids):
+                kind = _kind(node)
+                if kind == DIR or (node.get("class") == "exists" and kids):
                     label, tail = name + "/", "  [%s]" % node.get("status")
+                    if node.get("blocked"):
+                        tail += "  (안쪽 전부 404 — 비었거나 탐색 권한 없음)"
                 elif node.get("class") == "readable":
                     label, tail = name, "  [200 · %s]" % _size(node.get("size", 0))
+                elif kind == OPAQUE:
+                    label = name
+                    tail = "  [%s · 못 들어감: 파일/디렉터리 구분 불가]" % node.get("status")
                 else:
-                    label, tail = name, "  [%s · 권한 없음]" % node.get("status")
+                    label, tail = name, "  [%s · 종류 미판별]" % node.get("status")
                 if node.get("note"):
                     tail += "  — " + node["note"]
             lines.append("%s %s%s%s%s" % (mark, prefix, branch, label, tail))
@@ -102,7 +130,9 @@ def _tree(nodes):
 
     walk(root, "")
     lines += ["", "   범례  !! 치명  ! 높음  ~ 보통   |   [200]=읽힘  "
-                  "[500]=있으나 못 읽음  이름 끝 / = 디렉터리"]
+                  "[500]=있으나 파일로 못 보냄  이름 끝 / = 들어갈 수 있는 디렉터리",
+              "         404 는 그리지 않는다 — '없음'이 아니라 "
+              "'없음 또는 탐색 권한 없음'이라 단정할 수 없다"]
     return "\n".join(lines)
 
 
@@ -126,8 +156,9 @@ def run(target, params):
 
     meta = blob.get("meta") or {}
     readable = [n for n in nodes if n.get("class") == "readable"]
-    locked = [n for n in nodes if n.get("class") == "exists" and n.get("is_dir") is False]
-    dirs = [n for n in nodes if n.get("is_dir") is True]
+    opaque = [n for n in nodes if _kind(n) == OPAQUE]
+    dirs = [n for n in nodes if _kind(n) == DIR]
+    blocked = [n for n in nodes if n.get("blocked")]
 
     limit = SEV_ORDER.get(params.get("min_severity", "high"), 1)
     picked = sorted((n for n in readable
@@ -136,8 +167,12 @@ def run(target, params):
 
     rows, drills = [], []
     for n in sorted(nodes, key=lambda x: (SEV_ORDER.get(x.get("severity", "info"), 4), x["path"]))[:MAX_ROWS]:
-        kind = "디렉터리" if n.get("is_dir") else ("파일" if n.get("is_dir") is False else "?")
-        state = {"readable": "읽힘", "exists": "있음(못 읽음)"}.get(n.get("class"), n.get("class", "?"))
+        kind = KIND_LABEL.get(_kind(n), "미판별")
+        if n.get("class") == "readable":
+            kind = "파일"
+        state = {"readable": "읽힘", "exists": "있음"}.get(n.get("class"), n.get("class", "?"))
+        if n.get("blocked"):
+            state = "있음 · 안쪽 전부 404"
         rows.append([n["path"], n.get("status", "—"),
                      _size(n.get("size", 0)) if n.get("class") == "readable" else "—",
                      kind, n.get("severity", "info"), state])
@@ -152,12 +187,14 @@ def run(target, params):
             severity="high",
             location=meta.get("base_url", target.url) + (meta.get("endpoint") or ""),
             evidence=("인코딩 %s · 올라간 단계 %s · 보낸 요청 %s건 · 실행 %s\n"
-                      "존재 %d · 읽힘 %d · 디렉터리 %d · 있지만 권한 없음 %d\n\n"
-                      "읽힌 파일(앞 20개)\n%s"
+                      "존재 %d · 읽힘 %d · 디렉터리 %d · 못 들어감 %d · 막힌 가지 %d\n\n"
+                      "읽힌 파일(앞 20개)\n%s\n\n"
+                      "해석 주의: 404 였던 경로는 '없다'고 단정하지 않는다 — "
+                      "상위 경로에 탐색 권한이 없어도 404 가 온다."
                       % (meta.get("scheme", "?"), meta.get("depth", "?"),
                          (blob.get("stats") or {}).get("요청", "?"),
                          meta.get("window", "?"),
-                         len(nodes), len(readable), len(dirs), len(locked),
+                         len(nodes), len(readable), len(dirs), len(opaque), len(blocked),
                          "\n".join("  %s (%s)" % (n["path"], _size(n.get("size", 0)))
                                    for n in readable[:20]))),
             recommendation=("경로를 정규화(realpath)한 뒤 저장 폴더 안인지 검사하고, URL 디코딩은 "
@@ -176,13 +213,17 @@ def run(target, params):
     note = ("요청을 보내지 않았습니다 — 칼리에서 받은 결과를 읽기만 했습니다. "
             "표는 민감도 순 앞 %d개이고, 파일 내용은 fsmap 결과에 들어 있지 않습니다"
             "(경로·크기·응답 코드만). 내용을 보려면 행의 '내용 보기' 로 "
-            "'자료 다운로드 경로 조작' 도구로 넘어갑니다." % min(len(nodes), MAX_ROWS))
+            "'자료 다운로드 경로 조작' 도구로 넘어갑니다. "
+            "**없는 경로는 여기 없습니다** — 404 는 '없음'이 아니라 '없음 또는 상위 경로에 "
+            "탐색 권한 없음'이라서, 404 였던 경로를 '없다'고 적을 수 없습니다. "
+            "'못 들어감' 은 읽기 권한 없는 파일인지 탐색 권한 없는 디렉터리인지 "
+            "응답으로 가릴 수 없는 경우입니다." % min(len(nodes), MAX_ROWS))
     if blob.get("stopped"):
         note += " · 칼리 쪽이 중간에 멈췄습니다: %s (지도가 완전하지 않습니다)" % blob["stopped"]
 
     return ToolResult(
-        summary="존재 %d · 읽힘 %d · 디렉터리 %d · 권한으로 막힌 파일 %d"
-                % (len(nodes), len(readable), len(dirs), len(locked)),
+        summary="존재 %d · 읽힘 %d · 디렉터리 %d · 못 들어감 %d · 막힌 가지 %d"
+                % (len(nodes), len(readable), len(dirs), len(opaque), len(blocked)),
         columns=["경로", "응답", "크기", "종류", "민감도", "상태"],
         rows=rows, drills=drills,
         text=_tree(nodes),
