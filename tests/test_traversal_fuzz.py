@@ -374,3 +374,44 @@ def test_harvest_counts_as_the_modules_own_work(monkeypatch):
     r, _ = bodies(monkeypatch, CHAIN, seeds=["etc/systemd/system/sesacedu-api.service"])
     assert "퍼징이 스스로 찾음" in r.text
     assert "밖에서 받아" not in r.text
+
+
+# ── 실측 유닛 파일로 고정 ────────────────────────────────────────────
+# 11-04 실서버에서 읽힌 /etc/systemd/system/sesacedu-api.service (546B) 의 모양이다.
+# 모의해킹 세션이 **눈으로 읽어 손으로 넣어야 했던** 경로 3개가 여기서 나왔다.
+# 그 셋을 수확기가 자동으로 찾아내는지 못박는다.
+
+REAL_UNIT = """[Unit]
+Description=SesacEdu API
+[Service]
+Type=simple
+User=sesacedu
+WorkingDirectory=/srv/sesacedu/api
+EnvironmentFile=/etc/sesacedu/api.env
+Environment=JAVA_HOME=/opt/java/jdk-11.0.24+8
+Environment=CATALINA_HOME=/opt/apache-tomcat-10.1.1
+ExecStart=/opt/apache-tomcat-10.1.1/bin/catalina.sh run
+"""
+
+
+@pytest.mark.parametrize("path, why", [
+    ("etc/sesacedu/api.env", "api.env 는 어느 사전에도 없다"),
+    ("opt/java/jdk-11.0.24+8", "버전 문자열이 든 이름은 사전에 있을 수 없다"),
+    ("opt/apache-tomcat-10.1.1", "같은 이유"),
+])
+def test_harvests_what_a_person_had_to_read_by_eye(path, why):
+    assert path in mod.harvest_paths(REAL_UNIT), why
+
+
+def test_nested_environment_key_is_unwrapped():
+    """Environment=KEY=/path 는 '='가 한 번 더 중첩돼 있다."""
+    got = mod.harvest_paths("Environment=JAVA_HOME=/opt/java/jdk-11.0.24+8\n")
+    assert "opt/java/jdk-11.0.24+8" in got
+    assert not any(p.startswith("JAVA_HOME") for p in got)
+
+
+def test_harvested_plus_path_survives_the_round_trip():
+    """수확한 '+' 경로를 다시 보낼 때 공백으로 읽히면 안 된다(payloads 수정과 한 쌍)."""
+    from dashboard.payloads import traversal
+    path = next(p for p in mod.harvest_paths(REAL_UNIT) if "+" in p)
+    assert "+" not in traversal(path, 9, "double-full")
