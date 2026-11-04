@@ -455,3 +455,36 @@ def test_port_check_rejects_bad_input(app, client):
         "target_id": tid, "module_id": "port_check", "confirm": "yes",
         "ports": ",".join(str(p) for p in range(1, 40)), "expected": "", "timeout": "1"}).get_data(as_text=True)
     assert "30개까지" in page
+
+
+# ── '이어서 보기' 버튼이 화면에서 실제로 눌리는가 ────────────────────
+# tojson 은 Markup 을 돌려줘 자동 이스케이프를 건너뛴다. HTML 속성 안에 그대로
+# 넣으면 값의 첫 " 가 속성을 끊어 버려 value 가 '{"' 로 잘린다.
+# 서버는 그 조각을 json 으로 못 읽고 400 Bad Request 를 낸다.
+
+def _drill_values(html):
+    import re
+    return re.findall(r'name="_drill" value="([^"]*)"', html)
+
+
+def test_drill_button_value_is_valid_json(app, tool_client):
+    form = {"target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "tables",
+            "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
+    html = tool_client.post("/tools/run", data=form).get_data(as_text=True)
+    values = _drill_values(html)
+    assert values, "이어서 보기 버튼이 없다"
+    for raw in values:
+        import html as _h
+        parsed = json.loads(_h.unescape(raw))        # 브라우저가 보내는 것과 같은 값
+        assert isinstance(parsed, dict) and parsed, f"잘린 값: {raw!r}"
+
+
+def test_clicking_drill_button_works_end_to_end(app, tool_client):
+    """화면에 찍힌 값을 그대로 되돌려 보내도 400 이 나면 안 된다."""
+    import html as _h
+    form = {"target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "tables",
+            "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
+    html = tool_client.post("/tools/run", data=form).get_data(as_text=True)
+    raw = _drill_values(html)[0]
+    r = tool_client.post("/tools/run", data={**form, "_drill": _h.unescape(raw)})
+    assert r.status_code == 200
