@@ -4,8 +4,11 @@
 터미널에서 로그인 요청을 보내고 응답에서 토큰을 꺼내 대상 탭에 붙여 넣어야 했다.
 
 **비밀번호는 저장하지 않는다.** 받아서 한 번 보내고 버린다. DB 에도, 요청 기록에도
-남기지 않는다(`record_request=False`). 남는 것은 받아 온 토큰뿐이고, 그것도
-요청 기록에서는 `***` 로 가려진다.
+남기지 않는다(`record_request=False`).
+
+**토큰은 가리지 않는다.** 자체 실습 환경이고 받자마자 curl 에 붙여 쓰는 일이 많은데,
+가려 두면 맞게 들어갔는지 볼 수도, 복사해 쓸 수도 없다. 요청 기록에서만 `***` 로 가린다 —
+거기는 나중에 발표 자료로 통째로 나가는 화면이라서다.
 
 프로젝트 팩이 `PROJECT["login"]` 으로 어디에 무엇을 보낼지 적어 둔다. 앱 본체는
 특정 서비스의 로그인 모양을 모른다.
@@ -60,12 +63,6 @@ def find_token(body: str, keys):
             return got.strip()
     where = " · ".join(keys or ("token",))
     raise LoginFailed(f"응답에 토큰이 없습니다. 찾아본 자리: {where}")
-
-
-def mask(token: str) -> str:
-    """사람이 '맞게 들어갔나' 만 알아볼 만큼. 전체는 화면에 쓰지 않는다."""
-    t = token or ""
-    return (t[:6] + "…" + t[-4:]) if len(t) > 14 else "…"
 
 
 def fetch_token(target_url: str, cfg: dict, ident: str, secret: str, hosts=None) -> str:
