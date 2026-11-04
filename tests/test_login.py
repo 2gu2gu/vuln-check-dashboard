@@ -46,11 +46,6 @@ def test_non_json_says_check_the_address():
         login.find_token("<html>not json</html>", ["token"])
 
 
-def test_mask_shows_just_enough():
-    assert login.mask("abcdefghijklmnopqrstu") == "abcdef…rstu"
-    assert login.mask("short") == "…"
-
-
 def test_header_line():
     assert login.header_line(CFG, "zzz") == "Authorization: Bearer zzz"
 
@@ -114,17 +109,24 @@ def test_the_password_is_not_stored(app, client, monkeypatch):
     assert not any("hunter2" in str(tuple(r)) for r in rows)
 
 
-def test_only_the_masked_token_is_shown(app, client, monkeypatch):
+def test_the_whole_token_is_shown(app, client, monkeypatch):
+    """토큰을 가리지 않는다. 자체 실습 환경이고 받자마자 복사해 쓰는 일이 많다."""
     add_target(client)
     tid = only_target(app)
     _fake_login(monkeypatch, body='{"token": "abcdefghijklmnopqrstu"}')
     page = client.post(f"/targets/{tid}/login", data={"ident": "a@b.test", "secret": "pw"},
                        follow_redirects=True).get_data(as_text=True)
-    assert "abcdef…rstu" in page
-    # 전체 토큰은 안내문에 안 쓴다 — 화면 캡처·발표에 그대로 나가면 안 된다
-    import re
-    flash = " ".join(re.findall(r'class="flash[^"]*">(.*?)<', page, re.S))
-    assert "abcdefghijklmnopqrstu" not in flash
+    assert "Authorization: Bearer abcdefghijklmnopqrstu" in page
+
+
+def test_the_header_box_is_prefilled(app, client, monkeypatch):
+    """편집 칸에 지금 값이 들어 있어야 한다 — 확인·복사도 되고, 모르고 지우는 일도 없다."""
+    add_target(client)
+    tid = only_target(app)
+    _fake_login(monkeypatch, body='{"token": "tok.en.value"}')
+    client.post(f"/targets/{tid}/login", data={"ident": "a", "secret": "b"}, follow_redirects=True)
+    page = client.get(f"/targets?target={tid}").get_data(as_text=True)
+    assert "Authorization: Bearer tok.en.value</textarea>" in page
 
 
 def test_other_headers_are_kept(app, client, monkeypatch):

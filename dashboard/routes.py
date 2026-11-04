@@ -231,8 +231,11 @@ def targets():
     names = {t["id"]: list(_parse_headers(t["headers"])) for t in targets}
     logins = {row["id"]: login_mod.config_for(_projects().get(row["project"]), row["role"])
               for row in targets}
+    # 지금 들어 있는 값을 그대로 넘긴다 — 토큰을 확인하고 복사할 수 있어야 한다.
+    # 빈 칸으로 두면 편집하다가 모르고 지우는 일도 생긴다.
+    header_text = {row["id"]: (row["headers"] or "") for row in targets}
     return render_template("targets.html", target=target, targets=targets,
-                           header_names=names, logins=logins)
+                           header_names=names, header_text=header_text, logins=logins)
 
 
 @bp.post("/targets/<int:tid>/delete")
@@ -303,8 +306,10 @@ def target_login(tid):
     text = "\n".join(keep + [login_mod.header_line(cfg, token)])
     db.execute("UPDATE targets SET headers = ? WHERE id = ?", [text, tid])
     db.commit()
-    flash("로그인했습니다. 토큰을 인증 헤더에 넣었습니다 (%s). 비밀번호는 저장하지 않았습니다."
-          % login_mod.mask(token), "ok")
+    # 토큰을 그대로 보여 준다. 자체 실습 환경이고 받자마자 curl 에 붙여 쓰는 일이 많다.
+    # 가려 두면 '맞게 들어갔나' 를 확인할 수도, 복사해 쓸 수도 없다.
+    flash("로그인했습니다. 인증 헤더에 넣었습니다 — %s  (비밀번호는 저장하지 않았습니다)"
+          % login_mod.header_line(cfg, token), "ok")
     return redirect(back)
 
 
