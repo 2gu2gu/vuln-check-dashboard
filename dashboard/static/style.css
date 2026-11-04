@@ -29,15 +29,8 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #1C1C1C; --surface: #262626; --surface-2: #2C2C2C; --line: #3A3A3A;
-    --text: #ECECEC; --sub: #A3A3A3; --accent: #8DB4D4; --accent-soft: #2B3842;
-    --hit: #E39A78; --hit-soft: #3D2C25;
-    --sev-critical: #E0899A; --sev-high: #E39A78; --sev-medium: #D9B65E; --sev-low: #8DB4D4; --sev-info: #A3A3A3;
-    color-scheme: dark;
-  }
-}
+/* 어두운 화면은 위쪽 버튼으로 켤 때만 쓴다 — 데스크톱 설정은 따르지 않는다.
+   점검 화면은 발표·캡처에 그대로 들어가므로 기본을 한 가지로 고정해 둔다. */
 :root[data-theme="dark"] {
   --bg: #1C1C1C; --surface: #262626; --surface-2: #2C2C2C; --line: #3A3A3A;
   --text: #ECECEC; --sub: #A3A3A3; --accent: #8DB4D4; --accent-soft: #2B3842;
@@ -316,3 +309,18 @@ mark { background: #F2D36B; color: #1C1C1C; border-radius: 2px; padding: 0 1px; 
 @media (forced-colors: active) {
   .sev i, .cell-dot { forced-color-adjust: none; }
 }
+
+/* 실행 전에 준비할 것 — 토큰·환경변수처럼 화면 밖에서 미리 해 둬야 하는 것 */
+.needs { border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); padding: 8px 10px; margin: 10px 0; }
+.needs-head { font-size: 12px; font-weight: 700; color: var(--sub); margin-bottom: 6px; }
+.need { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--line); }
+.need:first-of-type { border-top: 0; }
+.need p { margin: 2px 0 0; }
+.need code { font-size: 12px; }
+.need-mark { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: 0 0 auto; background: var(--sub); }
+.need-ok .need-mark { background: var(--sev-low); }
+.need-todo .need-mark { background: var(--hit); }
+.need-state { font-size: 12px; font-weight: 600; margin-left: 6px; color: var(--sub); }
+.need-ok .need-state { color: var(--sev-low); }
+.need-todo .need-state { color: var(--hit); }
+.need-todo { background: var(--hit-soft); margin: 0 -10px; padding: 6px 10px; border-radius: 4px; }
