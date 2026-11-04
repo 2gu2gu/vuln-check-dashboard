@@ -45,8 +45,7 @@
 ## 모듈이 찾은 것과 밖에서 온 것은 섞지 않는다
 
 이 모듈이 세우는 것은 **자기 페이로드로 기계적으로 확인한 것**뿐이다. 그 밖에
-사람이나 AI 가 읽힌 설정 파일 내용에서 절대경로를 읽어 넣어 확인한 것, 칼리 fsmap 으로
-가져온 것은 **다른 출처**다. 같은 트리에 들어가더라도 출처를 함께 적고 집계도 따로 낸다.
+사람이나 AI 가 읽힌 설정 파일 내용에서 절대경로를 읽어 넣어 확인한 것은 **다른 출처**다. 같은 트리에 들어가더라도 출처를 함께 적고 집계도 따로 낸다.
 
     씨앗     이 모듈 — 패키지 기본 경로 사전
     확장     이 모듈 — 1단계가 확정한 디렉터리 아래
@@ -80,8 +79,8 @@
 (systemd 유닛의 `JAVA_HOME`·`EnvironmentFile`). 읽힌 파일에서 절대경로를 눈으로
 찾아 다시 넣는 것이 지금은 사람 몫이다. `note` 에 그 안내를 넣어 둔다.
 
-칼리에서 더 깊이 돌리려면 `08_모의해킹/file_inclution/fsmap/` 의 도구를 쓰고,
-결과는 '칼리 fsmap 결과 가져오기' 모듈로 가져온다.
+칼리에서 더 깊이 돌려 알아낸 경로가 있으면 '단서로 받은 경로' 칸에 넣는다.
+그렇게 들어온 것은 출처가 '단서' 로 남아, 이 모듈이 스스로 찾은 것과 섞이지 않는다.
 """
 import re
 
@@ -89,7 +88,7 @@ from dashboard.core import Finding, ToolResult, fetch
 from dashboard.payloads import ENCODINGS, traversal
 from dashboard import wordlists
 from projects.sesacedu.fs_knowledge import describe
-from projects.sesacedu.modules.material_fs_map import _size, _tree
+from projects.sesacedu.fs_tree import _size, _tree
 
 META = {
     "id": "sesacedu_material_traversal_fuzz",
