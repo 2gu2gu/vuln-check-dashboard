@@ -28,11 +28,11 @@ META = {
     "params": [
         {"name": "output", "label": "명령 출력 붙여 넣기", "type": "textarea", "default": "",
          "placeholder": "$ sudo --version\nSudo version 1.9.15p5\n\n$ ss -tlnp\nLISTEN 0 4096 0.0.0.0:22 0.0.0.0:* users:((\"sshd\",pid=1,fd=3))"},
-        {"name": "fixed", "label": "고쳐진 버전 기준 (이름 버전)", "type": "textarea",
+        {"name": "fixed", "label": "안전한 최소 버전 (이름 버전)", "type": "textarea",
          "default": "sudo 1.9.17",
          "help": "한 줄에 하나. 붙여 넣은 버전이 이보다 낮으면 표시합니다. 기준은 배포판 보안 공지를 보고 팀이 정합니다."},
         {"name": "public_ports", "label": "밖에 열려도 되는 포트", "default": "22,80,443",
-         "help": "0.0.0.0 으로 듣고 있는데 이 목록에 없으면 표시합니다."},
+         "help": "0.0.0.0 으로 열려 있는데 이 목록에 없으면 표시합니다."},
     ],
 }
 

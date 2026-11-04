@@ -36,7 +36,7 @@
 </form>
 
 {% if not findings %}
-  {{ empty("결과가 없습니다", "모듈 탭에서 점검을 실행하면 여기에 쌓입니다.", url_for('dash.modules', target=target.id), "모듈로 가기") }}
+  {{ empty("결과가 없습니다", "모듈 탭에서 점검을 실행하면 결과가 여기에 올라옵니다.", url_for('dash.modules', target=target.id), "모듈로 가기") }}
 {% else %}
 <div class="split">
   <div class="table-wrap">

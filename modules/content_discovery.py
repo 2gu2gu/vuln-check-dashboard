@@ -17,7 +17,7 @@ META = {
     "kind": "active",
     "stage": "collect",
     "attack": [{"tactic": "TA0043", "technique": "T1595.003", "name": "Active Scanning: Wordlist Scanning"}],
-    "description": "사전의 경로를 하나씩 요청해 링크에 없는 엔드포인트를 찾습니다. 찾은 것은 표면에 쌓입니다.",
+    "description": "사전의 경로를 하나씩 요청해 링크에 없는 엔드포인트를 찾습니다. 찾은 경로는 표면 탭에 등록됩니다.",
     "params": [
         {"name": "wordlist", "label": "사전", "type": "wordlist", "default": "web-common.txt"},
         {"name": "base", "label": "기준 경로", "default": "/",

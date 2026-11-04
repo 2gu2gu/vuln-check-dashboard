@@ -23,7 +23,7 @@ META = {
     "stage": "tool",
     "severity": "medium",
     "attack": [{"tactic": "TA0043", "technique": "T1595.003", "name": "Active Scanning: Wordlist Scanning"}],
-    "description": "ffuf·gobuster·nuclei 결과나 URL 목록을 붙여 넣으면 표면 지점(과 nuclei 는 결과)으로 옮깁니다. 요청은 보내지 않습니다.",
+    "description": "ffuf·gobuster·nuclei 결과나 URL 목록을 붙여 넣으면 표면 지점으로 옮깁니다. nuclei 결과는 결과 탭에도 올립니다. 요청은 보내지 않습니다.",
     "params": [
         {"name": "output", "label": "도구 결과 붙여 넣기", "type": "textarea", "default": "",
          "placeholder": '{"results":[{"url":"https://example.test/admin","status":200,"length":1234}]}\n'

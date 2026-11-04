@@ -16,7 +16,7 @@ META = {
     "params": [
         {"name": "start", "label": "시작 경로", "default": "/"},
         {"name": "max_pages", "label": "최대 페이지", "default": "30", "type": "int"},
-        {"name": "skip", "label": "제외할 말(쉼표)", "default": "logout,signout,delete,remove"},
+        {"name": "skip", "label": "제외할 단어(쉼표)", "default": "logout,signout,delete,remove"},
     ],
 }
 
