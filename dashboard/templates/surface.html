@@ -3,10 +3,10 @@
 {% block title %}표면{% endblock %}
 {% block content %}
 <h1>표면</h1>
-<p class="lead">수집 모듈이 모은 엔드포인트·파라미터입니다. 지점을 골라 지점 점검 모듈을 돌리면 지점마다 취약 · 잠재 · 안전으로 판정하고, 취약은 결과 탭에도 쌓입니다.</p>
+<p class="lead">수집 모듈이 모은 엔드포인트·파라미터입니다. 지점을 골라 지점 점검 모듈을 돌리면 지점마다 취약 · 잠재 · 안전으로 판정하고, 취약으로 나온 것은 결과 탭에 함께 올라갑니다.</p>
 
 {% if not target %}
-  {{ empty("대상을 먼저 등록하세요", "표면은 대상별로 쌓입니다.", url_for('dash.targets'), "대상 등록") }}
+  {{ empty("대상을 먼저 등록하세요", "표면은 대상별로 따로 모읍니다.", url_for('dash.targets'), "대상 등록") }}
 {% else %}
 <section class="cards">
   <div class="card"><small>엔드포인트</small><strong>{{ totals.endpoints }}</strong></div>

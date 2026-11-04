@@ -7,7 +7,7 @@
   인증 값(Cookie·Authorization 등)은 *** 로 남깁니다.</p>
 
 {% if not target %}
-  {{ empty("대상을 먼저 등록하세요", "요청 기록은 대상별로 쌓입니다.", url_for('dash.targets'), "대상 등록") }}
+  {{ empty("대상을 먼저 등록하세요", "요청 기록은 대상별로 따로 남습니다.", url_for('dash.targets'), "대상 등록") }}
 {% else %}
 <form method="get" class="filters">
   <input type="hidden" name="target" value="{{ target.id }}">
@@ -24,7 +24,7 @@
 </form>
 
 {% if not rows %}
-  {{ empty("기록이 없습니다", "모듈을 실행하면 보낸 요청이 여기에 쌓입니다.", url_for('dash.modules', target=target.id), "모듈로 가기") }}
+  {{ empty("기록이 없습니다", "모듈을 실행하면 보낸 요청이 여기에 남습니다.", url_for('dash.modules', target=target.id), "모듈로 가기") }}
 {% else %}
 <div class="table-wrap">
 <table class="grid" id="history">

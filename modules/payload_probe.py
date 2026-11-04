@@ -15,7 +15,7 @@ from dashboard.core import Check
 
 META = {
     "id": "payload_probe",
-    "name": "사전으로 패턴 넣어 보기",
+    "name": "사전으로 입력값 넣어 보기",
     "category": "입력 검증",
     "kind": "active",
     "stage": "probe",
