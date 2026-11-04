@@ -8,6 +8,41 @@
     try { localStorage.setItem("theme", root.dataset.theme); } catch (e) {}
   });
 
+  // ── 왼쪽 메뉴 드로어 ─────────────────────────────────────
+  // 연 상태를 기억한다 — 화면을 옮길 때마다 다시 열게 하면 성가시다.
+  // 좁은 화면에서만 본문을 덮으므로, Esc·뒤 누르기로 닫는 것도 그때만 한다.
+  (function () {
+    var root = document.documentElement;
+    var toggle = document.getElementById("side-toggle");
+    var side = document.getElementById("side-nav");
+    if (!toggle || !side) return;
+    var shut = document.getElementById("side-close");
+    var scrim = document.getElementById("side-backdrop");
+    var narrow = window.matchMedia("(max-width: 900px)");
+
+    function isOpen() { return root.dataset.side !== "closed"; }
+    function sync() { toggle.setAttribute("aria-expanded", isOpen() ? "true" : "false"); }
+    function set(open, focusBack) {
+      root.dataset.side = open ? "open" : "closed";
+      sync();
+      try { localStorage.setItem("sideNav", root.dataset.side); } catch (e) {}
+      // 열면 머리의 단추가 사라지므로 초점을 안쪽 닫기 단추로 옮긴다 — 안 그러면 초점이 사라진다
+      if (open) {
+        if (shut) shut.focus();
+      } else if (focusBack) {
+        toggle.focus();
+      }
+    }
+
+    sync();
+    toggle.addEventListener("click", function () { set(!isOpen(), true); });
+    if (shut) shut.addEventListener("click", function () { set(false, true); });
+    if (scrim) scrim.addEventListener("click", function () { set(false, false); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && isOpen() && narrow.matches) set(false, true);
+    });
+  })();
+
   // 사전 고르기: 이름으로 좁히기 + 몇 번 나갈지 미리 보기
   // 사람은 경로가 아니라 'raft', 'lfi' 같은 이름 조각으로 기억한다.
   document.querySelectorAll(".wl").forEach(function (box) {

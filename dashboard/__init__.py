@@ -8,7 +8,7 @@ from markupsafe import Markup, escape
 
 from . import db, wordlists
 from .core import SEVERITY_LABEL, fmt_kst
-from .registry import load_catalog
+from .registry import group_targets, load_catalog
 
 __version__ = "0.2.0"
 
@@ -85,6 +85,8 @@ def create_app(test_config=None):
     app.jinja_env.filters["kst"] = fmt_kst
     app.jinja_env.filters["mark_tokens"] = mark_tokens
     app.jinja_env.filters["strong"] = strong
+    # 대상 목록을 화면 묶음으로 — 연습용은 따로 뒤에 (registry.group_targets 가 규칙)
+    app.jinja_env.filters["grouped"] = lambda ts: group_targets(ts, app.config["PROJECTS"])
     def csrf_field():
         return Markup('<input type="hidden" name="_csrf" value="%s">' % escape(csrf_token()))
 
