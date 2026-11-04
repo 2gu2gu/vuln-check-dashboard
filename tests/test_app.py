@@ -97,3 +97,21 @@ def test_dark_theme_only_when_asked():
 
     js = (Path(__file__).resolve().parent.parent / "dashboard/static/app.js").read_text(encoding="utf-8")
     assert "prefers-color-scheme" not in js
+
+
+# ── 이름: 딸깍이 (종류는 DAST) ───────────────────────────────────
+# 팀이 정한 이름이다(노션 '대시보드 딸깍이 제작'). 종류를 가리키는 DAST 와 함께 쓴다.
+
+def test_name_is_shown(client):
+    page = client.get("/").get_data(as_text=True)
+    assert "딸깍이" in page and "DAST 대시보드" in page
+
+
+def test_report_says_which_tool_made_it(app, client):
+    add_target(client, "https://sesacedu.store")
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    md = client.get(f"/report/{tid}.md").get_data(as_text=True)
+    assert "- 도구: 딸깍이 (DAST 대시보드)" in md
+    import json
+    assert json.loads(client.get(f"/report/{tid}.json").get_data(as_text=True))["tool"].startswith("딸깍이")
