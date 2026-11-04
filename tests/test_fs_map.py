@@ -170,3 +170,32 @@ def test_limits_node_count():
     with pytest.raises(ValueError) as exc:
         material_fs_map.run(T, {"fsmap": json.dumps(big), "min_severity": "high"})
     assert "까지 읽습니다" in str(exc.value)
+
+
+# ── '보낸 요청 0건' 은 센 적이 없다는 뜻일 수 있다 ───────────────────
+# 11-04 실측 내보내기가 stats.요청 = 0 이었다. 94개를 찾아 놓고 0건이라 적혀 있었다.
+# fsmap 을 이어서 돌리면 Prober 가 새로 만들어져 카운터가 0 부터 시작하는데,
+# 내보내기가 그 0 을 그대로 실은 것이다. 0 을 사실처럼 쓰면 안 된다.
+
+def test_zero_requests_is_reported_as_unknown():
+    txt = material_fs_map._sent_text({"stats": {"요청": 0}, "unstat_count": 1194})
+    assert "기록 없음" in txt and "0건" not in txt
+    assert "1194" in txt          # 404 수로 최소 규모를 짐작하게 해 준다
+
+
+def test_missing_stats_is_unknown_too():
+    assert "기록 없음" in material_fs_map._sent_text({})
+
+
+def test_real_count_is_shown():
+    assert material_fs_map._sent_text({"stats": {"요청": 420}}) == "420건"
+    assert "1300건" in material_fs_map._sent_text({"stats": {"요청": 1300, "세션": 2}})
+    assert "2회에 나눠" in material_fs_map._sent_text({"stats": {"요청": 1300, "세션": 2}})
+
+
+def test_evidence_says_the_dashboard_sent_nothing():
+    """이 모듈은 요청을 보내지 않는다. 숫자가 딸깍이 것으로 읽히면 안 된다."""
+    r = run()
+    f = [x for x in r.findings if "구조 확인" in x.title][0]
+    assert "칼리 fsmap 이 보낸 요청" in f.evidence
+    assert "딸깍이는 이 모듈에서 요청을 보내지 않습니다" in f.evidence
