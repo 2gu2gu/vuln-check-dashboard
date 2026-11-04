@@ -1,0 +1,141 @@
+# 새싹에듀 ① 서버 파일시스템 씨앗 — 패키지를 설치하면 반드시 생기는 경로
+# 2026-11-04 실서버 실측으로 추린 것. 우선순위 낮은 숫자부터 적중률이 높다.
+# 맨 앞 / 는 빼고 쓴다. 설명은 '#' 줄로 두었다(사전 읽기에서 건너뛴다).
+
+
+# ── 서비스 정의(systemd) ──
+etc/systemd/system
+lib/systemd/system
+usr/lib/systemd/system
+etc/systemd/system/sesacedu-api.service
+etc/systemd/system/sesacedu.service
+etc/systemd/system/sesacedu-web.service
+etc/systemd/system/sesacedu-admin-web.service
+etc/systemd/system/multi-user.target.wants
+
+# ── 패키지 목록 ──
+var/lib/dpkg/status
+var/log/dpkg.log
+var/log/apt/history.log
+etc/apt/sources.list
+
+# ── OS 기본 ──
+etc/passwd
+etc/group
+etc/shadow
+etc/os-release
+etc/hostname
+etc/hosts
+etc/fstab
+etc/crontab
+etc/environment
+etc/timezone
+etc/machine-id
+etc/resolv.conf
+proc/version
+etc/sudoers
+
+# ── nginx ──
+etc/nginx
+etc/nginx/nginx.conf
+etc/nginx/sites-available
+etc/nginx/sites-enabled
+etc/nginx/sites-available/default
+etc/nginx/sites-available/sesacedu
+etc/nginx/sites-available/sesacedu-admin
+etc/nginx/conf.d
+etc/nginx/snippets
+etc/nginx/mime.types
+etc/nginx/proxy_params
+etc/nginx/modules-enabled
+var/log/nginx
+var/log/nginx/access.log
+var/log/nginx/error.log
+var/www/html
+usr/share/nginx/html
+run/nginx.pid
+
+# ── Tomcat (데비안 패키지) ──
+etc/tomcat9
+etc/tomcat10
+etc/tomcat9/server.xml
+etc/tomcat10/server.xml
+etc/tomcat9/tomcat-users.xml
+etc/tomcat10/tomcat-users.xml
+etc/tomcat9/context.xml
+etc/tomcat10/context.xml
+var/lib/tomcat9/webapps
+var/lib/tomcat10/webapps
+var/log/tomcat9/catalina.out
+var/log/tomcat10/catalina.out
+etc/default/tomcat9
+etc/default/tomcat10
+usr/share/tomcat9
+usr/share/tomcat10
+
+# ── Tomcat (수동 설치) ──
+opt/tomcat
+opt/tomcat/conf/server.xml
+opt/tomcat/conf/tomcat-users.xml
+opt/tomcat/conf/context.xml
+opt/tomcat/conf/catalina.properties
+opt/tomcat/logs/catalina.out
+opt/tomcat/webapps
+opt/tomcat/webapps/ROOT
+opt/tomcat/bin/setenv.sh
+usr/local/tomcat/conf/server.xml
+
+# ── Java ──
+usr/lib/jvm
+usr/lib/jvm/java-17-openjdk-amd64/release
+usr/lib/jvm/java-21-openjdk-amd64/release
+usr/lib/jvm/java-11-openjdk-amd64/release
+
+# ── Spring Boot 배포물 ──
+opt/sesacedu
+opt/sesacedu/application.yml
+opt/sesacedu/application.properties
+opt/sesacedu/config/application.yml
+srv/sesacedu
+home/ubuntu
+app
+data
+var/www
+
+# ── cloud-init (EC2) ──
+var/lib/cloud/instance/user-data.txt
+var/lib/cloud/instance/scripts/part-001
+var/lib/cloud/instance/obj.pkl
+
+# ── 계정 흔적 ──
+home/ubuntu/.bash_history
+home/ubuntu/.ssh/authorized_keys
+home/alice
+home/alice/.bash_history
+root/.bash_history
+home/ubuntu/.aws/credentials
+
+# ── 로그 ──
+var/log
+var/log/syslog
+var/log/auth.log
+var/log/cloud-init-output.log
+var/log/cloud-init.log
+var/log/journal
+
+# ── TLS 인증서 (Certbot) ──
+etc/letsencrypt
+etc/letsencrypt/live/sesacedu.store/fullchain.pem
+etc/letsencrypt/live/sesacedu.store/privkey.pem
+etc/letsencrypt/renewal/sesacedu.store.conf
+
+# ── Wazuh 에이전트 ──
+var/ossec
+var/ossec/etc/ossec.conf
+var/ossec/etc/client.keys
+var/ossec/logs/ossec.log
+
+# ── 앱 저장소(취약점 자신의 뿌리) ──
+storage
+opt/sesacedu/storage
+home/ubuntu/storage

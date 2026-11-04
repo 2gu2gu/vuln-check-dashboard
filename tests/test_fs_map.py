@@ -71,11 +71,19 @@ def test_does_not_claim_opaque_is_a_file():
 
 
 def test_does_not_claim_a_blocked_directory_is_empty():
+    """안쪽이 전부 404 인 원인은 셋이고 응답으로는 가릴 수 없다.
+
+    가장 흔한 원인은 **사전에 그 이름이 없는 것**이다 — 11-04 실서버에서
+    /etc/sesacedu 는 api.env 를 읽어낸 뒤에도 app-dirs 사전으로는 0개가 나왔다.
+    '비어 있다'로 읽히는 문구를 쓰면 틀린다.
+    """
     r = run()
     assert "안쪽 전부 404" in r.text
     srv = [row for row in r.rows if row[0] == "/srv"][0]
     assert srv[5] == "있음 · 안쪽 전부 404"
-    assert "비었거나 탐색 권한 없음" in r.text
+    assert "사전 미포함" in r.text          # 사전 원인을 먼저 적는다
+    assert "탐색 권한 없음" in r.text
+    assert "비었음" in r.text
 
 
 def test_note_warns_that_404_is_not_absence():
