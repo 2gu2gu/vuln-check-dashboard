@@ -110,6 +110,8 @@ MIGRATIONS = [
     ("point_checks", "exchange_id", "INTEGER"),
     ("targets", "headers", "TEXT NOT NULL DEFAULT ''"),
     ("targets", "role", "TEXT NOT NULL DEFAULT ''"),
+    # CVSS 벡터만 저장한다. 점수·등급은 벡터에서 계산한다 — 따로 적으면 둘이 어긋난다
+    ("findings", "cvss_vector", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 

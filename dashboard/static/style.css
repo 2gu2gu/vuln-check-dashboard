@@ -333,3 +333,16 @@ mark { background: #F2D36B; color: #1C1C1C; border-radius: 2px; padding: 0 1px; 
 .wl-note { font-size: 11px; }
 .wl-cut { font-size: 11px; color: var(--hit); }
 .warn-text { color: var(--hit); font-weight: 600; }
+
+/* CVSS — 점수는 벡터에서 계산한다(사람이 따로 적지 않는다) */
+.cvss { border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin-bottom: 10px; background: var(--surface-2); }
+.cvss-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.cvss-score { font-size: 18px; font-weight: 700; color: var(--sev-c, var(--text)); }
+.cvss-score.sev-critical { --sev-c: var(--sev-critical); } .cvss-score.sev-high { --sev-c: var(--sev-high); }
+.cvss-score.sev-medium { --sev-c: var(--sev-medium); } .cvss-score.sev-low { --sev-c: var(--sev-low); }
+.cvss-score.sev-info { --sev-c: var(--sev-info); }
+.cvss-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
+.cvss-grid .field { font-size: 12px; color: var(--sub); gap: 2px; }
+.cvss-grid select { width: 100%; font-size: 12px; }
+.cvss-vector { display: block; font-size: 11px; margin-top: 8px; word-break: break-all; color: var(--sub); }
+@media (max-width: 560px) { .cvss-grid { grid-template-columns: 1fr; } }

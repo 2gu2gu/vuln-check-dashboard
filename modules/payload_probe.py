@@ -17,6 +17,7 @@ META = {
     "id": "payload_probe",
     "name": "사전으로 입력값 넣어 보기",
     "category": "입력 검증",
+    "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
     "kind": "active",
     "stage": "probe",
     "severity": "medium",

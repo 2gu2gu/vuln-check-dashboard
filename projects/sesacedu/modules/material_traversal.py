@@ -15,6 +15,8 @@ META = {
     "id": "sesacedu_material_traversal",
     "name": "자료 다운로드 경로 조작",
     "category": "경로 조작",
+    # 로그인한 사용자가 저장소 밖 파일을 읽는다
+    "cvss": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
     "kind": "active",
     "roles": ["user_web", "practice"],  # 이 역할의 대상에서만 보인다
     "stage": "tool",

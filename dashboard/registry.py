@@ -39,6 +39,7 @@ class ModuleInfo:
     stage: str = "check"
     severity: str = "medium"  # probe 가 '취약'을 낼 때 기본 심각도
     needs: list = field(default_factory=list)  # 실행 전에 미리 준비해야 하는 것(토큰·환경변수 등)
+    cvss: str = ""  # 이 모듈이 찾는 것의 전형적인 CVSS 벡터(제안값 — 사람이 고쳐 쓴다)
 
     @property
     def stage_label(self) -> str:
@@ -79,7 +80,16 @@ def _norm_roles(roles):
     return out
 
 
+from dashboard import cvss as cvss_mod
 from dashboard import needs as needs_mod
+
+
+def _check_cvss(vector: str) -> str:
+    """META 에 적은 CVSS 벡터가 말이 되는지 등록할 때 본다. 틀리면 모듈이 안 올라간다."""
+    if not vector:
+        return ""
+    cvss_mod.parse(vector)          # 틀리면 BadVector(ValueError) 가 올라가 오류로 보인다
+    return vector
 
 
 def _validate(meta: dict) -> None:
@@ -119,6 +129,7 @@ def discover(package_name: str = "modules", project: str = ""):
                 params=meta.get("params", []), run=mod.run, source=source, project=project,
                 stage=meta.get("stage", "check"), severity=meta.get("severity", "medium"),
                 roles=meta.get("roles", []), needs=needs_mod.validate(meta.get("needs")),
+                cvss=_check_cvss(meta.get("cvss", "")),
             )
         except Exception as e:  # noqa: BLE001 — 깨진 모듈은 화면에 오류로 보여 준다
             errors.append((source, str(e)))
