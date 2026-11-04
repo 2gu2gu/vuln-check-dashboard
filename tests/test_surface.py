@@ -234,3 +234,32 @@ def test_empty_url_list_is_an_error(app, client):
     page = client.post("/modules/surface_import/run", data={"target_id": tid, "urls": "   "},
                        follow_redirects=True).get_data(as_text=True)
     assert "붙여 넣을 URL 이 없습니다" in page
+
+
+# ── 파라미터가 하나도 없을 때 왜 못 고르는지 말해 줘야 한다 ───────────
+# 주소만 모인 상태에서는 '전체 선택'을 눌러도 0개고, 점검을 누르면
+# "점검할 지점을 고르세요" 만 떠서 무엇이 모자란지 알 수 없었다.
+
+def test_surface_explains_when_no_parameters(app, client):
+    from tests.test_app import add_target
+    add_target(client, "https://sesacedu.store")
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    client.post("/modules/surface_import/run",
+                data={"target_id": tid, "urls": "https://sesacedu.store/login"}, follow_redirects=True)
+    html = client.get(f"/surface?target={tid}").get_data(as_text=True)
+    assert "고를 수 있는 지점이 없습니다" in html
+    assert 'id="pick-all"' in html and 'class="panel probe-bar" hidden' in html
+
+
+def test_surface_shows_the_bar_once_a_parameter_exists(app, client):
+    from tests.test_app import add_target
+    add_target(client, "https://sesacedu.store")
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    client.post("/modules/surface_import/run",
+                data={"target_id": tid, "urls": "https://sesacedu.store/backend/lectures?keyword=a"},
+                follow_redirects=True)
+    html = client.get(f"/surface?target={tid}").get_data(as_text=True)
+    assert "고를 수 있는 지점이 없습니다" not in html
+    assert 'name="point"' in html
