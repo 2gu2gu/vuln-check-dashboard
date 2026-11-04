@@ -55,6 +55,50 @@
     cost();
   });
 
+  // ── 위에 붙어 있는 머리 높이를 재 둔다 ───────────────────
+  // 창이 좁으면 머리가 줄바꿈돼 높이가 달라진다. 고정값을 쓰면 그때 앵커가 어긋난다.
+  (function () {
+    var head = document.querySelector("header");
+    if (!head) return;
+    function measure() {
+      document.documentElement.style.setProperty("--sticky-h", head.offsetHeight + "px");
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    if (window.ResizeObserver) new ResizeObserver(measure).observe(head);
+  })();
+
+  // ── 모듈 카드 접었다 펴기 ────────────────────────────────
+  // 15개가 다 펴져 있으면 화면이 끝없이 길어진다. 어느 것을 펴 뒀는지는 기억한다 —
+  // 같은 모듈을 연달아 돌려 보는 일이 흔하기 때문이다.
+  (function () {
+    var cards = document.querySelectorAll(".mod[data-mod]");
+    if (!cards.length) return;
+    var open = {};
+    try { open = JSON.parse(localStorage.getItem("modOpen") || "{}"); } catch (e) {}
+
+    function set(card, on, animate) {
+      var body = card.querySelector(".mod-body");
+      var btn = card.querySelector(".mod-open");
+      if (!body || !btn) return;
+      card.classList.toggle("open", on);
+      btn.setAttribute("aria-expanded", on ? "true" : "false");
+      if (on && !animate) body.style.animation = "none";
+      body.hidden = !on;
+      if (on && !animate) requestAnimationFrame(function () { body.style.animation = ""; });
+      open[card.dataset.mod] = on;
+      try { localStorage.setItem("modOpen", JSON.stringify(open)); } catch (e) {}
+    }
+
+    cards.forEach(function (card) {
+      if (open[card.dataset.mod]) set(card, true, false);
+      var btn = card.querySelector(".mod-open");
+      if (btn) btn.addEventListener("click", function () {
+        set(card, card.querySelector(".mod-body").hidden, true);
+      });
+    });
+  })();
+
   // ── 왼쪽 묶음 드로어 접기 ────────────────────────────────
   // 접은 상태를 기억한다 — 매번 다시 접게 하면 성가시다.
   (function () {
@@ -199,8 +243,12 @@
       var code = x.error ? "ERR" : String(x.status);
       var cls = x.error ? "code-x" : "code-" + code.charAt(0);
       var path = x.url.replace(/^https?:\/\/[^/]+/, "") || "/";
-      el.innerHTML = '<span class="arrow">\u2192</span> <span class="meta"></span> '
-                   + '<span class="path"></span> <span class="' + cls + '"></span>'
+      el.setAttribute("role", "button");
+      el.setAttribute("tabindex", "0");
+      el.setAttribute("aria-expanded", "false");
+      el.title = "\ub20c\ub7ec\uc11c \ud328\ud0b7 \uc6d0\ubb38 \ubcf4\uae30";
+      el.innerHTML = '<span class="arrow">\u2192</span> <span class="verb"></span> '
+                   + '<span class="path"></span> <span class="code ' + cls + '"></span>'
                    + ' <span class="meta"></span>';
       var s = el.querySelectorAll("span");
       s[1].textContent = x.method;
@@ -208,12 +256,20 @@
       s[3].textContent = code;
       s[4].textContent = x.error ? x.error : (x.size + "B \u00b7 " + x.ms + "ms");
       el.addEventListener("click", function () { toggleRaw(el, x.id); });
+      el.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleRaw(el, x.id); }
+      });
       return el;
     }
 
     function toggleRaw(el, xid) {
       var open = el.nextElementSibling;
-      if (open && open.classList.contains("term-raw")) { open.remove(); return; }
+      if (open && open.classList.contains("term-raw")) {
+        open.remove();
+        el.setAttribute("aria-expanded", "false");
+        return;
+      }
+      el.setAttribute("aria-expanded", "true");
       var box = document.createElement("div");
       box.className = "term-raw";
       box.textContent = "\u2026";
