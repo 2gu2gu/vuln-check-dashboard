@@ -177,6 +177,7 @@ SEED, EXPAND, HARVEST, HINT = "seed", "expand", "harvest", "hint"
 SOURCE_LABEL = {SEED: "씨앗", EXPAND: "확장", HARVEST: "수확", HINT: "단서(밖에서)"}
 MINE = (SEED, EXPAND, HARVEST)   # 이 모듈이 자기 페이로드로 찾은 것
 MAX_HARVEST = 80                 # 한 바퀴에 수확할 경로 수 상한
+MAX_ROUNDS = 5                   # 수확 바퀴 상한 — 더 안 나오면 그 전에 멈춘다
 
 # 응답 코드 → 뜻. 404 를 '없음'이라고 쓰지 않는 것이 요점이다.
 READABLE, EXISTS, UNSTAT, DENIED, AUTH = "readable", "exists", "unstat", "denied", "auth"
@@ -279,49 +280,109 @@ class _Walker:
 
 # 읽힌 파일 안에서 절대경로를 끄집어낸다.
 # 사전은 이름을 '맞혀야' 찾지만, 설정 파일은 경로를 **적어 놓는다**. 버전이 든 이름
-# (jdk-11.0.24+8)이나 난수 접두사가 붙은 저장 파일명은 이 길로만 나온다.
-_PATH = re.compile(r"(?<![\w%])/(?:[A-Za-z0-9._+\-]+/)*[A-Za-z0-9._+\-]+")
-# 키=값 꼴에서 값만 떼어 본다. 따옴표·앞뒤 공백을 걷어낸다.
+# (jdk-11.0.24+8)이나 배포 디렉터리는 이 길로만 나온다.
+#
+# 규칙은 11-04 실측에서 **실제로 수확이 된 형태**만 추렸다(모의해킹 세션 제공).
+# 범용 정규식 하나로 훑으면 URL·버전 문자열이 쏟아진다.
+MAX_BODY = 256 * 1024       # 수확하려고 받는 본문의 상한. web.xml 같은 건 비용만 크다
+
+# 값이 '키 = /경로' 꼴로 적히는 자리들
 _ASSIGN = re.compile(r"""(?im)^\s*(?:export\s+)?
-    (?:WorkingDirectory|ExecStart|ExecStartPre|EnvironmentFile|Environment|ReadWritePaths|
-       JAVA_HOME|CATALINA_(?:HOME|BASE)|root|include|access_log|error_log|
-       ssl_certificate(?:_key)?|[A-Za-z0-9_.]*(?:path|dir|home|file|root))
-    \s*[=:]\s*["']?(?P<v>[^"'\s;]+)""", re.X)
+    (?:WorkingDirectory|ExecStart|ExecStartPre|ExecStop|EnvironmentFile|ReadWritePaths|
+       StateDirectory|RuntimeDirectory|LogsDirectory|
+       root|alias|include|access_log|error_log|ssl_certificate|ssl_certificate_key|
+       common\.loader|shared\.loader|
+       JAVA_HOME|CATALINA_HOME|CATALINA_BASE|[A-Za-z0-9_.]*(?:path|dir|home|file|root))
+    \s*[=:]\s*["']?(?P<v>[^"'\s;,]+)""", re.X)
 
-# 경로처럼 생겼지만 쓸모없는 것들
-_NOISE = ("/dev/null", "/bin/sh", "/bin/bash", "/usr/bin/env", "/proc/self")
+# systemd 의 Environment= 는 'KEY=값' 이 한 번 더 중첩돼 있다 — 두 단계로 읽는다.
+# 11-04 실측에서 JAVA_HOME·CATALINA_HOME·CATALINA_BASE 가 전부 여기 있었다.
+_ENV_LINE = re.compile(r"(?im)^\s*Environment\s*=\s*[\"']?(?P<body>[^\"'\n]+)")
+_KV = re.compile(r"[A-Za-z0-9_.]+\s*=\s*(?P<v>/[^\s:;,]+)")
+
+# 보조 — 본문에 그냥 적힌 /usr/lib/... 꼴. 조각 2개 이상인 것만 본다.
+_PATH = re.compile(r"(?<![\w%:/])(?:/[A-Za-z0-9._+\-]{1,64}){2,}")
+
+# 경로처럼 생겼지만 쓸모없거나 가상인 것
+_NOISE_EXACT = ("/dev/null", "/bin/sh", "/bin/bash", "/usr/bin/env", "/bin/true")
+_NOISE_UNDER = ("/proc/", "/sys/", "/dev/")
 
 
-def harvest_paths(text: str, limit: int = MAX_HARVEST):
+def _usable(p: str) -> bool:
+    """경로로 쓸 만한가. 거르는 이유를 한 군데 모아 둔다."""
+    if not p.startswith("/") or " " in p or "\t" in p:
+        return False
+    if "://" in p or p.startswith("//"):          # URL 은 경로가 아니다
+        return False
+    if len(p) < 4 or len(p) > 200 or p.count("/") > 12:
+        return False
+    if p in _NOISE_EXACT or any(p.startswith(n) for n in _NOISE_UNDER):
+        return False
+    return all(len(seg) <= 64 for seg in p.split("/") if seg)
+
+
+def _parents(path: str):
+    """부모 사슬. /srv/a/b/c 를 얻으면 /srv/a/b · /srv/a 도 넣는다.
+
+    요청 1건에 디렉터리 하나라 값이 좋다 — 트리의 가지가 한 번에 드러난다.
+    """
+    parts = path.strip("/").split("/")
+    return ["/" + "/".join(parts[:i]) for i in range(len(parts) - 1, 1, -1)]
+
+
+def harvest_paths(text: str, limit: int = MAX_HARVEST, base_hint: str = ""):
     """파일 내용에서 서버 절대경로 후보를 뽑는다. **내용 자체는 어디에도 남기지 않는다.**
 
-    두 가지를 본다.
-      키=값   systemd 유닛·nginx·.env 가 경로를 적는 자리(WorkingDirectory·root·JAVA_HOME …)
-      맨몸    본문에 그냥 적힌 /usr/lib/... 꼴
-    키=값 쪽을 앞에 둔다 — 그쪽이 배포 경로일 확률이 높다.
+    `base_hint` 는 `${catalina.base}` 처럼 치환이 필요한 자리에 넣을 값이다
+    (유닛의 CATALINA_BASE 에서 얻는다).
     """
     if not text:
         return []
+    text = text[:MAX_BODY]
+    if base_hint:
+        text = text.replace("${catalina.base}", base_hint).replace("${catalina.home}", base_hint)
+
     found = []
-    for m in _ASSIGN.finditer(text[:200_000]):
-        v = m.group("v")
-        if v.startswith("/"):
-            found.append(v)
-    found += _PATH.findall(text[:200_000])
+    for m in _ENV_LINE.finditer(text):            # Environment=KEY=/경로 (2단)
+        for kv in _KV.finditer(m.group("body")):
+            found.append(kv.group("v"))
+    for m in _ASSIGN.finditer(text):              # 키 = /경로
+        found.append(m.group("v"))
+    found += _PATH.findall(text)                  # 본문에 그냥 적힌 것
 
     out, seen = [], set()
     for p in found:
         p = p.rstrip("/.,;:)")
-        # 너무 짧거나(/a) 터무니없이 길거나, 쓸모없는 것은 버린다
-        if len(p) < 4 or len(p) > 200 or p in _NOISE or p.count("/") > 12:
+        if not _usable(p):
             continue
-        key = p.lstrip("/")
-        if key and key not in seen:
-            seen.add(key)
-            out.append(key)
-        if len(out) >= limit:
-            break
+        for cand in [p] + _parents(p):
+            key = cand.lstrip("/")
+            if key and key not in seen:
+                seen.add(key)
+                out.append(key)
+            if len(out) >= limit:
+                return out
     return out
+
+
+# 어느 파일부터 읽을지 — 유닛 하나에서 5경로가 나왔다. 큰 파일은 비용만 크다.
+_HARVEST_FIRST = (".service", ".timer", ".env", "crontab", "/etc/environment")
+_HARVEST_NEXT = ("nginx", "sites-available", "catalina.properties", "context.xml", "server.xml")
+_HARVEST_SKIP = ("web.xml", "dpkg/status", ".log", ".war", ".jar", "mime.types")
+
+
+def harvest_order(nodes):
+    """수확 가치가 높은 파일부터. 같은 등급이면 작은 것부터(싸다)."""
+    def rank(n):
+        low = n["path"].lower()
+        if any(s in low for s in _HARVEST_SKIP):
+            return 9
+        if any(s in low for s in _HARVEST_FIRST):
+            return 0
+        if any(s in low for s in _HARVEST_NEXT):
+            return 1
+        return 2
+    return sorted((n for n in nodes if rank(n) < 9), key=lambda n: (rank(n), n["size"]))
 
 
 def _provenance(mine, outside):
@@ -394,24 +455,34 @@ def run(target, params):
 
     # ── 3단계: 수확 — 읽힌 파일 안에 적힌 경로를 뽑아 다시 때린다 ──
     # 사전은 이름을 '맞혀야' 찾지만 설정 파일은 경로를 적어 놓는다. 사람이 눈으로 하던 일이다.
+    # 새로 나오는 것이 없을 때까지 돈다 — 한 유닛이 다섯 경로를 알려 주고, 그중 하나가
+    # 또 다른 파일이면 거기서 또 나온다(11-04 실측).
     rounds = max(0, int(params.get("rounds") or 0)) if mode != "expand" else 0
-    picked_from, harvested_total = set(), 0
-    for _ in range(rounds):
+    picked_from, harvested_total, base_hint = set(), 0, ""
+    for _ in range(min(rounds, MAX_ROUNDS)):
         if walker.auth_stop or walker.left <= 0:
             break
-        fresh = [n for n in walker.nodes
+        fresh = [n for n in harvest_order(walker.nodes)
                  if n["class"] == READABLE and n["path"] not in picked_from]
         if not fresh:
             break
         crop = []
         for n in fresh:
             picked_from.add(n["path"])
-            crop += harvest_paths(n.pop("_body", "") or "")
+            body = n.pop("_body", "") or ""
+            # CATALINA_BASE 를 먼저 잡아 두면 catalina.properties 의 ${catalina.base} 가 풀린다
+            for p in harvest_paths(body, base_hint=base_hint):
+                if "api" in p and not base_hint and "CATALINA_BASE" in body:
+                    base_hint = "/" + p
+                crop.append(p)
         crop = [p for p in _uniq(crop) if p not in walker.seen][:MAX_HARVEST]
         if not crop:
             break
+        before = len(walker.nodes)
         walker.hit(crop, HARVEST)
         harvested_total += len(crop)
+        if len(walker.nodes) == before:      # 한 바퀴 돌아 새로 '존재' 가 없으면 멈춘다
+            break
     if harvested_total:
         stages.append(("수확", harvested_total))
     for n in walker.nodes:          # 본문은 여기서 버린다 — 결과·기록 어디에도 안 남는다
@@ -521,6 +592,9 @@ def run(target, params):
                     "파일 내용은 경로를 뽑는 데만 쓰고 **어디에도 저장하지 않습니다**(요청 기록에도 "
                     "본문이 남지 않습니다) — 설정 파일에는 자격증명이 섞여 있습니다."
                     % harvested_total)
+        note.append("**수확으로도 안 나오는 것이 있습니다.** 수확은 읽히는 파일(200)에서만 됩니다 — "
+                    "500(있는데 못 읽음)에서는 이름을 캘 수 없습니다. 난수가 든 저장 파일명"
+                    "(`9041a34f_...`)은 설정 파일에도 안 적혀 있어 DB 쪽에서 얻어야 합니다.")
     else:
         note.append("찾지 못한 것이 없다는 뜻은 아닙니다. 이름을 맞혀야만 찾습니다 — "
                     "`jdk-11.0.24+8` 처럼 버전이 든 이름은 어떤 사전에도 없습니다. "
