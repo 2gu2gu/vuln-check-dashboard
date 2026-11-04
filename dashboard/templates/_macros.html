@@ -11,7 +11,8 @@
     {% set lists = wordlist_options() %}
     {% if lists %}
       <select name="{{ prefix }}{{ p.name }}">
-        {% for o in lists %}<option value="{{ o.value }}" {{ 'selected' if o.value == val or (not val and o.label.endswith(p.default or '')) }}>{{ o.label }}</option>{% endfor %}
+        {# 고른 값은 '<폴더>|<파일>' 전체, 모듈이 적어 둔 기본값은 파일 이름뿐이라 양쪽 다 본다 #}
+        {% for o in lists %}<option value="{{ o.value }}" {{ 'selected' if val and (o.value == val or o.value.endswith('|' ~ val)) }}>{{ o.label }}</option>{% endfor %}
       </select>
     {% else %}<span class="sub">사전이 없습니다 — wordlists/ 폴더나 DASH_WORDLISTS 를 확인하세요</span>{% endif %}
   {% elif p.type == "select" %}
