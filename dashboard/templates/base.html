@@ -64,11 +64,25 @@
          title="이 화면 사용법" aria-label="이 화면 사용법">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18zM9.5 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.4v.6M12 16.5v.5"/></svg>
       </a>
+      <button class="btn ghost" id="jobs-open" type="button" aria-expanded="false" aria-controls="jobs-drawer">
+        <span class="spin" id="jobs-spin" hidden aria-hidden="true"></span>
+        <span id="jobs-label">도는 중 {{ job_live }}</span>
+      </button>
       <button class="btn ghost icon" id="theme" type="button" aria-label="화면 테마 바꾸기">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9a7 7 0 0 1-9-9z"/></svg>
       </button>
     </header>
 
+    {% for j in job_rows %}
+      {% if not j.live %}
+      <div class="flash {{ 'error' if j.status in ('error', 'cancelled') else 'ok' }} job-done" data-run="{{ j.run_id }}">
+        <b>{{ j.module }}</b>
+        {%- if j.status == 'done' %}: {{ j.message }} · 요청 {{ j.sent }}개 · {{ j.seconds }}초
+        {%- elif j.status == 'cancelled' %} 멈췄습니다 — 요청 {{ j.sent }}개까지 보냈습니다
+        {%- else %} 실패: {{ j.error }}{% endif %}
+      </div>
+      {% endif %}
+    {% endfor %}
     {% with msgs = get_flashed_messages(with_categories=true) %}
       {% for cat, msg in msgs %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
     {% endwith %}
@@ -76,6 +90,24 @@
     <main class="content">{% block content %}{% endblock %}</main>
   </div>
 </div>
+<aside class="drawer" id="jobs-drawer" hidden aria-label="돌고 있는 모듈">
+  <div class="drawer-head">
+    <b>모듈 실행</b>
+    <span class="sub small" id="jobs-count"></span>
+    <button class="btn ghost icon" type="button" id="jobs-close" aria-label="닫기">✕</button>
+  </div>
+  <div class="drawer-body">
+    <ul class="job-list" id="job-list"></ul>
+    <div class="job-detail" id="job-detail" hidden>
+      <div class="drawer-head">
+        <b id="job-detail-title"></b>
+        <button class="btn ghost icon" type="button" id="job-back" aria-label="목록으로">←</button>
+      </div>
+      <p class="sub small">이 실행이 보낸 요청입니다. 돌고 있으면 들어오는 대로 쌓입니다.</p>
+      <table class="grid tight"><tbody id="job-ex"></tbody></table>
+    </div>
+  </div>
+</aside>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

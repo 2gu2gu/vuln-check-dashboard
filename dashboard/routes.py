@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
                    render_template, request, url_for)
 
-from . import cvss, needs, scope, wordlists
+from . import cvss, jobs, needs, scope, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -154,6 +154,49 @@ def cvss_score():
         return cvss.rate({k: request.args.get(k, "") for k in cvss.ORDER})
     except cvss.BadVector as e:
         return {"error": str(e)}, 400
+
+
+@bp.app_context_processor
+def _jobs_for_page():
+    """모든 화면이 '도는 중'과 '막 끝난 것'을 볼 수 있게.
+
+    백그라운드 작업자는 flash 를 못 쓴다(요청이 없다). 그래서 끝난 결과 문구도
+    여기로 흘려보낸다 — 안 그러면 "지점 3개 수집" 같은 말이 어디에도 안 남는다.
+    """
+    try:
+        tid = request.args.get("target", type=int)
+    except RuntimeError:          # 요청 밖에서 렌더할 때
+        tid = None
+    rows = jobs.listing(tid)
+    return {"job_rows": rows,
+            "job_live": sum(1 for j in rows if j["live"]),
+            "job_max": jobs.MAX_LIVE}
+
+
+@bp.get("/jobs")
+def jobs_list():
+    """우측 드로어가 물어보는 자리. 도는 것이 위, 그 아래 최근 끝난 것."""
+    target = request.args.get("target", type=int)
+    return {"jobs": jobs.listing(target), "live": jobs.live_count(), "max": jobs.MAX_LIVE}
+
+
+@bp.post("/jobs/<int:run_id>/cancel")
+def job_cancel(run_id):
+    """멈춤. 이미 나간 요청은 돌아올 때까지 기다린다 — 서버에는 이미 닿았다."""
+    if not jobs.cancel(run_id):
+        return {"ok": False, "why": "이미 끝났거나 없는 실행입니다"}, 404
+    return {"ok": True}
+
+
+@bp.get("/jobs/<int:run_id>/exchanges")
+def job_exchanges(run_id):
+    """그 실행이 지금까지 보낸 요청. 드로어에서 눌러 들어가면 실시간으로 쌓인다."""
+    after = request.args.get("after", 0, type=int)
+    rows = get_db().execute(
+        "SELECT id, method, url, status, size, ms, error, created_at FROM exchanges "
+        "WHERE run_id = ? AND id > ? ORDER BY id LIMIT 200", [run_id, after]).fetchall()
+    job = jobs.get(run_id)
+    return {"exchanges": [dict(r) for r in rows], "live": bool(job and job.live)}
 
 
 # ── 대상 ──────────────────────────────────────────────────────
@@ -326,36 +369,92 @@ def _save_cache(tid, mid, cache):
     db.commit()
 
 
-def _execute(mod, t, params, call):
-    """실행 기록·범위·요청 설정·오류 처리를 한곳에서. call(target) 이 저장까지 하고 알림 문구를 돌려준다."""
-    db, cfg = get_db(), current_app.config
-    cur = db.execute("INSERT INTO runs (target_id, module_id, params, status, started_at) VALUES (?, ?, ?, 'running', ?)",
-                     [t["id"], mod.id, json.dumps(params, ensure_ascii=False), now_iso()])
-    g.run_id = cur.lastrowid
-    db.commit()
+def _setup_run(mod, t, run_id, stop_check=None):
+    """이 실행이 쓸 범위·요청 설정을 지금 컨텍스트(g)에 깐다.
+
+    요청 안에서 돌든 작업자 스레드에서 돌든 같은 자리에 같은 것을 둔다 —
+    `g` 는 app_context 마다 따로라 스레드끼리 섞이지 않는다.
+    """
+    cfg = current_app.config
+    g.run_id = run_id
     # 실행 중 core.fetch 는 이 범위로만 나간다 — 역할을 골랐으면 그 서버의 포트까지
     g.scope_hosts = _project_of(t).role_scope(t["role"])
     # 포트를 가리지 않는 일(포트 스캔)은 프로젝트 호스트 목록으로만 검사한다
     g.host_scope = _project_of(t).scope
     g.run_ctx = RunContext(t["url"], _parse_headers(t["headers"]), cfg["DELAY_MS"], cfg["MAX_REQUESTS"],
-                           _recorder(t["id"], mod.id), cache=_load_cache(t["id"], mod.id))
+                           _recorder(t["id"], mod.id), cache=_load_cache(t["id"], mod.id),
+                           stop_check=stop_check)
+    return g.run_ctx
+
+
+def _finish_run(mod, t, run_id, status, msg="", err=""):
+    """실행 기록을 닫고, 중간까지 읽은 값을 남긴다."""
+    db = get_db()
+    ctx = g.get("run_ctx")
+    db.execute("UPDATE runs SET status = ?, error = ?, message = ?, sent = ?, finished_at = ? WHERE id = ?",
+               [status, err, msg, getattr(ctx, "count", 0), now_iso(), run_id])
+    db.commit()
+    if ctx is not None:
+        # 중간에 멈춰도 그때까지 읽은 값은 남겨 둔다
+        _save_cache(t["id"], mod.id, ctx.cache)
+    g.pop("scope_hosts", None)
+    g.pop("host_scope", None)
+    g.pop("run_ctx", None)
+
+
+def _new_run(mod, t, params):
+    db = get_db()
+    cur = db.execute("INSERT INTO runs (target_id, module_id, params, status, started_at) VALUES (?, ?, ?, 'running', ?)",
+                     [t["id"], mod.id, json.dumps(params, ensure_ascii=False), now_iso()])
+    db.commit()
+    return cur.lastrowid
+
+
+def _execute(mod, t, params, call):
+    """요청 안에서 끝까지 돌린다. 도구 탭처럼 결과를 그 자리에서 봐야 하는 것에 쓴다."""
+    run_id = _new_run(mod, t, params)
+    _setup_run(mod, t, run_id)
     try:
         scope.ensure_in_scope(t["url"])
         msg = call(Target(t["id"], t["name"], t["url"]))
-        db.execute("UPDATE runs SET status = 'done', finished_at = ? WHERE id = ?", [now_iso(), g.run_id])
         flash(f"{mod.name}: {msg} · 요청 {g.run_ctx.count}개", "ok")
+        _finish_run(mod, t, run_id, "done", msg)
     except Exception as e:  # noqa: BLE001 — 실패도 실행 기록에 남긴다
-        db.rollback()
-        db.execute("UPDATE runs SET status = 'error', error = ?, finished_at = ? WHERE id = ?",
-                   [str(e), now_iso(), g.run_id])
+        get_db().rollback()
         flash(f"{mod.name} 실패: {e}", "error")
-    finally:
-        # 중간에 멈춰도 그때까지 읽은 값은 남겨 둔다
-        _save_cache(t["id"], mod.id, g.run_ctx.cache)
-        g.pop("scope_hosts", None)
-        g.pop("host_scope", None)
-        g.pop("run_ctx", None)
-    db.commit()
+        _finish_run(mod, t, run_id, "error", err=str(e))
+
+
+def _execute_bg(mod, t, params, call):
+    """뒤에서 돌린다. 바로 돌아오고, 진행은 우측 드로어에서 본다.
+
+    같은 서버를 여러 모듈이 동시에 때리면 요청 간격을 지켜도 합쳐진 양은 그만큼
+    늘어난다. 공유 서버라 그게 제일 위험해서 동시 실행 수에 상한을 둔다.
+    """
+    if jobs.live_count() >= jobs.MAX_LIVE:
+        flash(f"지금 {jobs.MAX_LIVE}개가 돌고 있습니다. 하나가 끝나면 다시 눌러 주세요", "error")
+        return
+    run_id = _new_run(mod, t, params)
+    app = current_app._get_current_object()
+
+    def work(job):
+        job.ctx = _setup_run(mod, t, run_id, stop_check=job.should_stop)
+        try:
+            scope.ensure_in_scope(t["url"])
+            msg = call(Target(t["id"], t["name"], t["url"]))
+            _finish_run(mod, t, run_id, "cancelled" if job._stop.is_set() else "done", msg)
+            return msg
+        except jobs.Cancelled as e:
+            get_db().rollback()
+            _finish_run(mod, t, run_id, "cancelled", err=str(e))
+            raise
+        except Exception as e:  # noqa: BLE001
+            get_db().rollback()
+            _finish_run(mod, t, run_id, "error", err=str(e))
+            raise
+
+    jobs.start(app, run_id, t, mod, work)
+    flash(f"{mod.name} 을 뒤에서 돌리고 있습니다 — 오른쪽 '도는 중' 에서 진행을 봅니다", "ok")
 
 
 def _save_finding(mod, tid, f):
@@ -424,7 +523,7 @@ def module_run(mid):
             points = mod.run(target, params) or []
             new, skipped = _save_points(mod, t["id"], points)
             return f"지점 {len(points) - skipped}개 수집(새로 {new})" + (f", 범위 밖 {skipped}개 제외" if skipped else "")
-        _execute(mod, t, params, call)
+        _execute_bg(mod, t, params, call)
         return redirect(url_for("dash.surface", target=t["id"]))
 
     def call(target):
@@ -434,7 +533,7 @@ def module_run(mid):
                 raise TypeError("run() 은 Finding 목록을 돌려줘야 합니다")
         new = sum(_save_finding(mod, t["id"], f) for f in results)
         return f"{len(results)}건 발견(새로 {new})"
-    _execute(mod, t, params, call)
+    _execute_bg(mod, t, params, call)
     return redirect(url_for("dash.results", target=t["id"]))
 
 
@@ -504,6 +603,9 @@ def surface_probe():
                             source=r["source"], id=r["id"], fields={s["param"]: s["sample"] for s in siblings}))
 
     def call(target):
+        # 작업자 스레드에서 돌 수 있으므로 연결을 여기서 다시 받는다.
+        # 바깥 db 는 요청 스레드 것이라 sqlite 가 거부한다.
+        db = get_db()
         checks = mod.run(target, points, params) or []
         counts = {v: 0 for v in VERDICTS}
         for c in checks:
@@ -523,7 +625,7 @@ def surface_probe():
         skipped = len(points) - len(checks)
         return (f"지점 {len(checks)}개 — " + " · ".join(f"{VERDICTS[v]} {n}" for v, n in counts.items())
                 + (f", 건너뜀 {skipped}" if skipped else ""))
-    _execute(mod, t, {**params, "points": len(points)}, call)
+    _execute_bg(mod, t, {**params, "points": len(points)}, call)
     return redirect(back)
 
 

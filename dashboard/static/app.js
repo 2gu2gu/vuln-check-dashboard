@@ -55,6 +55,124 @@
     cost();
   });
 
+  // ── 모듈 실행 드로어 ─────────────────────────────────────
+  // 실행은 뒤에서 돈다. 여기서 진행을 보고, 눌러 들어가면 그 실행이 보낸
+  // 요청이 들어오는 대로 쌓인다.
+  (function () {
+    // $ 는 아래쪽에서 정의되므로 여기서 따로 둔다 (var 는 올라가지만 값은 아직 없다)
+    var $ = function (id) { return document.getElementById(id); };
+    var drawer = $("jobs-drawer"), openBtn = $("jobs-open");
+    if (!drawer || !openBtn) return;
+    var list = $("job-list"), detail = $("job-detail"), exBody = $("job-ex");
+    var label = $("jobs-label"), spin = $("jobs-spin"), count = $("jobs-count");
+    var watching = null, lastEx = 0, timer = null;
+
+    function targetArg() {
+      var m = location.search.match(/[?&]target=(\d+)/);
+      return m ? "?target=" + m[1] : "";
+    }
+
+    function row(j) {
+      var li = document.createElement("li");
+      li.className = "job" + (j.live ? " job-live" : "");
+      li.dataset.run = j.run_id;
+      var state = j.live ? "도는 중" :
+                  j.status === "done" ? "끝남" :
+                  j.status === "cancelled" ? "멈춤" : "실패";
+      li.innerHTML =
+        '<div class="job-top"><b></b><span class="sub state"></span></div>' +
+        '<div class="sub why"></div>' + (j.live ? '<div class="job-bar"><i></i></div>' : "");
+      li.querySelector("b").textContent = j.module;
+      li.querySelector(".state").textContent = state + " · 요청 " + j.sent + " · " + j.seconds + "초";
+      li.querySelector(".why").textContent = j.error || j.message || j.target;
+      if (j.live) {
+        var stop = document.createElement("button");
+        stop.type = "button";
+        stop.className = "btn ghost small-btn";
+        stop.textContent = "멈춤";
+        stop.addEventListener("click", function (e) {
+          e.stopPropagation();
+          fetch("/jobs/" + j.run_id + "/cancel", {method: "POST"}).then(poll);
+        });
+        li.querySelector(".job-top").appendChild(stop);
+      }
+      li.addEventListener("click", function () { watch(j); });
+      return li;
+    }
+
+    function poll() {
+      return fetch("/jobs" + targetArg()).then(function (r) { return r.json(); }).then(function (d) {
+        label.textContent = "도는 중 " + d.live;
+        spin.hidden = d.live === 0;
+        if (count) count.textContent = d.live + " / " + d.max + " 동시 실행";
+        list.innerHTML = "";
+        if (!d.jobs.length) {
+          var li = document.createElement("li");
+          li.className = "sub small";
+          li.textContent = "아직 돌린 모듈이 없습니다.";
+          list.appendChild(li);
+        }
+        d.jobs.forEach(function (j) { list.appendChild(row(j)); });
+        return d;
+      }).catch(function () {});
+    }
+
+    function pullExchanges() {
+      if (!watching) return;
+      fetch("/jobs/" + watching + "/exchanges?after=" + lastEx)
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          d.exchanges.forEach(function (x) {
+            lastEx = Math.max(lastEx, x.id);
+            var tr = document.createElement("tr");
+            var code = x.error ? "실패" : x.status;
+            tr.innerHTML = '<td class="mono"></td><td class="mono"></td><td class="mono"></td>';
+            tr.cells[0].textContent = code;
+            tr.cells[1].textContent = x.method;
+            tr.cells[2].textContent = x.url.replace(/^https?:\/\/[^/]+/, "");
+            tr.title = x.error || x.url;
+            exBody.appendChild(tr);
+          });
+          if (d.exchanges.length) exBody.parentNode.scrollTop = exBody.parentNode.scrollHeight;
+        }).catch(function () {});
+    }
+
+    function watch(j) {
+      watching = j.run_id;
+      lastEx = 0;
+      exBody.innerHTML = "";
+      $("job-detail-title").textContent = j.module + " — " + j.target;
+      detail.hidden = false;
+      pullExchanges();
+    }
+
+    $("job-back").addEventListener("click", function () { detail.hidden = true; watching = null; });
+    $("jobs-close").addEventListener("click", close);
+
+    function close() {
+      drawer.hidden = true;
+      openBtn.setAttribute("aria-expanded", "false");
+      clearInterval(timer);
+      timer = null;
+    }
+
+    openBtn.addEventListener("click", function () {
+      if (!drawer.hidden) return close();
+      drawer.hidden = false;
+      openBtn.setAttribute("aria-expanded", "true");
+      poll();
+      timer = setInterval(function () { poll(); pullExchanges(); }, 900);
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !drawer.hidden) close();
+    });
+
+    // 닫혀 있어도 머리의 숫자는 가끔 갱신한다 — 끝난 줄 모르고 기다리지 않게
+    poll();
+    setInterval(function () { if (drawer.hidden) poll(); }, 4000);
+  })();
+
   // 고르면 바로 적용되는 필터
   document.querySelectorAll("[data-autosubmit]").forEach(function (el) {
     el.addEventListener("change", function () { el.form.submit(); });

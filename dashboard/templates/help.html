@@ -12,7 +12,7 @@
   <a href="#targets">대상</a><a href="#modules">모듈</a><a href="#surface">표면</a><a href="#tools">도구</a>
   <a href="#results">결과</a><a href="#history">요청 기록</a><a href="#attack">ATT&CK</a><a href="#scenario">시나리오</a>
   <span class="toc-gap">알아 둘 것</span>
-  <a href="#wordlists">사전</a><a href="#roles">역할</a><a href="#auth">로그인</a><a href="#cvss">영향도(CVSS)</a><a href="#needs">실행 전 준비</a><a href="#limits">요청 한도</a><a href="#hostscope">어디까지 하나</a><a href="#safety">안전장치</a>
+  <a href="#wordlists">사전</a><a href="#roles">역할</a><a href="#runs">뒤에서 도는 실행</a><a href="#auth">로그인</a><a href="#cvss">영향도(CVSS)</a><a href="#needs">실행 전 준비</a><a href="#limits">요청 한도</a><a href="#hostscope">어디까지 하나</a><a href="#safety">안전장치</a>
   <span class="toc-gap">만들기</span>
   <a href="#packs">범용과 팩</a><a href="#write">모듈 만들기</a><a href="#todo">아직 없는 것</a>
 </nav>
@@ -225,6 +225,23 @@
     <dt>붙는 곳</dt><dd>그 대상 주소로 가는 요청에만. 다른 주소로는 나가지 않습니다.</dd>
     <dt>보관</dt><dd>이 PC 의 <code>instance/</code> DB 에만 있고, 화면·기록에는 이름만 보입니다.</dd>
     <dt>주의</dt><dd>테스트 계정 토큰만 넣습니다.</dd>
+  </dl>
+</section>
+
+<section id="runs">
+  <h2>뒤에서 도는 실행</h2>
+  <p>실행을 누르면 <b>바로 돌아옵니다.</b> 모듈은 뒤에서 돌고, 머리의
+    <b>도는 중 N</b> 을 누르면 오른쪽에서 진행을 봅니다. 줄을 누르면 그 실행이 보낸 요청이
+    들어오는 대로 쌓입니다.</p>
+  <dl class="facts">
+    <dt>동시에 몇 개</dt><dd>4개까지. 같은 서버를 여러 모듈이 같이 때리면 요청 간격을 지켜도
+      합쳐진 양은 그만큼 늘어납니다. 공유 서버라 막아 둡니다.</dd>
+    <dt>멈춤</dt><dd><b>다음 요청을 보내기 직전에</b> 듣습니다. 이미 나간 요청은 돌아올 때까지
+      기다립니다 — 끊어도 서버에는 이미 닿았습니다. 그때까지 찾은 것은 남습니다.</dd>
+    <dt>결과는 어디에</dt><dd>끝나면 <b>다음 화면 위쪽</b>에 문구가 뜹니다. 결과 자체는
+      결과 탭에, 보낸 요청은 요청 기록에 그대로 쌓입니다.</dd>
+    <dt>도구 탭은 예외</dt><dd>값을 넣고 그 자리에서 결과를 봐야 하므로 예전처럼 기다립니다.</dd>
+    <dt>안전장치</dt><dd>범위 검사·요청 간격·실행 한도는 뒤에서 돌 때도 똑같이 섭니다.</dd>
   </dl>
 </section>
 

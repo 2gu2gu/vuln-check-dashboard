@@ -143,7 +143,8 @@ class BudgetExceeded(Exception):
 class RunContext:
     """모듈 실행 하나의 요청 설정. 앱이 만들어 flask.g.run_ctx 에 둔다."""
 
-    def __init__(self, target_url="", auth_headers=None, delay_ms=0, max_requests=0, recorder=None, cache=None):
+    def __init__(self, target_url="", auth_headers=None, delay_ms=0, max_requests=0, recorder=None, cache=None,
+                 stop_check=None):
         self.netloc = urlsplit(target_url).netloc
         self.auth_headers = auth_headers or {}
         self.delay = delay_ms / 1000
@@ -151,8 +152,13 @@ class RunContext:
         self.recorder = recorder  # (dict) -> 기록 번호
         self.count = 0
         self.cache = cache if cache is not None else {}
+        # 백그라운드 실행에서 '멈춤' 을 누르면 이 함수가 예외를 던진다.
+        # **보내기 직전에** 본다 — 이미 나간 요청은 서버에 닿았으니 되돌릴 수 없다.
+        self.stop_check = stop_check
 
     def before_send(self):
+        if self.stop_check:
+            self.stop_check()
         self.count += 1
         if self.max_requests and self.count > self.max_requests:
             raise BudgetExceeded(f"요청 수 한도({self.max_requests})를 넘어 멈췄습니다")
