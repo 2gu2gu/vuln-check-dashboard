@@ -24,7 +24,21 @@
 <form method="post" action="{{ url_for('dash.surface_probe') }}" id="probe-form">
   {{ csrf_field() }}
   <input type="hidden" name="target_id" value="{{ target.id }}">
-  <div class="panel probe-bar">
+  {% if not totals.params %}
+  <div class="callout">
+    <b>고를 수 있는 지점이 없습니다 — 모은 주소에 파라미터가 하나도 없습니다.</b>
+    지점 점검 모듈은 <b>파라미터 한 칸에 값을 넣어 보는</b> 방식이라, 값을 넣을 칸이 있어야 돌아갑니다.
+    주소만 있고 <code>?keyword=…</code> 같은 칸이 없으면 넣을 자리가 없습니다.
+    <p>React·Next.js 로 만든 화면은 링크에 파라미터가 드러나지 않는 일이 흔합니다. 이럴 때는 이렇게 합니다.</p>
+    <ol>
+      <li>브라우저 개발자도구 <b>네트워크</b> 탭(또는 Burp)에서 그 화면이 실제로 부르는 API 주소를 복사합니다.</li>
+      <li>모듈 탭의 <a href="{{ url_for('dash.modules', target=target.id) }}"><b>URL 목록 가져오기</b></a> 에
+        <code>https://…/backend/lectures?size=1&amp;keyword=a</code> 처럼 <b>파라미터까지 붙여</b> 넣습니다.</li>
+      <li>폼을 보내는 자리는 <code>POST 주소 a=1&amp;b=2</code> 형태로 적으면 본문 파라미터로 등록됩니다.</li>
+    </ol>
+  </div>
+  {% endif %}
+  <div class="panel probe-bar" {{ 'hidden' if not totals.params }}>
     <label class="check"><input type="checkbox" id="pick-all"> 전체 선택</label>
     <span class="sub" id="picked">0개 선택</span>
     {% if probes %}
