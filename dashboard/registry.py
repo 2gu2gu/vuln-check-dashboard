@@ -58,6 +58,7 @@ class ProjectInfo:
     description: str = ""
     source: str = ""
     roles: dict = field(default_factory=dict)  # {역할 id: {"name": 보일 이름, "scope": [허용 범위]}}
+    login: dict = field(default_factory=dict)  # 로그인해서 토큰 받는 법(서비스마다 다르다)
 
     def role_name(self, role: str) -> str:
         return self.roles.get(role, {}).get("name", role)
@@ -152,7 +153,8 @@ def discover_projects(package_name: str = "projects"):
                 raise ValueError("PROJECT(dict) 에 name·scope 가 필요합니다")
             projects[pid] = ProjectInfo(id=pid, name=meta["name"], scope=[h.lower() for h in meta["scope"]],
                                         description=meta.get("description", ""), source=source,
-                                        roles=_norm_roles(meta.get("roles", {})))
+                                        roles=_norm_roles(meta.get("roles", {})),
+                                        login=meta.get("login") or {})
         except Exception as e:  # noqa: BLE001
             errors.append((source, str(e)))
             continue
