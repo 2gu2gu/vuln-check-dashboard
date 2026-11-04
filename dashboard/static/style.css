@@ -469,3 +469,18 @@ mark { background: #F2D36B; color: #1C1C1C; border-radius: 2px; padding: 0 1px; 
 .login-row input { flex: 1 1 140px; min-width: 0; font: inherit; font-size: 13px;
                    padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px;
                    background: var(--surface); color: var(--text); }
+
+/* 모듈 카드 — 접혀 있다가 눌러서 편다. 15개가 다 펴져 있으면 화면이 끝없이 길어진다 */
+.mod-open { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 0;
+            font: inherit; color: inherit; cursor: pointer; }
+.mod-open h3, .mod-open p { pointer-events: none; }
+.mod-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.mod-cue { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+           font-size: 12px; color: var(--sub); margin-top: 6px; }
+.cue-todo { color: var(--hit); font-weight: 600; }
+.chev { transition: transform .2s ease; font-size: 14px; }
+.mod.open .chev { transform: rotate(180deg); }
+.mod.open { box-shadow: 0 6px 22px rgba(0,0,0,.12); }
+.mod-body { animation: body-in .22s cubic-bezier(.2,.8,.3,1); transform-origin: top center; }
+@keyframes body-in { from { opacity: 0; transform: scaleY(.96) translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .mod-body, .chev { animation: none; transition: none; } }

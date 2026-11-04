@@ -55,6 +55,37 @@
     cost();
   });
 
+  // ── 모듈 카드 접었다 펴기 ────────────────────────────────
+  // 15개가 다 펴져 있으면 화면이 끝없이 길어진다. 어느 것을 펴 뒀는지는 기억한다 —
+  // 같은 모듈을 연달아 돌려 보는 일이 흔하기 때문이다.
+  (function () {
+    var cards = document.querySelectorAll(".mod[data-mod]");
+    if (!cards.length) return;
+    var open = {};
+    try { open = JSON.parse(localStorage.getItem("modOpen") || "{}"); } catch (e) {}
+
+    function set(card, on, animate) {
+      var body = card.querySelector(".mod-body");
+      var btn = card.querySelector(".mod-open");
+      if (!body || !btn) return;
+      card.classList.toggle("open", on);
+      btn.setAttribute("aria-expanded", on ? "true" : "false");
+      if (on && !animate) body.style.animation = "none";
+      body.hidden = !on;
+      if (on && !animate) requestAnimationFrame(function () { body.style.animation = ""; });
+      open[card.dataset.mod] = on;
+      try { localStorage.setItem("modOpen", JSON.stringify(open)); } catch (e) {}
+    }
+
+    cards.forEach(function (card) {
+      if (open[card.dataset.mod]) set(card, true, false);
+      var btn = card.querySelector(".mod-open");
+      if (btn) btn.addEventListener("click", function () {
+        set(card, card.querySelector(".mod-body").hidden, true);
+      });
+    });
+  })();
+
   // ── 왼쪽 묶음 드로어 접기 ────────────────────────────────
   // 접은 상태를 기억한다 — 매번 다시 접게 하면 성가시다.
   (function () {
