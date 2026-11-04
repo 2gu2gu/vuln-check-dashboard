@@ -510,3 +510,33 @@ html { scroll-behavior: smooth; }
   html { scroll-behavior: auto; }
   .group-head:target { animation: none; }
 }
+
+/* 수사보드 — 전술을 진행 순서로 세우고, 확인된 것과 제안을 따로 담는다 */
+.bd-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+.bd-k-done { color: var(--sev-low); }
+.bd-k-todo { color: var(--sub); }
+.bd-k-blocked { color: var(--hit); }
+.board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 10px; align-items: start; }
+.bd-col { flex: 0 0 258px; border: 1px solid var(--line); border-radius: var(--radius);
+          background: var(--surface-2); padding: 10px; }
+.bd-col.on { border-color: var(--accent); background: var(--surface); }
+.bd-col-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.bd-col-head b { flex: 1 1 auto; }
+.bd-step { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+           font-size: 11px; font-weight: 700; background: var(--line); color: var(--sub); flex: 0 0 auto; }
+.bd-col.on .bd-step { background: var(--accent); color: var(--surface); }
+.bd-group + .bd-group { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.bd-kind { font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+.bd-card { display: block; border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px;
+           margin-bottom: 6px; background: var(--surface); color: var(--text); }
+.bd-card:hover { border-color: var(--accent); text-decoration: none; }
+.bd-card-top { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.bd-card-title { font-size: 13px; font-weight: 600; margin-top: 3px; }
+.bd-loc { word-break: break-all; }
+.bd-card.done { border-left: 3px solid var(--sev-low); }
+.bd-card.todo { background: transparent; border-style: dashed; }
+.bd-card.blocked { border-left: 3px solid var(--hit); }
+.bd-why { color: var(--hit); }
+.bd-card.elsewhere .bd-why { color: var(--sub); }
+.bd-note { margin-top: 12px; line-height: 1.6; }
+@media (max-width: 760px) { .bd-col { flex-basis: 85vw; } }

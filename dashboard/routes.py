@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
                    render_template, request, url_for)
 
-from . import cvss, grouping, jobs, login as login_mod, needs, scope, wordlists
+from . import board, cvss, grouping, jobs, login as login_mod, needs, scope, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -840,18 +840,16 @@ def attack():
 @bp.get("/scenario")
 def scenario():
     target, targets = _current_target()
-    steps = []
+    rows, head = [], {}
     if target:
-        tech_tactic = _technique_tactic()
-        rows = get_db().execute(
-            "SELECT * FROM findings WHERE target_id = ? AND status IN ('open', 'confirmed')", [target["id"]]).fetchall()
-        groups = {}
-        for r in rows:
-            tac = tech_tactic.get(r["technique"], "TA0043")
-            groups.setdefault(tac, []).append(r)
-        for tac in sorted(groups, key=lambda x: TACTIC_ORDER.get(x, 99)):
-            steps.append({"tactic": tac, "name": TACTIC_NAME.get(tac, tac), "findings": groups[tac]})
-    return render_template("scenario.html", steps=steps, target=target, targets=targets)
+        found = get_db().execute(
+            "SELECT * FROM findings WHERE target_id = ? AND status IN ('open', 'confirmed') "
+            "ORDER BY " + SEVERITY_ORDER_SQL, [target["id"]]).fetchall()
+        rows = board.build(found, list(_modules_for(target).values()), _technique_tactic(),
+                           lambda m: module_needs(m, target))
+        head = board.summary(rows)
+    return render_template("scenario.html", rows=rows, head=head, target=target, targets=targets,
+                           all_modules=_modules())
 
 
 @bp.get("/help", endpoint="help")
