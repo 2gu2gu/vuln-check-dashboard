@@ -64,7 +64,7 @@
     </header>
     <button class="mod-open" type="button" aria-expanded="false" aria-controls="body-{{ m.id }}">
       <h3>{{ m.name }}</h3>
-      <p>{{ m.description }}</p>
+      <p>{{ m.description | strong }}</p>
       <span class="mod-cue">
         {%- if blocked %}<span class="cue-todo">준비할 것 {{ blocked | length }}개</span>
         {%- elif not target %}대상을 먼저 고르세요

@@ -22,7 +22,7 @@ META = {
     ],
     "description": "표식과 ' \" < > 를 넣어 응답에 그대로 나오면 취약, 바뀌어 나오면 잠재, 안 나오면 안전. 반사 위치(본문·태그 속성·스크립트)도 남깁니다.",
     "params": [
-        {"name": "methods", "label": "보낼 메서드", "default": "GET",
+        {"name": "methods", "need": "required", "label": "보낼 메서드", "default": "GET",
          "help": "POST 를 넣으면 폼을 실제로 제출합니다 — 글·데이터가 저장될 수 있으니 테스트 계정·테스트 행에서만"},
     ],
 }

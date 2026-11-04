@@ -23,11 +23,11 @@ META = {
     "attack": [{"tactic": "TA0043", "technique": "T1595.001", "name": "Active Scanning: Scanning IP Blocks"}],
     "description": "적어 둔 포트에 TCP 연결만 해 보고 밖에서 닿는지 확인합니다. 대상 호스트에만, 적어 둔 포트에만 보냅니다.",
     "params": [
-        {"name": "ports", "label": "확인할 포트 (쉼표)", "default": "22,80,443,1521,3000,3389,8080,8443",
+        {"name": "ports", "need": "required", "label": "확인할 포트 (쉼표)", "default": "22,80,443,1521,3000,3389,8080,8443",
          "help": "포트를 통째로 훑는 용도가 아닙니다. 궁금한 포트만 적으세요(한 번에 30개까지)."},
-        {"name": "expected", "label": "열려 있어도 되는 포트", "default": "443",
+        {"name": "expected", "need": "optional", "label": "열려 있어도 되는 포트", "default": "443",
          "help": "여기에 없는데 열려 있으면 결과로 남깁니다."},
-        {"name": "timeout", "label": "기다릴 시간(초)", "type": "int", "default": "2"},
+        {"name": "timeout", "need": "optional", "label": "기다릴 시간(초)", "type": "int", "default": "2"},
     ],
 }
 
