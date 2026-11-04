@@ -119,7 +119,7 @@ def _tree(nodes):
                 if kind == DIR or (node.get("class") == "exists" and kids):
                     label, tail = name + "/", "  [%s]" % node.get("status")
                     if node.get("blocked"):
-                        tail += "  (안쪽 전부 404 — 비었거나 탐색 권한 없음)"
+                        tail += "  (안쪽 전부 404 — 사전 미포함/비었음/탐색 권한 없음)"
                 elif node.get("class") == "readable":
                     label, tail = name, "  [200 · %s]" % _size(node.get("size", 0))
                 elif kind == OPAQUE:
