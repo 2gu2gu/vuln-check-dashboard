@@ -8,6 +8,53 @@
     try { localStorage.setItem("theme", root.dataset.theme); } catch (e) {}
   });
 
+  // 사전 고르기: 이름으로 좁히기 + 몇 번 나갈지 미리 보기
+  // 사람은 경로가 아니라 'raft', 'lfi' 같은 이름 조각으로 기억한다.
+  document.querySelectorAll(".wl").forEach(function (box) {
+    var find = box.querySelector(".wl-find");
+    var pick = box.querySelector(".wl-pick");
+    var note = box.querySelector(".wl-note");
+    if (!pick) return;
+
+    if (find) find.addEventListener("input", function () {
+      var q = find.value.trim().toLowerCase();
+      pick.querySelectorAll("optgroup").forEach(function (g) {
+        var left = 0;
+        g.querySelectorAll("option").forEach(function (o) {
+          var hit = !q || o.textContent.toLowerCase().indexOf(q) !== -1
+                 || g.label.toLowerCase().indexOf(q) !== -1;
+          o.hidden = !hit;
+          if (hit) left++;
+        });
+        g.hidden = left === 0;
+      });
+      // 고른 것이 가려졌으면 보이는 첫 줄로 옮긴다
+      if (pick.selectedOptions[0] && pick.selectedOptions[0].hidden) {
+        var first = [].find.call(pick.options, function (o) { return !o.hidden; });
+        if (first) { first.selected = true; cost(); }
+      }
+    });
+
+    function cost() {
+      if (!note) return;
+      var form = pick.form;
+      var limit = form && form.querySelector('[name$="limit"]');
+      var n = limit ? parseInt(limit.value, 10) : NaN;
+      if (!n || n < 1) { note.textContent = ""; return; }
+      var delay = parseInt(document.body.dataset.delayMs, 10) || 0;
+      var secs = Math.round(n * delay / 1000);
+      var when = secs < 60 ? secs + "초" : Math.round(secs / 60) + "분";
+      note.textContent = "요청 " + n.toLocaleString() + "번 · 간격만 따져도 최소 " + when
+                       + (n > 2000 ? " — 실행 한도 2,000 에 걸려 중간에 멈춥니다" : "");
+      note.classList.toggle("warn-text", n > 2000);
+    }
+    pick.addEventListener("change", cost);
+    var form = pick.form;
+    var limit = form && form.querySelector('[name$="limit"]');
+    if (limit) limit.addEventListener("input", cost);
+    cost();
+  });
+
   // 고르면 바로 적용되는 필터
   document.querySelectorAll("[data-autosubmit]").forEach(function (el) {
     el.addEventListener("change", function () { el.form.submit(); });

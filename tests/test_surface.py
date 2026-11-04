@@ -213,7 +213,7 @@ def test_wordlist_select_honours_module_default(app, client):
     def selected(html, pattern):
         block = re.search(pattern, html, re.S)
         assert block, pattern
-        sel = re.search(r'<option value="([^"]*)" selected', block.group(0))
+        sel = re.search(r'<option value="([^"]*)"[^>]*selected', block.group(0))
         assert sel, "고른 사전이 없다 — 브라우저가 목록 첫 줄을 고르게 된다"
         return sel.group(1)
 

@@ -14,7 +14,7 @@ T = Target(1, "t", "https://sesacedu.store")
 
 def pick(name):
     """저장소에 들어 있는 사전 하나를 고른 값으로."""
-    for o in wordlists.available():
+    for o in wordlists.available()["items"]:
         if o["label"].endswith(name):
             return o["value"]
     raise AssertionError(f"사전을 찾지 못했습니다: {name}")
@@ -23,7 +23,7 @@ def pick(name):
 # ── 사전 읽기 ─────────────────────────────────────────────────
 
 def test_bundled_lists_are_found():
-    labels = [o["label"] for o in wordlists.available()]
+    labels = [o["label"] for o in wordlists.available()["items"]]
     assert any(l.endswith("web-common.txt") for l in labels)
     assert all(l.startswith("기본 / ") for l in labels)
 
@@ -42,7 +42,7 @@ def test_load_honours_limit():
 def test_extra_root_from_env(tmp_path, monkeypatch):
     (tmp_path / "my.txt").write_text("# 메모\n\nalpha\nbeta\n", encoding="utf-8")
     monkeypatch.setenv("DASH_WORDLISTS", str(tmp_path))
-    assert any(o["label"].endswith("my.txt") for o in wordlists.available())
+    assert any(o["label"].endswith("my.txt") for o in wordlists.available()["items"])
     assert wordlists.load(pick("my.txt"))[0] == ["alpha", "beta"]
 
 
@@ -230,3 +230,93 @@ def test_payload_probe_notes_non_html_response(monkeypatch):
     out = payload_probe.run(T, [POINT], {"wordlist": pick("payload-reflect.txt"), "limit": "4", "methods": "GET"})
     assert out[0].verdict == "vuln"
     assert "application/json" in out[0].evidence and "HTML 이 아닙니다" in out[0].evidence
+
+
+# ── SecLists 를 붙였을 때 ────────────────────────────────────────
+# SecLists 는 Discovery/Web-Content/x.txt 처럼 2단계 깊이다. 예전에는 1단계만 봐서
+# 루트를 가리키면 정작 쓸 목록이 통째로 안 보였다(Ai/prompts.txt 하나만 떴다).
+
+@pytest.fixture
+def seclists(tmp_path, monkeypatch):
+    tree = {
+        "Discovery/Web-Content/raft-small-words.txt": "admin\nlogin\n",
+        "Discovery/Web-Content/common.txt": "a\n",
+        "Discovery/DNS/subdomains.txt": "www\n",
+        "Discovery/Variables/burp-parameter-names.txt": "id\n",
+        "Fuzzing/LFI/LFI-Jhaddix.txt": "../\n",
+        "Passwords/Common-Credentials/top-100.txt": "1234\n",
+        "Usernames/top-usernames.txt": "root\n",
+        "Ai/LLM_Testing/prompts.txt": "hi\n",
+        ".git/hooks/ignore-me.txt": "nope\n",
+    }
+    for rel, body in tree.items():
+        f = tmp_path / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(body, encoding="utf-8")
+    monkeypatch.setenv("DASH_WORDLISTS", str(tmp_path))
+    return tmp_path
+
+
+def _names(found):
+    return [o["name"] for o in found["items"] if not o["label"].startswith("기본")]
+
+
+def test_finds_lists_two_folders_deep(seclists):
+    names = _names(wordlists.available())
+    assert "Discovery/Web-Content/raft-small-words.txt" in names
+    assert "Passwords/Common-Credentials/top-100.txt" in names
+
+
+def test_skips_hidden_folders(seclists):
+    assert ".git/hooks/ignore-me.txt" not in _names(wordlists.available())
+
+
+@pytest.mark.parametrize("rel, want", [
+    ("Discovery/Web-Content/raft-small-words.txt", "path"),
+    ("Discovery/DNS/subdomains.txt", "subdomain"),
+    ("Discovery/Variables/burp-parameter-names.txt", "param"),
+    ("Fuzzing/LFI/LFI-Jhaddix.txt", "payload"),
+    ("Passwords/Common-Credentials/top-100.txt", "password"),
+    ("Usernames/top-usernames.txt", "username"),
+    ("Ai/LLM_Testing/prompts.txt", "other"),
+    ("web-common.txt", "path"),
+    ("payload-reflect.txt", "payload"),
+])
+def test_classify_by_folder_then_name(rel, want):
+    assert wordlists.classify(rel) == want
+
+
+def test_matching_purpose_comes_first(seclists):
+    groups = wordlists.available("path")["groups"]
+    assert groups[0]["match"] and "경로" in groups[0]["label"]
+    assert "이 모듈용" in groups[0]["label"]
+    # 안 맞는 것도 남아 있어야 한다 — 아는 사람이 다른 걸 쓰려 할 때 막지 않는다
+    assert any(not g["match"] for g in groups)
+    assert any("비밀번호" in g["label"] for g in groups)
+
+
+def test_no_purpose_means_no_marker(seclists):
+    assert all("이 모듈용" not in g["label"] for g in wordlists.available()["groups"])
+
+
+def test_size_is_shown(seclists):
+    one = next(o for o in wordlists.available()["items"] if o["name"].endswith("raft-small-words.txt"))
+    on_disk = (seclists / "Discovery/Web-Content/raft-small-words.txt").stat().st_size
+    assert one["size"] == on_disk and one["size_label"].endswith("B")
+
+
+def test_says_so_when_the_list_is_cut(seclists, monkeypatch):
+    monkeypatch.setattr(wordlists, "MAX_FILES", 3)
+    found = wordlists.available()
+    assert found["cut"] and found["total"] > 3 and len(found["items"]) == 3
+
+
+def test_picker_shows_groups_and_sizes(app, client, seclists):
+    from tests.test_app import add_target
+    add_target(client, "https://sesacedu.store")
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    html = client.get(f"/modules?target={tid}").get_data(as_text=True)
+    assert "<optgroup" in html and "이 모듈용" in html
+    assert "이름으로 찾기" in html          # 찾기 칸
+    assert "data-size=" in html            # 크기
