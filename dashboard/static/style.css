@@ -16,6 +16,8 @@
   --accent-soft: #E6EEF4;
   --hit: #B5532E;
   --hit-soft: #F6E7E0;
+  --mark: #F2D36B;        /* 점검 표식 강조 */
+  --mark-ink: #1C1C1C;
 
   --sev-critical: #8E2F3C;
   --sev-high: #B5532E;
@@ -35,6 +37,7 @@
   --bg: #1C1C1C; --surface: #262626; --surface-2: #2C2C2C; --line: #3A3A3A;
   --text: #ECECEC; --sub: #A3A3A3; --accent: #8DB4D4; --accent-soft: #2B3842;
   --hit: #E39A78; --hit-soft: #3D2C25;
+  --mark: #8A6D1F; --mark-ink: #FFF3CC;
   --sev-critical: #E0899A; --sev-high: #E39A78; --sev-medium: #D9B65E; --sev-low: #8DB4D4; --sev-info: #A3A3A3;
   color-scheme: dark;
 }
@@ -251,7 +254,7 @@ ul.plain { list-style: none; margin: 0; padding: 0; display: flex; flex-directio
 .exchange section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
 .exchange header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
 .exchange pre { margin: 0; padding: 12px; font: 12px/1.55 var(--mono); white-space: pre-wrap; word-break: break-all; max-height: 70vh; overflow: auto; }
-mark { background: #F2D36B; color: #1C1C1C; border-radius: 2px; padding: 0 1px; }
+mark { background: var(--mark); color: var(--mark-ink); border-radius: 2px; padding: 0 1px; }
 .small-btn { min-height: 26px; padding: 2px 10px; font-size: 12px; }
 .hdr-edit summary { cursor: pointer; list-style: none; }
 .hdr-edit summary::after { content: " ✎"; color: var(--sub); }
@@ -440,24 +443,34 @@ mark { background: #F2D36B; color: #1C1C1C; border-radius: 2px; padding: 0 1px; 
   .side-drawer { position: static; }
 }
 
-/* 드로어 안 터미널 — 보낸 요청이 흐르는 화면 */
-.term { flex: 1 1 auto; margin: 0 12px 12px; overflow: auto; background: #14161a; color: #d6dae0;
-        border: 1px solid #262a31; border-radius: 6px; padding: 8px 10px;
-        font: 12px/1.55 var(--mono); white-space: pre-wrap; word-break: break-all; }
+/* 드로어 안 요청 흐름 — 한 줄이 요청 하나.
+   색은 전부 앱 토큰으로 쓴다. 터미널 흉내를 내려고 색을 박아 넣으면
+   밝은 화면에서 혼자 까맣고, 어두운 화면에서는 또 미묘하게 다른 검정이 된다.
+   고정하는 것은 모양(고정폭 글꼴·한 줄 한 요청)뿐이다. */
+.term { flex: 1 1 auto; margin: 0 12px 12px; overflow: auto;
+        background: var(--surface-2); color: var(--text);
+        border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px;
+        font: 12px/1.6 var(--mono); white-space: pre-wrap; word-break: break-all; }
 .term:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-.term-line { cursor: pointer; padding: 1px 2px; border-radius: 3px; animation: term-in .18s ease-out; }
-.term-line:hover { background: #1e222a; }
-.term-line .arrow { color: #6b7280; }
-.term-line .code-2 { color: #7fd18b; } .term-line .code-3 { color: #d9c05e; }
-.term-line .code-4 { color: #e0a06a; } .term-line .code-5 { color: #e08a95; }
-.term-line .code-x { color: #e08a95; font-weight: 700; }
-.term-line .path { color: #cfd4da; }
-.term-line .meta { color: #6b7280; }
-.term-raw { background: #0f1115; border-left: 2px solid var(--accent); margin: 4px 0 8px;
-            padding: 6px 8px; color: #b9bfc7; }
-.term-raw b { color: #8fb6d6; display: block; margin-top: 6px; }
+.term-line { cursor: pointer; padding: 2px 4px; border-radius: 4px; margin: 0 -4px;
+             animation: term-in .18s ease-out; }
+.term-line:hover { background: var(--accent-soft); }
+.term-line[aria-expanded="true"] { background: var(--accent-soft); }
+.term-line .arrow { color: var(--sub); }
+.term-line .verb { color: var(--sub); font-weight: 600; }
+.term-line .path { color: var(--text); }
+.term-line .meta { color: var(--sub); }
+/* 응답 코드 — 결과 탭의 심각도와 같은 색을 쓴다. 한 화면에서 같은 뜻이면 같은 색이어야 한다 */
+.term-line .code { font-weight: 700; }
+.term-line .code-2 { color: var(--sev-low); }
+.term-line .code-3 { color: var(--sev-medium); }
+.term-line .code-4 { color: var(--sev-high); }
+.term-line .code-5, .term-line .code-x { color: var(--sev-critical); }
+.term-raw { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+            border-radius: 0 6px 6px 0; margin: 4px 0 8px; padding: 8px 10px; color: var(--text); }
+.term-raw b { color: var(--accent); display: block; margin-top: 8px; font-weight: 600; }
 .term-raw b:first-child { margin-top: 0; }
-.term-cursor { color: #7fd18b; animation: blink 1s step-end infinite; }
+.term-cursor { color: var(--accent); animation: blink 1s step-end infinite; }
 @keyframes term-in { from { opacity: 0; transform: translateY(2px); } }
 @keyframes blink { 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .term-line, .term-cursor { animation: none; } }

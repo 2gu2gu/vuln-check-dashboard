@@ -140,3 +140,16 @@ def test_the_body_holds_the_form_not_the_header(app, client):
     card = re.search(r'<article class="panel mod" data-mod="http_security_headers">.*?</article>', html, re.S).group(0)
     head, body = card.split('class="mod-body"', 1)
     assert "<form" not in head and "<form" in body
+
+
+# ── 색은 전부 토큰으로 ─────────────────────────────────────────
+# 터미널 흉내를 내려고 색을 박아 넣으면 밝은 화면에서 혼자 까맣고,
+# 어두운 화면에서는 또 미묘하게 다른 검정이 된다(사용자 지적 11-04).
+
+def test_no_hardcoded_colours_outside_the_token_block():
+    import re
+    from pathlib import Path
+    css = (Path(__file__).resolve().parent.parent / "dashboard/static/style.css").read_text(encoding="utf-8")
+    body = css.split("* { box-sizing: border-box; }", 1)[1]        # :root 토큰 블록 뒤부터
+    bad = [l for l in body.splitlines() if re.search(r"#[0-9a-fA-F]{3,8}\b", l)]
+    assert not bad, "토큰 대신 색을 박아 넣은 줄: " + " / ".join(bad[:4])

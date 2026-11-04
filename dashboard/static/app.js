@@ -230,8 +230,12 @@
       var code = x.error ? "ERR" : String(x.status);
       var cls = x.error ? "code-x" : "code-" + code.charAt(0);
       var path = x.url.replace(/^https?:\/\/[^/]+/, "") || "/";
-      el.innerHTML = '<span class="arrow">\u2192</span> <span class="meta"></span> '
-                   + '<span class="path"></span> <span class="' + cls + '"></span>'
+      el.setAttribute("role", "button");
+      el.setAttribute("tabindex", "0");
+      el.setAttribute("aria-expanded", "false");
+      el.title = "\ub20c\ub7ec\uc11c \ud328\ud0b7 \uc6d0\ubb38 \ubcf4\uae30";
+      el.innerHTML = '<span class="arrow">\u2192</span> <span class="verb"></span> '
+                   + '<span class="path"></span> <span class="code ' + cls + '"></span>'
                    + ' <span class="meta"></span>';
       var s = el.querySelectorAll("span");
       s[1].textContent = x.method;
@@ -239,12 +243,20 @@
       s[3].textContent = code;
       s[4].textContent = x.error ? x.error : (x.size + "B \u00b7 " + x.ms + "ms");
       el.addEventListener("click", function () { toggleRaw(el, x.id); });
+      el.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleRaw(el, x.id); }
+      });
       return el;
     }
 
     function toggleRaw(el, xid) {
       var open = el.nextElementSibling;
-      if (open && open.classList.contains("term-raw")) { open.remove(); return; }
+      if (open && open.classList.contains("term-raw")) {
+        open.remove();
+        el.setAttribute("aria-expanded", "false");
+        return;
+      }
+      el.setAttribute("aria-expanded", "true");
       var box = document.createElement("div");
       box.className = "term-raw";
       box.textContent = "\u2026";
