@@ -44,8 +44,17 @@ def _role_label(t):
     return _project_of(t).role_name(t["role"])
 
 
+def _is_practice(t) -> bool:
+    """우리가 띄운 연습용 가짜 서버인가. 점검 대상이 아니다."""
+    pj = _projects().get(t["project"]) if t else None
+    return bool(pj and pj.is_practice(t["role"]))
+
+
 def _targets():
-    return get_db().execute("SELECT * FROM targets ORDER BY project, id").fetchall()
+    rows = get_db().execute("SELECT * FROM targets ORDER BY project, id").fetchall()
+    # 연습용은 뒤로 민다. ?target= 없이 열면 첫 대상이 기본이 되는데, 그게 연습용이면
+    # 열자마자 가짜 서버를 보고 있게 된다(지금 실제로 그렇다 — 먼저 등록돼 있다).
+    return sorted(rows, key=_is_practice)
 
 
 def _current_target():
@@ -336,7 +345,8 @@ def modules():
     runs = get_db().execute(
         "SELECT runs.*, targets.name AS target_name, "
         "(SELECT COUNT(*) FROM findings f WHERE f.run_id = runs.id) AS n, "
-        "(SELECT COUNT(*) FROM exchanges x WHERE x.run_id = runs.id) AS reqs "
+        "(SELECT COUNT(*) FROM exchanges x WHERE x.run_id = runs.id) AS reqs, "
+        "targets.project AS target_project, targets.role AS target_role "
         "FROM runs JOIN targets ON targets.id = runs.target_id ORDER BY runs.id DESC LIMIT 15").fetchall()
     return render_template("modules.html", rows=rows, all_modules=_modules(), project=project,
                            hidden=len(_modules()) - len(available), errors=current_app.config["MODULE_ERRORS"],
@@ -882,8 +892,12 @@ def report_json(tid):
     mods = _modules()
     data = {
         "tool": "딸깍이 (DAST 대시보드)", "version": current_app.jinja_env.globals["VERSION"], "generated_at": now_iso(),
+        # practice 와 원시 id 를 같이 준다 — 받는 쪽이 한국어 이름을 부분일치로
+        # 뒤지지 않게. 가짜 서버의 결과가 점검 결과로 섞여 들어가면 안 된다.
+        "practice": _is_practice(t),
         "target": {"name": t["name"], "url": t["url"], "project": _project_of(t).name,
-                   "role": _role_label(t)},
+                   "role": _role_label(t), "project_id": t["project"], "role_id": t["role"],
+                   "practice": _is_practice(t)},
         "findings": [{
             "title": r["title"], "severity": r["severity"], "status": r["status"], "location": r["location"],
             "module": mods[r["module_id"]].name if r["module_id"] in mods else r["module_id"],
@@ -901,7 +915,15 @@ def report_json(tid):
 def report(tid):
     t, rows, exchanges = _report_rows(tid)
     mods = _modules()
-    lines = [f"# 점검 결과 — {t['name']}", "", "- 도구: 딸깍이 (DAST 대시보드)", f"- 프로젝트: {_project_of(t).name}",
+    # 연습용은 제목부터 다르게 쓴다. 같은 양식으로 내보내면 복사해 붙였을 때
+    # 실제 점검 결과와 구별이 안 된다 — 가짜 서버에서 나온 것이다.
+    practice = _is_practice(t)
+    lines = [f"# 연습 기록 — {t['name']}" if practice else f"# 점검 결과 — {t['name']}", ""]
+    if practice:
+        lines += ["> **점검 결과가 아닙니다.** 우리가 띄운 연습용 가짜 서버"
+                  "(`demo_target.py`)에서 나온 기록입니다. 보고서에 넣지 마세요.", ""]
+    lines += ["- 도구: 딸깍이 (DAST 대시보드)",
+             f"- 프로젝트: {_project_of(t).name}" + (" (연습용 — 점검 범위 아님)" if practice else ""),
              f"- 대상: {t['url']}" + (f" ({_role_label(t)})" if _role_label(t) else ""),
              f"- 작성: {fmt_kst(now_iso())} (KST)", f"- 발견: {len(rows)}건", "",
              "| # | 심각도 | 항목 | 위치 | ATT&CK | 상태 |", "|---|---|---|---|---|---|"]

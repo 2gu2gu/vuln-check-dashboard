@@ -21,6 +21,8 @@ KINDS = ("passive", "active")
 STAGES = ("collect", "check", "probe", "tool")
 STAGE_LABEL = {"collect": "표면 수집", "check": "대상 점검", "probe": "지점 점검", "tool": "도구"}
 GENERAL = "general"  # 어느 프로젝트에도 속하지 않는 대상
+# 연습용 묶음 이름. 프로젝트 이름을 쓰지 않는 것이 요점이다 — 점검 범위가 아니다.
+PRACTICE_LABEL = "연습용 — 점검 대상 아님"
 
 
 @dataclass
@@ -68,18 +70,49 @@ class ProjectInfo:
         """그 역할의 범위. 역할을 안 골랐거나 범위를 안 적었으면 프로젝트 범위."""
         return self.roles.get(role, {}).get("scope") or self.scope
 
+    def is_practice(self, role: str) -> bool:
+        """우리가 띄운 연습용 가짜 서버인가. 점검 대상이 아니다."""
+        return bool(self.roles.get(role, {}).get("practice"))
+
 
 def _norm_roles(roles):
-    """역할은 이름만 주어도 되고, 범위까지 주어도 된다."""
+    """역할은 이름만 주어도 되고, 범위까지 주어도 된다.
+
+    practice 는 '점검 대상이 아니라 우리가 띄운 연습용 서버' 라는 표시다.
+    여기서 안 받아 두면 조용히 버려져 화면이 실제 대상과 똑같이 그린다.
+    """
     out = {}
     for rid, value in (roles or {}).items():
         if isinstance(value, str):
-            out[rid] = {"name": value, "scope": None}
+            out[rid] = {"name": value, "scope": None, "practice": False}
         elif isinstance(value, dict) and value.get("name"):
-            out[rid] = {"name": value["name"], "scope": value.get("scope")}
+            out[rid] = {"name": value["name"], "scope": value.get("scope"),
+                        "practice": bool(value.get("practice"))}
         else:
             raise ValueError(f"역할 {rid} 은 이름 문자열이거나 name 을 가진 dict 여야 합니다")
     return out
+
+
+def group_targets(targets, projects: dict) -> list:
+    """화면에 보일 대상 묶음. **점검 대상이 먼저, 연습용은 따로 뒤에.**
+
+    전에는 프로젝트 하나로만 묶어서, 연습용 가짜 서버가 실서버 두 개와 같은
+    '새싹에듀 모의해킹' 묶음 안에 들어가 있었다. 묶음 이름이 같으면 고를 때도
+    보여 줄 때도 점검 범위처럼 읽힌다 — 이름으로 못박고 자리를 떼어 놓는다.
+    """
+    seen, out = {}, []
+    for t in targets:
+        pid = t["project"]
+        pj = projects.get(pid)
+        practice = bool(pj and pj.is_practice(t["role"]))
+        key = ("1" if practice else "0", pid)
+        if key not in seen:
+            name = pj.name if pj else f"{pid} (팩 없음)"
+            seen[key] = {"label": PRACTICE_LABEL if practice else name,
+                         "practice": practice, "targets": []}
+            out.append((key, seen[key]))
+        seen[key]["targets"].append(t)
+    return [g for _key, g in sorted(out, key=lambda kv: kv[0])]
 
 
 from dashboard import cvss as cvss_mod
