@@ -1,4 +1,4 @@
-"""사전 읽기, 숨은 경로 찾기, 사전으로 패턴 넣어 보기, 칼리 결과 가져오기."""
+"""사전 읽기, 숨은 경로 찾기, 사전으로 입력값 넣어 보기, 칼리 결과 가져오기."""
 import json
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -98,7 +98,7 @@ def test_discovery_respects_base_and_limit(monkeypatch):
     assert len(probes) == 5 and all(c.startswith("backend/") for c in probes)
 
 
-# ── 사전으로 패턴 넣어 보기 ───────────────────────────────────
+# ── 사전으로 입력값 넣어 보기 ───────────────────────────────────
 
 def echo(transform=lambda v: v, extra=""):
     def fetch(url, **kw):

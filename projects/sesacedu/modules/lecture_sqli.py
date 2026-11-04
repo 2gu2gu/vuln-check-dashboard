@@ -44,9 +44,9 @@ META = {
         {"name": "sql", "label": "SELECT 문 (⑤)", "default": "",
          "help": "값 하나를 돌려주는 SELECT 만 됩니다."},
         {"name": "dbms", "label": "DB 제품", "type": "select", "default": "oracle", "options": DBMS_OPTIONS},
-        {"name": "limit", "label": "몇 개씩", "type": "int", "default": "5",
+        {"name": "limit", "label": "한 번에 몇 개", "type": "int", "default": "5",
          "help": "한 글자마다 요청이 여러 번 나갑니다. 5개면 대략 300~500번."},
-        {"name": "offset", "label": "건너뛸 개수", "type": "int", "default": "0"},
+        {"name": "offset", "label": "앞에서 건너뛸 개수", "type": "int", "default": "0"},
     ],
 }
 
