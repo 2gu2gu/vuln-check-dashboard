@@ -64,6 +64,10 @@
          title="이 화면 사용법" aria-label="이 화면 사용법">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18zM9.5 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.4v.6M12 16.5v.5"/></svg>
       </a>
+      <button class="btn ghost" id="jobs-open" type="button" aria-expanded="false" aria-controls="jobs-drawer">
+        <span class="spin" id="jobs-spin" hidden aria-hidden="true"></span>
+        <span id="jobs-label">도는 중 {{ job_live }}</span>
+      </button>
       <button class="btn ghost icon" id="theme" type="button" aria-label="화면 테마 바꾸기">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9a7 7 0 0 1-9-9z"/></svg>
       </button>
@@ -76,6 +80,41 @@
     <main class="content">{% block content %}{% endblock %}</main>
   </div>
 </div>
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false">
+  {% for j in job_toasts %}
+  <div class="toast {{ 'error' if j.status in ('error', 'cancelled') else 'ok' }}"
+       data-keep="{{ 'yes' if j.status == 'error' else '' }}" role="status">
+    <span class="toast-dot" aria-hidden="true"></span>
+    <div>
+      <b>{{ j.module }}</b>
+      {%- if j.status == 'done' %} <span class="sub">요청 {{ j.sent }}개 · {{ j.seconds }}초</span>
+        <div>{{ j.message }}</div>
+      {%- elif j.status == 'cancelled' %} <span class="sub">멈춤</span>
+        <div>요청 {{ j.sent }}개까지 보냈습니다. 그때까지 찾은 것은 남아 있습니다.</div>
+      {%- else %} <span class="sub">실패</span><div>{{ j.error }}</div>{% endif %}
+    </div>
+    <button class="toast-x" type="button" aria-label="닫기">✕</button>
+  </div>
+  {% endfor %}
+</div>
+<aside class="drawer" id="jobs-drawer" hidden aria-label="돌고 있는 모듈">
+  <div class="drawer-head">
+    <b>모듈 실행</b>
+    <span class="sub small" id="jobs-count"></span>
+    <button class="btn ghost icon" type="button" id="jobs-close" aria-label="닫기">✕</button>
+  </div>
+  <div class="drawer-body">
+    <ul class="job-list" id="job-list"></ul>
+    <div class="job-detail" id="job-detail" hidden>
+      <div class="drawer-head">
+        <b id="job-detail-title"></b>
+        <button class="btn ghost icon" type="button" id="job-back" aria-label="목록으로">←</button>
+      </div>
+      <p class="sub small">보낸 요청이 들어오는 대로 흐릅니다. 줄을 누르면 그 자리에서 <b>패킷 원문</b>이 펴집니다.</p>
+      <div class="term" id="job-term" tabindex="0" role="log" aria-label="보낸 요청"></div>
+    </div>
+  </div>
+</aside>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

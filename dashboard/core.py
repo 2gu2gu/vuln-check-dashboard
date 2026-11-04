@@ -143,7 +143,8 @@ class BudgetExceeded(Exception):
 class RunContext:
     """모듈 실행 하나의 요청 설정. 앱이 만들어 flask.g.run_ctx 에 둔다."""
 
-    def __init__(self, target_url="", auth_headers=None, delay_ms=0, max_requests=0, recorder=None, cache=None):
+    def __init__(self, target_url="", auth_headers=None, delay_ms=0, max_requests=0, recorder=None, cache=None,
+                 stop_check=None):
         self.netloc = urlsplit(target_url).netloc
         self.auth_headers = auth_headers or {}
         self.delay = delay_ms / 1000
@@ -151,8 +152,13 @@ class RunContext:
         self.recorder = recorder  # (dict) -> 기록 번호
         self.count = 0
         self.cache = cache if cache is not None else {}
+        # 백그라운드 실행에서 '멈춤' 을 누르면 이 함수가 예외를 던진다.
+        # **보내기 직전에** 본다 — 이미 나간 요청은 서버에 닿았으니 되돌릴 수 없다.
+        self.stop_check = stop_check
 
     def before_send(self):
+        if self.stop_check:
+            self.stop_check()
         self.count += 1
         if self.max_requests and self.count > self.max_requests:
             raise BudgetExceeded(f"요청 수 한도({self.max_requests})를 넘어 멈췄습니다")
@@ -191,10 +197,13 @@ def join(base: str, path: str) -> str:
 
 
 def fetch(url: str, *, method: str = "GET", headers=None, data=None, timeout: float = 10,
-          max_bytes: int = 1_000_000, record_body: bool = True) -> Response:
+          max_bytes: int = 1_000_000, record_body: bool = True, record_request: bool = True,
+          raw_body: bytes = None, content_type: str = "") -> Response:
     """범위 검사를 거친 뒤 요청한다. 모든 모듈은 이 함수로만 요청한다.
 
-    data(dict)는 폼 본문. record_body=False 면 요청 기록에 응답 본문을 남기지 않는다(.env 처럼 비밀이 섞일 응답).
+    data(dict)는 폼 본문, raw_body 는 그대로 보낼 바이트(JSON 등).
+    record_body=False 면 요청 기록에 응답 본문을 남기지 않는다(.env 처럼 비밀이 섞일 응답).
+    record_request=False 면 **보낸 본문**을 남기지 않는다 — 로그인처럼 비밀번호가 실리는 요청.
     실행 중이면 요청 간격·요청 수 한도를 지키고, 대상 인증 헤더를 그 대상 주소에만 붙이고, 요청·응답을 기록한다.
     """
     scope.ensure_in_scope(url)
@@ -208,12 +217,16 @@ def fetch(url: str, *, method: str = "GET", headers=None, data=None, timeout: fl
         injected = {k.lower() for k in ctx.auth_headers}
     hdrs.update(headers or {})
     body = None
-    if data is not None:
+    if raw_body is not None:
+        body = raw_body
+        hdrs.setdefault("Content-Type", content_type or "application/json")
+    elif data is not None:
         body = urlencode(data).encode()
         hdrs.setdefault("Content-Type", "application/x-www-form-urlencoded")
     req = urllib.request.Request(url, data=body, method=method, headers=hdrs)
     record = {"method": method, "url": url, "req_headers": redact(list(hdrs.items()), injected),
-              "req_body": body.decode() if body else ""}
+              "req_body": (body.decode(errors="replace") if body else "") if record_request
+                          else "(비밀번호가 실린 요청이라 본문을 남기지 않음)"}
     start = time.monotonic()
     try:
         try:

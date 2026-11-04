@@ -40,6 +40,7 @@ class ModuleInfo:
     severity: str = "medium"  # probe 가 '취약'을 낼 때 기본 심각도
     needs: list = field(default_factory=list)  # 실행 전에 미리 준비해야 하는 것(토큰·환경변수 등)
     cvss: str = ""  # 이 모듈이 찾는 것의 전형적인 CVSS 벡터(제안값 — 사람이 고쳐 쓴다)
+    vuln: str = "기타"  # 노션 '웹 서비스 취약점 목록' 의 취약점 유형
 
     @property
     def stage_label(self) -> str:
@@ -58,6 +59,7 @@ class ProjectInfo:
     description: str = ""
     source: str = ""
     roles: dict = field(default_factory=dict)  # {역할 id: {"name": 보일 이름, "scope": [허용 범위]}}
+    login: dict = field(default_factory=dict)  # 로그인해서 토큰 받는 법(서비스마다 다르다)
 
     def role_name(self, role: str) -> str:
         return self.roles.get(role, {}).get("name", role)
@@ -82,6 +84,17 @@ def _norm_roles(roles):
 
 from dashboard import cvss as cvss_mod
 from dashboard import needs as needs_mod
+
+
+def _check_vuln(value: str) -> str:
+    """META 의 취약점 유형이 팀 어휘인지 본다. 새 말을 만들면 모듈이 안 올라간다 —
+    어휘가 갈라지면 노션 취약점 항목과 묶이지 않는다."""
+    from dashboard.grouping import VULN_TYPES
+    if not value:
+        return "기타"
+    if value not in VULN_TYPES:
+        raise ValueError(f"vuln 은 {' · '.join(VULN_TYPES)} 중 하나여야 합니다 (받은 값: {value})")
+    return value
 
 
 def _check_cvss(vector: str) -> str:
@@ -129,7 +142,7 @@ def discover(package_name: str = "modules", project: str = ""):
                 params=meta.get("params", []), run=mod.run, source=source, project=project,
                 stage=meta.get("stage", "check"), severity=meta.get("severity", "medium"),
                 roles=meta.get("roles", []), needs=needs_mod.validate(meta.get("needs")),
-                cvss=_check_cvss(meta.get("cvss", "")),
+                cvss=_check_cvss(meta.get("cvss", "")), vuln=_check_vuln(meta.get("vuln", "")),
             )
         except Exception as e:  # noqa: BLE001 — 깨진 모듈은 화면에 오류로 보여 준다
             errors.append((source, str(e)))
@@ -152,7 +165,8 @@ def discover_projects(package_name: str = "projects"):
                 raise ValueError("PROJECT(dict) 에 name·scope 가 필요합니다")
             projects[pid] = ProjectInfo(id=pid, name=meta["name"], scope=[h.lower() for h in meta["scope"]],
                                         description=meta.get("description", ""), source=source,
-                                        roles=_norm_roles(meta.get("roles", {})))
+                                        roles=_norm_roles(meta.get("roles", {})),
+                                        login=meta.get("login") or {})
         except Exception as e:  # noqa: BLE001
             errors.append((source, str(e)))
             continue

@@ -415,3 +415,124 @@ def test_harvested_plus_path_survives_the_round_trip():
     from dashboard.payloads import traversal
     path = next(p for p in mod.harvest_paths(REAL_UNIT) if "+" in p)
     assert "+" not in traversal(path, 9, "double-full")
+
+
+# ── 찾은 것에 '무엇인지' 를 붙인다 ───────────────────────────────────
+# 퍼징은 경로를 찾을 뿐 의미는 모른다. api.env 를 찾아 놓고 크기만 적으면
+# 보고서를 읽는 사람이 왜 중요한지 알 수 없다.
+
+def test_known_paths_get_a_description():
+    from projects.sesacedu.fs_knowledge import describe
+    desc, sev = describe("etc/sesacedu/api.env")
+    assert sev == "critical" and "JWT" in desc
+
+
+def test_guessed_descriptions_are_marked():
+    """짐작을 본 것처럼 적으면 보고서가 틀린다."""
+    from projects.sesacedu.fs_knowledge import describe
+    desc, sev = describe("srv/whatever/secrets.env")
+    assert sev == "critical" and desc.endswith("(추정)")
+    assert describe("etc/sesacedu/api.env")[0].endswith("(추정)") is False
+
+
+def test_unknown_path_says_nothing():
+    from projects.sesacedu.fs_knowledge import describe
+    assert describe("opt/zzz/thing") == ("", "info")
+
+
+def test_tree_carries_the_descriptions(monkeypatch):
+    pages = dict(DIRS, **{"/etc/sesacedu/api.env": 200})
+    r, _ = pipeline(monkeypatch, pages, seeds=["etc/sesacedu/api.env"], names=["conf"])
+    assert "DB·JWT 서명키" in r.text
+
+
+def test_sensitive_reads_become_their_own_findings(monkeypatch):
+    pages = dict(DIRS, **{"/etc/sesacedu/api.env": 200})
+    r, _ = pipeline(monkeypatch, pages, seeds=["etc/sesacedu/api.env"], names=["conf"])
+    one = [f for f in r.findings if f.title.startswith("민감 파일 노출")]
+    assert one and one[0].severity == "critical"
+    assert "/etc/sesacedu/api.env" in one[0].title
+
+
+def test_min_severity_can_turn_that_off(monkeypatch):
+    pages = dict(DIRS, **{"/etc/sesacedu/api.env": 200})
+    r, _ = pipeline(monkeypatch, pages, seeds=["etc/sesacedu/api.env"], names=["conf"],
+                    min_severity="none")
+    assert not [f for f in r.findings if f.title.startswith("민감 파일 노출")]
+
+
+# ── 추출 규칙: 11-04 실측에서 실제로 수확이 된 형태만 ────────────────
+# 모의해킹 세션이 유닛 파일 **하나**에서 손으로 캐낸 것이 5개다.
+# 전부 어떤 사전에도 없는 이름이고, /srv/sesacedu/api-data 는 탈출 출발점이었다.
+
+REAL_UNIT5 = """[Unit]
+Description=SesacEdu API
+[Service]
+WorkingDirectory=/srv/sesacedu/api-data
+EnvironmentFile=/etc/sesacedu/api.env
+Environment=JAVA_HOME=/opt/java/jdk-11.0.24+8
+Environment=CATALINA_HOME=/opt/apache-tomcat-10.1.1
+Environment=CATALINA_BASE=/srv/sesacedu/api
+"""
+
+
+@pytest.mark.parametrize("path", [
+    "srv/sesacedu/api-data",            # WorkingDirectory — 탈출 출발점
+    "etc/sesacedu/api.env",             # EnvironmentFile — JWT 서명키가 있던 파일
+    "opt/java/jdk-11.0.24+8",           # Environment= 2단
+    "opt/apache-tomcat-10.1.1",         # Environment= 2단
+    "srv/sesacedu/api",                 # Environment= 2단 (CATALINA_BASE)
+])
+def test_harvests_all_five_from_one_unit(path):
+    assert path in mod.harvest_paths(REAL_UNIT5)
+
+
+def test_parent_chain_comes_along():
+    """경로 하나를 얻으면 부모도 넣는다 — 요청 1건에 디렉터리 하나라 값이 좋다."""
+    got = mod.harvest_paths("WorkingDirectory=/srv/sesacedu/api-data\n")
+    assert "srv/sesacedu/api-data" in got and "srv/sesacedu" in got
+
+
+@pytest.mark.parametrize("text, why", [
+    ("DB_URL=https://example.com/api/v1", "URL 은 서버 경로가 아니다"),
+    ("x=/proc/self/environ", "/proc 은 가상 파일시스템"),
+    ("y=/sys/class/net", "/sys 도 가상"),
+    ("z=/dev/null", "쓸모없음"),
+])
+def test_noise_is_filtered(text, why):
+    assert mod.harvest_paths(text) == [], why
+
+
+def test_nginx_keys():
+    got = mod.harvest_paths("root /var/www/x;\nalias /srv/static/y;\n"
+                            "ssl_certificate_key /etc/ssl/k.pem;\n")
+    for p in ("var/www/x", "srv/static/y", "etc/ssl/k.pem"):
+        assert p in got
+
+
+def test_catalina_base_is_substituted():
+    """catalina.properties 의 ${catalina.base} 는 유닛에서 얻은 값으로 푼다."""
+    got = mod.harvest_paths("common.loader=${catalina.base}/lib",
+                            base_hint="/srv/sesacedu/api")
+    assert "srv/sesacedu/api/lib" in got
+    assert not any("catalina.base" in p for p in got)
+
+
+def test_reads_the_valuable_files_first():
+    """유닛 하나에서 5경로가 나왔다. web.xml 은 크기만 크고 경로가 없다."""
+    nodes = [{"path": "/srv/app/WEB-INF/web.xml", "size": 168_000},
+             {"path": "/etc/systemd/system/x.service", "size": 546},
+             {"path": "/etc/nginx/sites-available/y", "size": 2200},
+             {"path": "/var/log/dpkg.log", "size": 59_000}]
+    order = [n["path"] for n in mod.harvest_order(nodes)]
+    assert order[0].endswith(".service")
+    assert "/srv/app/WEB-INF/web.xml" not in order   # 건너뛴다
+    assert "/var/log/dpkg.log" not in order
+
+
+def test_harvest_stops_when_nothing_new(monkeypatch):
+    """한 바퀴 돌아 새로 '존재' 가 없으면 멈춘다 — 요청을 아낀다."""
+    pages = dict(DIRS, **{"/srv/app/x.service": "EnvironmentFile=/nowhere/zzz.env\n"})
+    r, fetch = pipeline(monkeypatch, pages, seeds=["srv/app/x.service"], names=["conf"],
+                        rounds="5")
+    assert len([c for c in fetch.calls if "nowhere" in c]) <= 2   # 한 번 보고 그만

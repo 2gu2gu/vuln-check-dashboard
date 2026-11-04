@@ -8,6 +8,19 @@ PROJECT = {
     # 같은 호스트(터널이면 localhost, 운영이면 sesacedu.store 계열)에 여러 서버가 걸리므로
     # 역할마다 호스트와 포트를 함께 적어 둔다 — 한 역할로 돌린 모듈이 다른 서버로 나가지 못한다.
     # Wazuh(EC2 ③)는 우리 쪽 탐지 장비라 점검 대상이 아니다. 역할을 두지 않는다.
+    # 로그인해서 토큰 받는 법. 비밀번호는 저장하지 않고 받은 토큰만 인증 헤더에 넣는다.
+    # 주소는 08_모의해킹/file_inclution/fsmap/core/probe.py 가 쓰는 것과 같다.
+    "login": {
+        "path": "/backend/login",
+        "json": {"email": "{id}", "pw": "{secret}"},
+        "token_keys": ["token", "accessToken", "access_token", "data.token", "data.accessToken"],
+        "header": "Authorization",
+        "prefix": "Bearer ",
+        "roles": ["user_web", "practice"],
+        "id_label": "이메일",
+        "note": "**테스트 계정만 쓰세요.** 비밀번호는 저장하지 않습니다 — 한 번 보내고 버리고, "
+                "요청 기록에도 남기지 않습니다. 받아 온 토큰만 이 대상의 인증 헤더에 들어갑니다.",
+    },
     "roles": {
         "user_web": {
             "name": "사용자 웹 (EC2 ①, sesacedu.store)",
