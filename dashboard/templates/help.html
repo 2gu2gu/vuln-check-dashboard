@@ -188,8 +188,13 @@
       걸러져야 할 글자(<code>&lt; &gt; " ‘ &amp;</code> 등)가 그대로 돌아와야 취약입니다.</dd>
     <dt>응답이 HTML 이 아니면</dt><dd>JSON 같은 응답은 <code>&lt;&gt;</code> 가 살아 있어도 바로 XSS 는 아닙니다.
       근거에 응답 종류를 적어 둡니다.</dd>
-    <dt>늘리려면</dt><dd>SecLists 를 받아 <code>DASH_WORDLISTS</code> 에 폴더를 알려 주면 고르는 칸에 같이 나타납니다
-      (<code>wordlists/README.md</code>).</dd>
+    <dt>늘리려면</dt><dd>SecLists 를 받아 <code>DASH_WORDLISTS</code> 에 폴더를 알려 주면 고르는 칸에 같이 나타납니다.
+      <b>루트를 그대로 가리켜도 됩니다</b> — 3단계까지 내려가 찾습니다 (<code>wordlists/README.md</code>).</dd>
+    <dt>많아지면</dt><dd>고르는 칸이 <b>용도별 묶음</b>으로 갈라지고, 그 모듈에 맞는 묶음이 위로 올라와
+      <code>— 이 모듈용</code> 이 붙습니다. 안 맞는 것도 아래에 그대로 있습니다.
+      위의 <b>찾기 칸</b>에 <code>raft</code>·<code>lfi</code> 처럼 이름 조각을 치면 좁혀집니다.</dd>
+    <dt>크기 보기</dt><dd>줄마다 파일 크기가 붙습니다. 수만 줄짜리를 고르면 요청이 그만큼 나가므로,
+      '몇 개까지' 칸 아래에 <b>요청 수와 최소 소요 시간</b>이 바로 뜹니다. 실행 한도를 넘으면 그것도 알려 줍니다.</dd>
     <dt>요청 수</dt><dd>숨은 경로 찾기는 경로 하나에 요청 한 번, 입력값 넣기는 지점 수 × 사전 수입니다.
       ‘몇 개까지’로 끊어 돌리세요.</dd>
   </dl>

@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
-<body>
+<body data-delay-ms="{{ config.DELAY_MS }}">
 {% set nav = [
   ("dash.results", "결과", "M4 6h16M4 12h16M4 18h10"),
   ("dash.targets", "대상", "M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18zm0 5a4 4 0 1 0 0 8a4 4 0 0 0 0-8z"),

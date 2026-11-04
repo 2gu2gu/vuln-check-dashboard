@@ -244,7 +244,7 @@ def _check_types(mod, values):
             raise ValueError(f"'{label}' 에는 숫자를 넣어 주세요")
         if p.get("type") == "select" and val not in [o["value"] for o in p.get("options", [])]:
             raise ValueError(f"'{label}' 은 목록에 있는 값이어야 합니다")
-        if p.get("type") == "wordlist" and val not in [o["value"] for o in wordlists.available()]:
+        if p.get("type") == "wordlist" and val not in [o["value"] for o in wordlists.available()["items"]]:
             raise ValueError(f"'{label}' 에 고른 사전을 찾을 수 없습니다")
     return values
 
