@@ -238,7 +238,11 @@ table.grid { width: 100%; border-collapse: collapse; }
 /* 표면 */
 .probe-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 12px; position: sticky; top: 62px; z-index: 1; }
 .probe-bar label.check, .run label.check { display: flex; align-items: center; gap: 6px; }
-.probe-params { display: flex; gap: 10px; flex-wrap: wrap; }
+/* 고른 모듈의 칸은 줄을 바꿔 세로줄 안쪽에 둔다 — 모듈 고르기와 섞여 보이면
+   어느 칸이 무엇에 딸린 것인지 알 수 없다(11-05 지적). */
+.probe-params { flex: 1 1 100%; display: flex; gap: 10px 14px; flex-wrap: wrap; align-items: flex-end;
+                padding: 2px 0 2px 12px; border-left: 2px solid var(--line); }
+.probe-pick { min-width: 220px; }
 .probe-params label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--sub); }
 .grid.surface tr.ep td { background: var(--surface-2); font-weight: 600; border-top: 1px solid var(--line); }
 .grid.surface td:first-child { width: 28px; }

@@ -160,3 +160,28 @@ def test_the_pack_modules_still_work_on_the_practice_server(app, client):
     for mid in ("sesacedu_exposed_paths", "sesacedu_lecture_sqli",
                 "sesacedu_material_traversal", "sesacedu_material_traversal_fuzz"):
         assert mid in avail, f"{mid} 가 연습용에서 사라졌습니다"
+
+
+# ── 표면: 무엇으로 점검하는지 ──────────────────────────────────
+
+def test_the_surface_page_says_which_module_will_run(app, client):
+    """'선택 지점 점검' 만 있고 무엇으로 점검하는지 안 보인다는 지적(11-05).
+
+    고르는 자리는 있었지만 이름표가 없어 설정 하나로 읽혔다.
+    """
+    add(client, REAL)
+    tid = tid_of(app, REAL["url"])
+    # 지점이 하나도 없으면 고르는 자리 자체가 안 그려진다 — 먼저 하나 모은다
+    client.post("/modules/surface_import/run",
+                data={"target_id": tid, "urls": "https://sesacedu.store/courses?category=web"},
+                follow_redirects=True)
+    page = client.get(f"/surface?target={tid}").get_data(as_text=True)
+    assert 'class="panel probe-bar"' in page, "지점 고르는 줄이 안 그려졌습니다"
+    bar = page.split('class="panel probe-bar"', 1)[-1].split('<div class="table-wrap">', 1)[0]
+    assert "무엇으로 점검할지" in bar
+    assert '<select name="module_id" id="probe-module">' in bar
+    # 고를 수 있는 모듈 이름이 실제로 적혀 있다
+    with app.app_context():
+        probes = [m.name for m in app.config["MODULES"].values() if m.stage == "probe"]
+    assert probes and all(n in bar for n in probes)
+    assert "선택 지점 점검" in page
