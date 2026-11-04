@@ -168,3 +168,69 @@ def test_rerun_check_module_does_not_duplicate(app, client, monkeypatch, fake_fe
     with app.app_context():
         titles = [r["title"] for r in get_db().execute("SELECT title FROM findings")]
     assert len(titles) == len(set(titles))
+
+
+# ── hidden 속성이 display 규칙에 밀리지 않아야 한다 ──────────────────
+# .probe-params 는 display:flex 라 브라우저 기본 [hidden]{display:none} 이 밀린다.
+# 그러면 고르지 않은 모듈의 입력칸까지 같이 보여서 어느 칸이 쓰이는지 알 수 없다.
+
+def test_stylesheet_forces_hidden():
+    from pathlib import Path
+    css = (Path(__file__).resolve().parent.parent / "dashboard/static/style.css").read_text(encoding="utf-8")
+    assert "[hidden] { display: none !important; }" in css
+
+
+def test_only_selected_probe_params_are_shown(app, client):
+    import re
+    from tests.test_app import add_target
+    add_target(client, "https://sesacedu.store")
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    client.post("/modules/surface_import/run",
+                data={"target_id": tid, "urls": "https://sesacedu.store/courses?category=web"},
+                follow_redirects=True)
+    html = client.get(f"/surface?target={tid}").get_data(as_text=True)
+    blocks = re.findall(r'<div class="probe-params" data-for="([^"]+)"([^>]*)>', html)
+    assert len(blocks) >= 2                      # 지점 점검 모듈이 여럿이다
+    shown = [mid for mid, attrs in blocks if "hidden" not in attrs]
+    assert len(shown) == 1, f"보이는 입력칸 묶음은 하나여야 하는데 {shown}"
+
+
+# ── 사전 고르는 칸은 모듈이 적어 둔 기본값을 골라 둬야 한다 ──────────
+# 값은 '<폴더>|<파일>' 전체라 파일 이름만 적힌 기본값과 == 로는 영영 안 맞았다.
+# 그래서 아무것도 선택되지 않고 브라우저가 첫 줄(backup-config.txt)을 골랐다.
+
+def test_wordlist_select_honours_module_default(app, client):
+    from tests.test_app import add_target
+    add_target(client, "https://sesacedu.store")
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    client.post("/modules/surface_import/run",
+                data={"target_id": tid, "urls": "https://sesacedu.store/courses?category=web"},
+                follow_redirects=True)
+    import re
+
+    def selected(html, pattern):
+        block = re.search(pattern, html, re.S)
+        assert block, pattern
+        sel = re.search(r'<option value="([^"]*)" selected', block.group(0))
+        assert sel, "고른 사전이 없다 — 브라우저가 목록 첫 줄을 고르게 된다"
+        return sel.group(1)
+
+    # 대상 점검·수집 모듈은 모듈 탭에, 지점 점검 모듈은 표면 탭에 입력칸이 뜬다
+    mods = client.get(f"/modules?target={tid}").get_data(as_text=True)
+    assert selected(mods, r'action="[^"]*content_discovery/run".*?</form>').endswith("|web-common.txt")
+
+    surf = client.get(f"/surface?target={tid}").get_data(as_text=True)
+    assert selected(surf, r'data-for="payload_probe".*?</div>').endswith("|payload-reflect.txt")
+
+
+def test_empty_url_list_is_an_error(app, client):
+    """빈 칸으로 내면 '0개 수집' 이 아니라 왜 비었는지 말해야 한다."""
+    from tests.test_app import add_target
+    add_target(client, "https://sesacedu.store")
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    page = client.post("/modules/surface_import/run", data={"target_id": tid, "urls": "   "},
+                       follow_redirects=True).get_data(as_text=True)
+    assert "붙여 넣을 URL 이 없습니다" in page
