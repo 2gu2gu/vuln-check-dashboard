@@ -10,7 +10,7 @@
   <a href="#start">처음 쓰는 순서</a>
   <span class="toc-gap">화면</span>
   <a href="#targets">대상</a><a href="#modules">모듈</a><a href="#surface">표면</a><a href="#tools">도구</a>
-  <a href="#results">결과</a><a href="#history">요청 기록</a><a href="#attack">ATT&CK</a><a href="#scenario">시나리오</a>
+  <a href="#results">결과</a><a href="#history">요청 기록</a><a href="#attack">ATT&CK</a><a href="#scenario">수사보드</a>
   <span class="toc-gap">알아 둘 것</span>
   <a href="#wordlists">사전</a><a href="#grouping">모듈 묶기</a><a href="#roles">역할</a><a href="#runs">뒤에서 도는 실행</a><a href="#auth">로그인</a><a href="#cvss">영향도(CVSS)</a><a href="#needs">실행 전 준비</a><a href="#limits">요청 한도</a><a href="#hostscope">어디까지 하나</a><a href="#safety">안전장치</a>
   <span class="toc-gap">만들기</span>
@@ -169,9 +169,22 @@
 </section>
 
 <section id="scenario">
-  <h2>시나리오</h2>
-  <p>미확인·확인됨 결과를 전술 순서로 묶은 <b>초안</b>입니다.
-    순서만 잡아 주고, 무엇이 무엇으로 이어지는지는 팀이 판단합니다.</p>
+  <h2>수사보드</h2>
+  <p>전술을 <b>공격 진행 순서</b>로 세웠습니다. 어디까지 왔고 다음에 무엇을 해 볼지 봅니다.</p>
+  <dl class="facts">
+    <dt>칸 안의 두 묶음</dt><dd><b>확인됨</b> 은 실제로 돌려서 나온 결과,
+      <b>제안</b> 은 그 전술을 다루는데 아직 안 돌린 모듈입니다.
+      <b>섞지 않습니다</b> — 제안을 결과처럼 그려 두면 발표에서 "이건 실제로 한 건가요?" 에 답을 못 합니다.</dd>
+    <dt>제안이 회색이면</dt><dd>지금 못 돌리는 것이고 <b>이유가 적혀 있습니다</b> —
+      토큰이 없거나, 표면 탭에서 지점을 골라야 하거나, 도구 탭에서 값을 넣어야 합니다. 눌러서 그 자리로 갑니다.</dd>
+    <dt>이미 결과를 낸 모듈</dt><dd>그 전술의 제안에서 빠집니다. 남겨 두면 "한 번 더 돌려라" 로 읽힙니다.</dd>
+    <dt>빠진 전술</dt><dd>결과도 없고 쓸 모듈도 없는 전술은 아예 안 그립니다. 빈 칸만 늘어서 흐름이 안 보입니다.</dd>
+    <dt>안 쓰는 것</dt><dd>"이 기법 다음엔 저 기법" 같은 <b>기법 사이의 연결은 쓰지 않습니다.</b>
+      ATT&amp;CK 에 그런 데이터가 있지만 우리는 갖고 있지 않아, 쓰면 지어내는 것이 됩니다.
+      쓰는 근거는 전술 순서 · 모듈이 <code>META["attack"]</code> 에 적어 둔 전술 · 이 대상의 결과 ·
+      <code>META["needs"]</code> 넷뿐입니다.</dd>
+    <dt>실제 시나리오</dt><dd>이 흐름을 보고 <b>팀이 정합니다.</b> 보드는 재료를 늘어놓을 뿐입니다.</dd>
+  </dl>
 </section>
 
 <h2 class="help-group">알아 둘 것</h2>
