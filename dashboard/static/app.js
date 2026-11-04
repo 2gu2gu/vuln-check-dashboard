@@ -55,6 +55,19 @@
     cost();
   });
 
+  // ── 위에 붙어 있는 머리 높이를 재 둔다 ───────────────────
+  // 창이 좁으면 머리가 줄바꿈돼 높이가 달라진다. 고정값을 쓰면 그때 앵커가 어긋난다.
+  (function () {
+    var head = document.querySelector("header");
+    if (!head) return;
+    function measure() {
+      document.documentElement.style.setProperty("--sticky-h", head.offsetHeight + "px");
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    if (window.ResizeObserver) new ResizeObserver(measure).observe(head);
+  })();
+
   // ── 모듈 카드 접었다 펴기 ────────────────────────────────
   // 15개가 다 펴져 있으면 화면이 끝없이 길어진다. 어느 것을 펴 뒀는지는 기억한다 —
   // 같은 모듈을 연달아 돌려 보는 일이 흔하기 때문이다.

@@ -425,7 +425,7 @@ mark { background: var(--mark); color: var(--mark-ink); border-radius: 2px; padd
 /* 왼쪽 묶음 드로어 — 접었다 폈다 */
 .mod-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 16px; align-items: start; }
 .mod-layout.folded { grid-template-columns: 34px minmax(0, 1fr); }
-.side-drawer { position: sticky; top: 70px; border: 1px solid var(--line); border-radius: var(--radius);
+.side-drawer { position: sticky; top: calc(var(--sticky-h, 150px) + 10px); border: 1px solid var(--line); border-radius: var(--radius);
                background: var(--surface); padding: 8px; overflow: hidden; }
 .side-head { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
 .side-drawer ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -497,3 +497,16 @@ mark { background: var(--mark); color: var(--mark-ink); border-radius: 2px; padd
 .mod-body { animation: body-in .22s cubic-bezier(.2,.8,.3,1); transform-origin: top center; }
 @keyframes body-in { from { opacity: 0; transform: scaleY(.96) translateY(-6px); } }
 @media (prefers-reduced-motion: reduce) { .mod-body, .chev { animation: none; transition: none; } }
+
+/* 위에 붙어 있는 머리 높이만큼 앵커를 띄운다.
+   안 하면 '표면 수집' 을 눌렀을 때 그 제목이 머리 밑에 깔려 잘린다.
+   머리 높이는 창 너비에 따라 줄바꿈되며 달라지므로 JS 가 재서 --sticky-h 에 넣는다. */
+.group-head, section[id], [id^="g-"] { scroll-margin-top: calc(var(--sticky-h, 150px) + 14px); }
+html { scroll-behavior: smooth; }
+/* 어디로 왔는지 잠깐 표시 — 긴 목록에서 눈이 길을 잃는다 */
+.group-head:target { animation: landed 1.4s ease-out; border-radius: 6px; }
+@keyframes landed { 0%, 55% { background: var(--accent-soft); } 100% { background: transparent; } }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .group-head:target { animation: none; }
+}

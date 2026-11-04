@@ -153,3 +153,17 @@ def test_no_hardcoded_colours_outside_the_token_block():
     body = css.split("* { box-sizing: border-box; }", 1)[1]        # :root 토큰 블록 뒤부터
     bad = [l for l in body.splitlines() if re.search(r"#[0-9a-fA-F]{3,8}\b", l)]
     assert not bad, "토큰 대신 색을 박아 넣은 줄: " + " / ".join(bad[:4])
+
+
+def test_anchors_clear_the_sticky_header():
+    """왼쪽에서 묶음을 누르면 그 제목이 머리 밑에 깔려 잘렸다(사용자 지적 11-05).
+
+    머리 높이는 창 너비에 따라 줄바꿈되며 달라지므로 고정값을 쓰면 또 어긋난다.
+    """
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    css = (root / "dashboard/static/style.css").read_text(encoding="utf-8")
+    js = (root / "dashboard/static/app.js").read_text(encoding="utf-8")
+    assert "scroll-margin-top: calc(var(--sticky-h" in css
+    assert "--sticky-h" in js and "offsetHeight" in js       # 재서 넣는다
+    assert "--sticky-h, 150px" in css                        # JS 가 못 돌아도 쓸 만한 기본값
