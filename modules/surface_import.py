@@ -13,7 +13,7 @@ META = {
     "attack": [{"tactic": "TA0043", "technique": "T1594", "name": "Search Victim-Owned Websites"}],
     "description": "한 줄에 하나씩 붙여 넣습니다. 'POST 주소 a=1&b=2' 처럼 쓰면 폼 본문 파라미터로 등록합니다. 범위 밖 주소는 빠집니다.",
     "params": [
-        {"name": "urls", "label": "URL 목록", "type": "textarea", "default": "",
+        {"name": "urls", "need": "required", "label": "URL 목록", "type": "textarea", "default": "",
          "placeholder": "https://example.test/api/lectures?keyword=a\nPOST https://example.test/api/login email=a&password="},
     ],
 }

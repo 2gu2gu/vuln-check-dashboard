@@ -22,6 +22,7 @@
     }
 """
 import json
+import re
 
 from . import core, scope
 
@@ -38,7 +39,13 @@ def config_for(project, role: str = ""):
     roles = cfg.get("roles") or []
     if roles and role and role not in roles:
         return None
-    return cfg
+    demo = (cfg.get("demo_accounts") or {}).get(role)
+    if not demo:
+        return cfg
+    # 연습용 대상이면 넣을 값까지 들고 간다. 화면에서 그대로 보여 준다.
+    out = dict(cfg)
+    out["demo"] = demo
+    return out
 
 
 def _dig(blob, path: str):
@@ -51,6 +58,18 @@ def _dig(blob, path: str):
     return cur if isinstance(cur, str) and cur.strip() else None
 
 
+def _places(blob, prefix="", depth=0):
+    """응답에 **어떤 자리가 있었는지** 이름만 모은다. 값은 담지 않는다 — 토큰이 섞인다."""
+    if not isinstance(blob, dict) or depth > 2:
+        return []
+    out = []
+    for k, v in list(blob.items())[:12]:
+        here = f"{prefix}{k}"
+        out.append(here + ("" if isinstance(v, (str, int, float, bool, type(None))) else "…"))
+        out += _places(v, here + ".", depth + 1)
+    return out[:24]
+
+
 def find_token(body: str, keys):
     """응답에서 토큰을 꺼낸다. 어디 있는지는 팩이 적어 둔 자리만 본다."""
     try:
@@ -60,9 +79,13 @@ def find_token(body: str, keys):
     for key in keys or ("token",):
         got = _dig(blob, key)
         if got:
-            return got.strip()
+            # 'Bearer eyJ…' 처럼 접두사까지 들어 있으면 떼어 낸다 — 붙이는 쪽에서 또 붙인다
+            return re.sub(r"^\s*Bearer\s+", "", got.strip())
     where = " · ".join(keys or ("token",))
-    raise LoginFailed(f"응답에 토큰이 없습니다. 찾아본 자리: {where}")
+    had = _places(blob)
+    # 어디 있는지 모르면 고칠 수가 없다. 자리 '이름' 만 보여 준다(값은 안 보여 준다).
+    seen = ("\n응답에 있던 자리: " + " · ".join(had)) if had else ""
+    raise LoginFailed(f"응답에 토큰이 없습니다. 찾아본 자리: {where}{seen}")
 
 
 def fetch_token(target_url: str, cfg: dict, ident: str, secret: str, hosts=None) -> str:

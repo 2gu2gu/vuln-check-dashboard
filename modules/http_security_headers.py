@@ -11,7 +11,7 @@ META = {
         {"tactic": "TA0006", "technique": "T1539", "name": "Steal Web Session Cookie"},
     ],
     "description": "응답의 보안 헤더(HSTS·CSP·nosniff·클릭재킹 방어·Referrer-Policy)와 쿠키 속성(Secure·HttpOnly·SameSite)을 봅니다.",
-    "params": [{"name": "path", "label": "경로", "default": "/"}],
+    "params": [{"name": "path", "need": "optional", "label": "경로", "default": "/"}],
 }
 
 # (헤더, 심각도, 제목, 조치, HTTPS 에서만 의미 있음)

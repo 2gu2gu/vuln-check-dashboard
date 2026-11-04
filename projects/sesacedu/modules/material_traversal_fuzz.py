@@ -121,7 +121,7 @@ META = {
                 "넣습니다 (wordlists/README.md). 칼리에는 /usr/share/seclists 에 이미 있습니다"},
     ],
     "params": [
-        {"name": "mode", "label": "어디까지 할지", "type": "select", "default": "pipeline",
+        {"name": "mode", "need": "required", "label": "어디까지 할지", "type": "select", "default": "pipeline",
          "options": [
              {"value": "pipeline", "label": "전부 — 씨앗 → 찾은 디렉터리 아래 확장 → 종류 가리기 → 트리"},
              {"value": "seed", "label": "씨앗만 — 1단계에서 멈춘다"},
@@ -129,41 +129,50 @@ META = {
          ],
          "help": "기본은 한 번에 끝납니다. 2단계 기준 디렉터리는 1단계가 찾아낸 것을 그대로 씁니다 "
                  "— 결과를 읽고 다시 타이핑하지 않습니다."},
-        {"name": "wordlist", "label": "씨앗 사전 (1단계)", "type": "wordlist", "purpose": "path",
+        {"name": "wordlist", "need": "required", "label": "씨앗 사전 (1단계)", "type": "wordlist", "purpose": "path",
          "default": "fs-seeds-sesacedu.txt",
          "help": "패키지를 깔면 생기는 **전체 경로** 목록입니다."},
-        {"name": "names", "label": "이름 사전 (2단계)", "type": "wordlist", "purpose": "path",
+        {"name": "names", "need": "optional", "label": "이름 사전 (2단계)", "type": "wordlist", "purpose": "path",
          "default": "fs-dirnames.txt",
          "help": "1단계가 찾은 디렉터리 아래에 붙일 **이름** 목록입니다. SecLists 를 붙이면 함께 뜹니다."},
-        {"name": "base", "label": "기준 디렉터리 (확장만 모드)", "default": "srv/sesacedu",
+        {"name": "base", "need": "conditional", "when": "'확장만' 을 고를 때만 씁니다", "label": "기준 디렉터리 (확장만 모드)", "default": "srv/sesacedu",
          "help": "'확장만' 에서 이 아래를 때립니다. 맨 앞 / 는 빼고 씁니다. 다른 모드에서는 무시합니다."},
-        {"name": "min_severity", "label": "결과로 올릴 최소 민감도", "type": "select", "default": "high",
+        {"name": "min_severity", "need": "optional", "label": "결과로 올릴 최소 민감도", "type": "select", "default": "high",
          "options": [{"value": v, "label": l} for v, l in
                      (("critical", "치명만"), ("high", "높음 이상"), ("medium", "보통 이상"),
                       ("low", "낮음 이상"), ("none", "따로 올리지 않음"))],
          "help": "읽힌 파일 중 이 등급 이상은 결과 탭에 따로 올립니다. 트리에는 전부 보입니다."},
-        {"name": "rounds", "label": "수확 바퀴", "type": "int", "default": "2",
+        {"name": "rounds", "need": "optional", "label": "읽은 파일에서 경로를 더 뽑아낼 횟수",
+         "type": "int", "default": "2",
          "help": "읽힌 설정 파일 안에 적힌 절대경로를 뽑아 다시 때립니다. 거기서 또 파일이 읽히면 "
                  "한 바퀴 더. 0 이면 수확하지 않습니다. 사전으로는 못 찾는 이름(버전·난수)이 "
                  "이 길로만 나옵니다."},
-        {"name": "hints", "label": "단서로 받은 경로 (한 줄에 하나)", "type": "textarea", "default": "",
+        {"name": "hints", "need": "optional", "label": "단서로 받은 경로 (한 줄에 하나)", "type": "textarea", "default": "",
          "placeholder": "opt/java/jdk-11.0.24+8\nsrv/sesacedu/config/api.env",
          "help": "읽힌 설정 파일 내용에서 사람·AI 가 찾아낸 절대경로입니다. 사전으로는 못 찾는 "
                  "이름(버전·난수)이 여기 들어옵니다. **출처를 '단서' 로 따로 적어** "
                  "퍼징이 스스로 찾은 것과 섞이지 않게 합니다."},
-        {"name": "limit", "label": "몇 개까지", "type": "int", "default": "120",
-         "help": "사전 앞에서부터 이만큼만 봅니다. 하나에 요청 한 번입니다."},
-        {"name": "kinds", "label": "500 의 종류를 가릴지", "type": "select", "default": "yes",
+        {"name": "limit", "need": "optional", "label": "사전에서 몇 개까지 써 볼지",
+         "type": "int", "default": "120",
+         "help": "사전 앞에서부터 이만큼만 씁니다. 이름 하나에 요청 하나입니다 — 늘리면 그만큼 "
+                 "오래 걸립니다. 한 번에 보내는 상한은 400개입니다."},
+        {"name": "kinds", "need": "optional", "label": "찾은 것이 폴더인지 더 알아볼지",
+         "type": "select", "default": "yes",
          "options": [
-             {"value": "yes", "label": "가린다 — '<경로>/..' 를 더 때린다 (요청 늘어남)"},
-             {"value": "no", "label": "안 가린다 — 요청 절약"},
+             {"value": "yes", "label": "알아본다 — 폴더·파일을 나눠 트리를 그린다 (요청이 늘어납니다)"},
+             {"value": "no", "label": "안 알아본다 — 요청을 아낀다 (전부 '있음' 으로만 남습니다)"},
          ],
-         "help": "가려도 '못 읽는 파일'과 '탐색 권한 없는 디렉터리'는 구분되지 않습니다."},
-        {"name": "depth", "label": "올라갈 단계", "type": "int", "default": "9",
-         "help": "저장 폴더에서 위로 몇 번. 실측 최소값은 6 이고 넉넉히 줘도 최상위에서 멈춥니다."},
-        {"name": "scheme", "label": "인코딩", "type": "select", "default": "double-full",
+         "help": "서버는 '있다' 까지만 알려 주고 폴더인지 파일인지는 말해 주지 않습니다. "
+                 "경로 뒤에 한 칸 위로 올라가는 표시를 덧붙여 보면 폴더는 위로 올라가 또 '있음' 이 "
+                 "오고, 파일은 '없음' 이 옵니다. 다만 **들어갈 권한이 없는 폴더도 똑같이 '없음'** 이라, "
+                 "그 둘은 끝내 갈라지지 않습니다 — 그런 것은 트리에 '못 들어감' 으로 적습니다."},
+        {"name": "depth", "need": "optional", "label": "폴더를 몇 칸 위로 올라갈지",
+         "type": "int", "default": "9",
+         "help": "자료가 저장되는 폴더에서 위로 몇 칸 올라가 볼지입니다. 최상위에 닿으면 더 올라가지 "
+                 "않으니 넉넉히 줘도 됩니다. 실제 서버에서 최소 6칸이 필요했습니다."},
+        {"name": "scheme", "need": "required", "label": "인코딩", "type": "select", "default": "double-full",
          "options": [{"value": k, "label": v} for k, v in ENCODINGS.items()]},
-        {"name": "lecture", "label": "강의 번호", "default": "123"},
+        {"name": "lecture", "need": "required", "label": "강의 번호", "default": "123"},
     ],
 }
 

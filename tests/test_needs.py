@@ -109,3 +109,43 @@ def test_optional_need_does_not_block(app, client, monkeypatch):
     tid = only_target(app)
     html = client.get(f"/modules?target={tid}").get_data(as_text=True)
     assert "없어도 돌아갑니다" in html
+
+
+# ── '대상 탭에서 넣기' 가 그 줄로 데려가야 한다 ──────────────────
+# 눌렀더니 표 맨 위에 떨어지고, 인증 헤더 칸이 접혀 있어 '없음' 을 눌러야
+# 하는 줄 몰랐다는 지적(11-05).
+
+def test_the_link_points_at_that_target_row(app, client):
+    add_target(client)
+    tid = only_target(app)
+    html = client.get(f"/tools?target={tid}&tool=sesacedu_material_traversal").get_data(as_text=True)
+    assert f"#hdr-{tid}" in html
+
+
+def test_the_header_box_has_that_id(app, client):
+    add_target(client)
+    tid = only_target(app)
+    html = client.get(f"/targets?target={tid}").get_data(as_text=True)
+    assert f'id="hdr-{tid}"' in html
+
+
+def test_an_empty_header_box_says_what_to_do(app, client):
+    """'없음' 만 있으면 눌러야 하는 줄 모른다."""
+    add_target(client)
+    html = client.get("/targets").get_data(as_text=True)
+    assert "hdr-cue" in html and ">넣기<" in html
+
+
+def test_a_filled_header_box_offers_to_change_it(app, client):
+    add_target(client)
+    tid = only_target(app)
+    client.post(f"/targets/{tid}/headers", data={"headers": "Authorization: Bearer t"},
+                follow_redirects=True)
+    html = client.get("/targets").get_data(as_text=True)
+    assert "고치기" in html and "Authorization" in html
+
+
+def test_the_page_opens_that_box_on_arrival():
+    from pathlib import Path
+    js = (Path(__file__).resolve().parent.parent / "dashboard/static/app.js").read_text(encoding="utf-8")
+    assert "#hdr-" in js and "m.open = true" in js

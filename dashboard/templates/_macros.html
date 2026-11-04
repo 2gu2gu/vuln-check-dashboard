@@ -4,7 +4,14 @@
 
 {% macro param_input(p, prefix="", values={}) -%}
 {% set val = values.get(p.name, p.default) if values else p.default %}
-<label class="field field-{{ p.type or 'text' }}">{{ p.label or p.name }}
+{# 비워 둬도 되는지를 칸마다 알려 준다. 모듈이 안 적어 뒀으면 기본값 유무로 정한다. #}
+{% set need = p.need or ('optional' if p.default else 'required') %}
+<label class="field field-{{ p.type or 'text' }}">
+  <span class="field-name">{{ p.label or p.name }}
+    {%- if need == 'required' %} <span class="req-mark req" title="비워 두면 안 됩니다">필수</span>
+    {%- elif need == 'conditional' %} <span class="req-mark when" title="{{ p.when or '어떤 설정을 고를 때만 씁니다' }}">고를 때만</span>
+    {%- else %} <span class="req-mark opt" title="비워 둬도 됩니다">선택</span>{% endif -%}
+  </span>
   {% if p.type == "textarea" %}
     <textarea name="{{ prefix }}{{ p.name }}" rows="5" class="mono" placeholder="{{ p.placeholder or '' }}">{{ val }}</textarea>
   {% elif p.type == "wordlist" %}
@@ -40,7 +47,7 @@
   {% else %}
     <input name="{{ prefix }}{{ p.name }}" value="{{ val }}" class="mono" placeholder="{{ p.placeholder or '' }}">
   {% endif %}
-  {% if p.help %}<small class="sub">{{ p.help }}</small>{% endif %}
+  {% if p.help %}<small class="sub">{{ p.help | strong }}</small>{% endif %}
 </label>
 {%- endmacro %}
 
@@ -66,9 +73,9 @@
     <div>
       <b>{{ n.label }}{% if n.name %} <code>{{ n.name }}</code>{% endif %}</b>
       <span class="need-state">{% if n.ready %}준비됨{% elif n.ready is false %}{{ '없음 — 지금은 실행해도 실패합니다' if n.required else '없음 — 없어도 돌아갑니다' }}{% else %}{{ '직접 준비해야 합니다' if n.required else '선택' }}{% endif %}</span>
-      <p class="sub small">{{ n.why }}</p>
-      <p class="small"><b>준비:</b> {{ n.how }}
-        {% if n.kind == "auth_header" and target %}<a href="{{ url_for('dash.targets', target=target.id) }}">대상 탭에서 넣기 →</a>{% endif %}
+      <p class="sub small">{{ n.why | strong }}</p>
+      <p class="small"><b>준비:</b> {{ n.how | strong }}
+        {% if n.kind == "auth_header" and target %}<a href="{{ url_for('dash.targets', target=target.id) }}#hdr-{{ target.id }}">대상 탭에서 넣기 →</a>{% endif %}
       </p>
     </div>
   </div>

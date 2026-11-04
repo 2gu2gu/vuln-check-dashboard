@@ -32,10 +32,10 @@ META = {
          "how": "SecLists 를 받아 대시보드를 띄우기 전에 DASH_WORDLISTS 에 그 폴더를 넣습니다 (wordlists/README.md)"},
     ],
     "params": [
-        {"name": "wordlist", "label": "사전", "type": "wordlist", "purpose": "payload", "default": "payload-reflect.txt"},
-        {"name": "limit", "label": "지점마다 몇 개", "type": "int", "default": "6",
+        {"name": "wordlist", "need": "required", "label": "사전", "type": "wordlist", "purpose": "payload", "default": "payload-reflect.txt"},
+        {"name": "limit", "need": "optional", "label": "지점마다 몇 개", "type": "int", "default": "6",
          "help": "지점 수 × 이 수만큼 요청이 나갑니다. 지점 10개 × 6 = 60번."},
-        {"name": "methods", "label": "보낼 메서드", "default": "GET",
+        {"name": "methods", "need": "required", "label": "보낼 메서드", "default": "GET",
          "help": "POST 를 넣으면 폼을 실제로 제출합니다 — 테스트 계정·테스트 행에서만."},
     ],
 }

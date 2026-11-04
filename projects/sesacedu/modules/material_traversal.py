@@ -37,15 +37,15 @@ META = {
          "how": "테스트 계정으로 로그인해 받은 토큰을 씁니다"},
     ],
     "params": [
-        {"name": "paths", "label": "읽을 경로 (한 줄에 하나)", "type": "textarea",
+        {"name": "paths", "need": "required", "label": "읽을 경로 (한 줄에 하나)", "type": "textarea",
          "default": "etc/passwd\netc/systemd/system/sesacedu-api.service\netc/nginx/sites-enabled/default",
          "help": "맨 앞 / 는 빼고 씁니다. 여러 줄을 넣으면 어느 것이 있는지 응답 코드로 먼저 확인합니다."},
-        {"name": "scheme", "label": "인코딩", "type": "select", "default": "double-full",
+        {"name": "scheme", "need": "required", "label": "인코딩", "type": "select", "default": "double-full",
          "options": [{"value": k, "label": v} for k, v in ENCODINGS.items()],
          "help": "서버가 ../ 를 지우고 나서 디코딩하는 순서라서 한 번 더 감싼 형태가 통합니다."},
-        {"name": "depth", "label": "올라갈 단계", "type": "int", "default": "9",
+        {"name": "depth", "need": "optional", "label": "올라갈 단계", "type": "int", "default": "9",
          "help": "저장 폴더에서 위로 몇 번 올라갈지. 넉넉히 줘도 최상위에서 멈춥니다."},
-        {"name": "lecture", "label": "강의 번호", "default": "123"},
+        {"name": "lecture", "need": "required", "label": "강의 번호", "default": "123"},
     ],
 }
 

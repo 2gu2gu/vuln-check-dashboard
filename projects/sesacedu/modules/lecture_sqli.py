@@ -35,7 +35,7 @@ META = {
     ],
     "description": "테이블 목록부터 컬럼·값까지 눌러 들어가며 읽습니다. 참·거짓 차이로 한 글자씩 읽어서 느립니다.",
     "params": [
-        {"name": "mode", "label": "무엇을 볼지", "type": "select", "default": "probe",
+        {"name": "mode", "need": "required", "label": "무엇을 볼지", "type": "select", "default": "probe",
          "options": [
              {"value": "probe", "label": "① 주입되는지 확인 (요청 2번)"},
              {"value": "tables", "label": "② 테이블 목록"},
@@ -43,14 +43,14 @@ META = {
              {"value": "rows", "label": "④ 고른 컬럼의 값"},
              {"value": "sql", "label": "⑤ 직접 쓴 SELECT 하나"},
          ]},
-        {"name": "table", "label": "테이블 (③④)", "default": ""},
-        {"name": "column", "label": "컬럼 (④)", "default": ""},
-        {"name": "sql", "label": "SELECT 문 (⑤)", "default": "",
+        {"name": "table", "need": "conditional", "when": "'③ 컬럼 이름' · '④ 값 꺼내기' 를 고를 때만 씁니다", "label": "테이블 (③④)", "default": ""},
+        {"name": "column", "need": "conditional", "when": "'④ 값 꺼내기' 를 고를 때만 씁니다", "label": "컬럼 (④)", "default": ""},
+        {"name": "sql", "need": "conditional", "when": "'⑤ 직접 적기' 를 고를 때만 씁니다", "label": "SELECT 문 (⑤)", "default": "",
          "help": "값 하나를 돌려주는 SELECT 만 됩니다."},
-        {"name": "dbms", "label": "DB 제품", "type": "select", "default": "oracle", "options": DBMS_OPTIONS},
-        {"name": "limit", "label": "한 번에 몇 개", "type": "int", "default": "5",
+        {"name": "dbms", "need": "required", "label": "DB 제품", "type": "select", "default": "oracle", "options": DBMS_OPTIONS},
+        {"name": "limit", "need": "optional", "label": "한 번에 몇 개", "type": "int", "default": "5",
          "help": "한 글자마다 요청이 여러 번 나갑니다. 5개면 대략 300~500번."},
-        {"name": "offset", "label": "앞에서 건너뛸 개수", "type": "int", "default": "0"},
+        {"name": "offset", "need": "optional", "label": "앞에서 건너뛸 개수", "type": "int", "default": "0"},
     ],
 }
 

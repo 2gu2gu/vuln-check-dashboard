@@ -24,10 +24,10 @@ META = {
          "how": "SecLists 를 받아 대시보드를 띄우기 전에 DASH_WORDLISTS 에 그 폴더를 넣습니다 (wordlists/README.md)"},
     ],
     "params": [
-        {"name": "wordlist", "label": "사전", "type": "wordlist", "purpose": "path", "default": "web-common.txt"},
-        {"name": "base", "label": "기준 경로", "default": "/",
+        {"name": "wordlist", "need": "required", "label": "사전", "type": "wordlist", "purpose": "path", "default": "web-common.txt"},
+        {"name": "base", "need": "optional", "label": "기준 경로", "default": "/",
          "help": "이 아래에서 찾습니다. 예: /  또는 /backend"},
-        {"name": "limit", "label": "몇 개까지", "type": "int", "default": "150",
+        {"name": "limit", "need": "optional", "label": "몇 개까지", "type": "int", "default": "150",
          "help": "사전 앞에서부터 이만큼만 봅니다. 하나에 요청 한 번입니다."},
     ],
 }
