@@ -324,3 +324,12 @@ mark { background: #F2D36B; color: #1C1C1C; border-radius: 2px; padding: 0 1px; 
 .need-ok .need-state { color: var(--sev-low); }
 .need-todo .need-state { color: var(--hit); }
 .need-todo { background: var(--hit-soft); margin: 0 -10px; padding: 6px 10px; border-radius: 4px; }
+
+/* 사전 고르기 — SecLists 를 붙이면 파일이 수천 개가 된다 */
+.wl { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.wl-find { font: inherit; font-size: 12px; padding: 4px 8px; border: 1px solid var(--line);
+           border-radius: 6px; background: var(--surface); color: var(--text); }
+.wl-pick { width: 100%; }
+.wl-note { font-size: 11px; }
+.wl-cut { font-size: 11px; color: var(--hit); }
+.warn-text { color: var(--hit); font-weight: 600; }

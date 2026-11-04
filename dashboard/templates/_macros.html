@@ -8,12 +8,28 @@
   {% if p.type == "textarea" %}
     <textarea name="{{ prefix }}{{ p.name }}" rows="5" class="mono" placeholder="{{ p.placeholder or '' }}">{{ val }}</textarea>
   {% elif p.type == "wordlist" %}
-    {% set lists = wordlist_options() %}
-    {% if lists %}
-      <select name="{{ prefix }}{{ p.name }}">
-        {# 고른 값은 '<폴더>|<파일>' 전체, 모듈이 적어 둔 기본값은 파일 이름뿐이라 양쪽 다 본다 #}
-        {% for o in lists %}<option value="{{ o.value }}" {{ 'selected' if val and (o.value == val or o.value.endswith('|' ~ val)) }}>{{ o.label }}</option>{% endfor %}
-      </select>
+    {% set found = wordlist_options(p.purpose or "") %}
+    {% if found["items"] %}
+      <div class="wl">
+        <input type="search" class="wl-find" placeholder="이름으로 찾기 — raft, actuator, lfi …"
+               aria-label="사전 찾기" autocomplete="off">
+        <select name="{{ prefix }}{{ p.name }}" class="wl-pick">
+          {# 고른 값은 '<폴더>|<파일>' 전체, 모듈이 적어 둔 기본값은 파일 이름뿐이라 양쪽 다 본다 #}
+          {% for g in found["groups"] %}
+          <optgroup label="{{ g.label }}">
+            {% for o in g["items"] %}
+            <option value="{{ o.value }}" data-size="{{ o.size }}"
+                    {{ 'selected' if val and (o.value == val or o.value.endswith('|' ~ val)) }}>{{ o.name }} — {{ o.size_label }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endfor %}
+        </select>
+        <small class="sub wl-note"></small>
+        {% if found["cut"] %}
+        <small class="sub wl-cut">사전 {{ found["total"] }}개 중 {{ found["items"] | length }}개만 보입니다 —
+          <code>DASH_WORDLISTS</code> 를 더 좁은 폴더로 가리키세요.</small>
+        {% endif %}
+      </div>
     {% else %}<span class="sub">사전이 없습니다 — wordlists/ 폴더나 DASH_WORDLISTS 를 확인하세요</span>{% endif %}
   {% elif p.type == "select" %}
     <select name="{{ prefix }}{{ p.name }}">
