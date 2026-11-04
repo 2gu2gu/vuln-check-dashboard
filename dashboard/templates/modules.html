@@ -54,14 +54,27 @@
   <span class="sub small">{{ b.modules | length }}개{% if b.hint %} · {{ b.hint }}{% endif %}</span></div>
 <div class="mod-grid">
 {% for m in b.modules %}
-  <article class="panel mod">
+  {% set blocked = target and (module_needs(m, target) | selectattr('ready', 'equalto', false)
+                                                         | selectattr('required') | list) %}
+  <article class="panel mod" data-mod="{{ m.id }}">
     <header>
       <span><span class="stage stage-{{ m.stage }}">{{ m.stage_label }}</span>
         <span class="kind kind-{{ m.kind }}">{{ "수동(읽기)" if m.kind == "passive" else "능동" }}</span></span>
       <span class="sub">{{ m.category }}{% if m.vuln and m.vuln != '기타' %} · <b>{{ m.vuln }}</b>{% endif %}</span>
     </header>
-    <h3>{{ m.name }}</h3>
-    <p>{{ m.description }}</p>
+    <button class="mod-open" type="button" aria-expanded="false" aria-controls="body-{{ m.id }}">
+      <h3>{{ m.name }}</h3>
+      <p>{{ m.description }}</p>
+      <span class="mod-cue">
+        {%- if blocked %}<span class="cue-todo">준비할 것 {{ blocked | length }}개</span>
+        {%- elif not target %}대상을 먼저 고르세요
+        {%- elif m.stage == "probe" %}표면 탭에서 실행
+        {%- elif m.params %}입력칸 {{ m.params | length }}개 · 눌러서 펴기
+        {%- else %}눌러서 펴기{% endif -%}
+        <span class="chev" aria-hidden="true">⌄</span>
+      </span>
+    </button>
+    <div class="mod-body" id="body-{{ m.id }}" hidden>
     <div class="tags">
       {% for a in m.attack %}
       <span class="tag" title="{{ a.name }}"><b>{{ tactic_name[a.tactic] }}</b> <span class="mono">{{ a.technique }}</span></span>
@@ -82,6 +95,7 @@
     </form>
     {% endif %}
     <footer class="sub mono small">{{ m.source }}</footer>
+    </div>
   </article>
 {% endfor %}
 </div>
