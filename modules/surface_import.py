@@ -20,8 +20,11 @@ META = {
 
 
 def run(target, params):
+    text = (params.get("urls") or "").strip()
+    if not text:
+        raise ValueError("붙여 넣을 URL 이 없습니다. 한 줄에 하나씩 넣어 주세요")
     points = []
-    for line in params.get("urls", "").splitlines():
+    for line in text.splitlines():
         parts = line.split()
         if not parts:
             continue
@@ -36,4 +39,6 @@ def run(target, params):
             base, _ = _split(url)
             points += [Point("POST", base, param=k, place="form", sample=v, source="import")
                        for k, v in parse_qsl(parts[1], keep_blank_values=True)]
+    if not points:
+        raise ValueError("읽을 수 있는 주소가 없습니다. http:// 나 https:// 로 시작하거나 /courses 처럼 경로로 써 주세요")
     return points

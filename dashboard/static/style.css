@@ -1,4 +1,10 @@
 /* DAST 대시보드 — 색은 토큰으로만 쓴다 */
+
+/* hidden 속성은 어떤 display 규칙보다 세게 숨긴다.
+   .probe-params 나 .btn 처럼 display 를 지정한 클래스에 hidden 을 걸면
+   브라우저 기본 [hidden]{display:none} 이 밀려 그대로 보인다. */
+[hidden] { display: none !important; }
+
 :root {
   --bg: #F5F4F0;
   --surface: #FFFFFF;
