@@ -58,7 +58,7 @@
           {% if drill %}{% for label, p in drill.items() %}
             <button class="btn ghost small-btn" type="submit" form="tool-form"
                     formaction="{{ url_for('dash.tool_run') }}"
-                    name="_drill" value="{{ p | tojson }}">{{ label }}</button>
+                    name="_drill" value="{{ p | tojson | forceescape }}">{{ label }}</button>
           {% endfor %}{% endif %}
         </td>{% endif %}
       </tr>
@@ -69,7 +69,7 @@
   {% endif %}
 
   {% if result.more %}
-  <button class="btn ghost" type="submit" form="tool-form" name="_drill" value="{{ result.more | tojson }}">다음 것 더 보기 →</button>
+  <button class="btn ghost" type="submit" form="tool-form" name="_drill" value="{{ result.more | tojson | forceescape }}">다음 것 더 보기 →</button>
   {% endif %}
 
   {% if result.text %}<h3>내용</h3><pre class="tool-text">{{ result.text }}</pre>{% endif %}
