@@ -23,6 +23,8 @@ $env:DASH_WORDLISTS = "C:\tools\SecLists\Discovery\Web-Content;C:\tools\SecLists
 | `backup-config.txt` | 숨은 경로 찾기 | 백업·설정 파일 이름(지워야 할 것들) |
 | `payload-reflect.txt` | 입력값 넣어 보기 | 특수문자가 걸러지는지 보는 짧은 입력 |
 | `payload-sql-error.txt` | 입력값 넣어 보기 | DB 오류 메시지를 끌어내 보는 입력 |
+| `fs-seeds-sesacedu.txt` | 자료 경로 조작 퍼징(씨앗) | 패키지를 깔면 생기는 전체 경로 109개. 11-04 실측에서 찾은 94개 중 55개가 여기서 나왔다 |
+| `fs-dirnames.txt` | 자료 경로 조작 퍼징(사전) | 자바 웹 배포에서 쓰는 디렉터리·설정 파일 **이름** 159개. 확정된 디렉터리 아래를 넓힐 때 쓴다 |
 
 페이로드는 **터지는지 보는 용도가 아니라, 걸러지는지 보는 용도**다.
 `{T}` 는 보낼 때 그 요청의 표식으로 바뀐다 — 응답에서 되돌아온 자리를 찾는 데 쓴다.
