@@ -148,9 +148,51 @@
     if (f.exchange_id) ex.href = "/history/" + f.exchange_id;
     $("d-status").value = f.status;
     $("d-form").action = "/findings/" + f.id + "/status";
+    fillCvss(f.cvss);
+    var clear = document.querySelector('[name="cvss"][value="clear"]');
+    if (clear) clear.checked = false;
     panel.hidden = false;
     split.classList.add("open");
   }
+
+  // ── CVSS: 고르면 바로 점수를 보여 준다 ─────────────────────
+  // 계산식은 서버에만 둔다. JS 로 복사하면 언젠가 둘이 어긋난다.
+  function cvssSelects() {
+    return [].slice.call(document.querySelectorAll("[data-cvss]"));
+  }
+
+  function fillCvss(c) {
+    var note = $("d-cvss-note");
+    cvssSelects().forEach(function (s) {
+      var key = s.dataset.cvss;
+      s.value = (c && c.values && c.values[key]) || s.options[0].value;
+    });
+    if (note) note.textContent = c ? (c.saved ? "" : "모듈이 제안한 값입니다 — 실제에 맞게 고치세요")
+                                   : "아직 매기지 않았습니다 — 골라서 저장하세요";
+    scoreCvss();
+  }
+
+  var scoreTimer = null;
+  function scoreCvss() {
+    var box = $("d-cvss-score"), vec = $("d-cvss-vector");
+    if (!box) return;
+    var q = cvssSelects().map(function (s) {
+      return s.dataset.cvss + "=" + encodeURIComponent(s.value);
+    }).join("&");
+    clearTimeout(scoreTimer);
+    scoreTimer = setTimeout(function () {
+      fetch("/cvss?" + q).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.error) { box.textContent = "—"; if (vec) vec.textContent = d.error; return; }
+        box.textContent = d.score + " " + d.label;
+        box.className = "cvss-score sev-" + d.severity;
+        if (vec) vec.textContent = d.vector;
+      }).catch(function () { box.textContent = "—"; });
+    }, 80);
+  }
+
+  document.addEventListener("change", function (e) {
+    if (e.target.dataset && e.target.dataset.cvss) scoreCvss();
+  });
 
   table.addEventListener("click", function (e) {
     var tr = e.target.closest("tbody tr");

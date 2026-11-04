@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
                    render_template, request, url_for)
 
-from . import needs, scope, wordlists
+from . import cvss, needs, scope, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -95,9 +95,23 @@ def results():
         "status_label": STATUSES.get(r["status"], r["status"]),
         "technique_url": technique_url(r["technique"]) if r["technique"] else "",
         "created": fmt_kst(r["created_at"]),
+        "cvss": _rate(r["cvss_vector"] if "cvss_vector" in r.keys() else "",
+                      mods.get(r["module_id"])),
     } for r in rows]
     return render_template("results.html", target=target, targets=targets, findings=data,
-                           counts=counts, modules=_modules_for(target), severities=SEVERITIES, args=request.args)
+                           counts=counts, modules=_modules_for(target), severities=SEVERITIES,
+                           args=request.args, cvss_metrics=cvss.METRICS)
+
+
+def _rate(vector, mod=None):
+    """저장된 벡터를 화면에 쓸 모양으로. 없으면 모듈이 적어 둔 기본 벡터를 '제안'으로 돌려준다."""
+    for text, saved in ((vector, True), (getattr(mod, "cvss", "") if mod else "", False)):
+        if text:
+            try:
+                return {**cvss.rate(text), "saved": saved}
+            except cvss.BadVector:
+                continue
+    return None
 
 
 @bp.post("/findings/<int:fid>/status")
@@ -109,9 +123,37 @@ def finding_status(fid):
     row = db.execute("SELECT target_id FROM findings WHERE id = ?", [fid]).fetchone()
     if not row:
         abort(404)
-    db.execute("UPDATE findings SET status = ? WHERE id = ?", [status, fid])
+
+    # CVSS 를 같이 보냈으면 벡터로 만들어 저장하고, 심각도를 그 점수에서 다시 매긴다.
+    # 벡터와 등급이 따로 놀면 보고서에서 둘이 어긋난다(노션에서 실제로 그랬다).
+    sets, args = ["status = ?"], [status]
+    if request.form.get("cvss") == "clear":
+        sets += ["cvss_vector = ?"]
+        args += [""]
+    elif any(request.form.get(f"cvss_{k}") for k in cvss.ORDER):
+        try:
+            rated = cvss.rate({k: request.form.get(f"cvss_{k}", "") for k in cvss.ORDER})
+        except cvss.BadVector as e:
+            flash(f"CVSS: {e}", "error")
+            return redirect(url_for("dash.results", target=row["target_id"]))
+        sets += ["cvss_vector = ?", "severity = ?"]
+        args += [rated["vector"], rated["severity"]]
+
+    db.execute(f"UPDATE findings SET {', '.join(sets)} WHERE id = ?", [*args, fid])
     db.commit()
     return redirect(url_for("dash.results", target=row["target_id"]))
+
+
+@bp.get("/cvss")
+def cvss_score():
+    """고르는 칸이 바뀔 때마다 점수를 물어보는 자리.
+
+    계산식을 JS 로 복사하면 언젠가 서버와 어긋난다. 한 군데서만 센다.
+    """
+    try:
+        return cvss.rate({k: request.args.get(k, "") for k in cvss.ORDER})
+    except cvss.BadVector as e:
+        return {"error": str(e)}, 400
 
 
 # ── 대상 ──────────────────────────────────────────────────────
@@ -700,6 +742,7 @@ def report_json(tid):
             "module": mods[r["module_id"]].name if r["module_id"] in mods else r["module_id"],
             "attack": {"technique": r["technique"], "url": technique_url(r["technique"]) if r["technique"] else ""},
             "evidence": r["evidence"], "recommendation": r["recommendation"],
+            "cvss": _rate(r["cvss_vector"] if "cvss_vector" in r.keys() else "", mods.get(r["module_id"])),
             "first_seen": r["created_at"], "last_seen": r["last_seen"], "exchange": exchanges.get(r["id"]),
         } for r in rows],
     }
@@ -720,14 +763,28 @@ def report(tid):
                      f"{r['technique']} | {STATUSES.get(r['status'], r['status'])} |")
     for i, r in enumerate(rows, 1):
         mod = mods.get(r["module_id"])
-        lines += ["", f"## {i}. {r['title']}", "",
-                  f"- 심각도: {SEVERITY_LABEL[r['severity']]} · 모듈: {mod.name if mod else r['module_id']}",
-                  f"- 위치: `{r['location']}`", f"- ATT&CK: [{r['technique']}]({technique_url(r['technique'])})",
-                  "", "**근거**", "", "```", r["evidence"], "```", "", "**조치 방안**", "", r["recommendation"]]
+        rated = _rate(r["cvss_vector"] if "cvss_vector" in r.keys() else "", mod)
+        saved = rated and rated["saved"]
+        # 팀 노션 '웹 서비스 취약점 목록' 의 본문 양식 그대로 — 1.개요 / 2.상세 / 3.시나리오 / 4.조치
+        lines += ["", f"## {i}. {r['title']}", "", "### 1. 취약점 개요", "",
+                  "| 항목 | 내용 |", "|---|---|",
+                  f"| 취약점명 | {r['title']} |",
+                  f"| 점검대상 | {t['name']} ({t['url']}) |",
+                  f"| 발견 경로 | `{r['location']}` |",
+                  f"| 취약점 설명 | {r['title']} — {mod.description if mod else ''} |",
+                  f"| 영향도(CVSS 3.1) | {rated['impact_text'] if saved else (rated['impact_text'] + ' — **미확정(모듈 제안값)**' if rated else '**미평가**')} |",
+                  f"| CVSS Vector | {('`' + rated['vector'] + '`') if rated else '—'} |",
+                  f"| 발견 모듈 | {mod.name if mod else r['module_id']} |",
+                  f"| ATT&CK | [{r['technique']}]({technique_url(r['technique'])}) |",
+                  f"| 상태 | {STATUSES.get(r['status'], r['status'])} |",
+                  "", "### 2. 취약점 상세설명", "", "**근거**", "", "```", r["evidence"], "```"]
         if r["id"] in exchanges:
             x = exchanges[r["id"]]
             lines += ["", "**요청**", "", "```http", x["request"], "```", "", "**응답(앞부분)**", "", "```http",
                       x["response"], "```"]
+        lines += ["", "### 3. 악용 시나리오", "",
+                  "_여기는 사람이 씁니다 — 이 결과로 무엇을 할 수 있는지._",
+                  "", "### 4. 조치방안", "", r["recommendation"]]
     body = "\n".join(lines) + "\n"
     return Response(body, mimetype="text/markdown; charset=utf-8",
                     headers={"Content-Disposition": f"attachment; filename=report_{tid}.md"})

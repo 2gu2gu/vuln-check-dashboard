@@ -9,6 +9,8 @@ META = {
     "id": "reflection_check",
     "name": "입력값 반사 확인",
     "category": "입력 검증",
+    # 반사형 XSS 의 전형값 — 피해자가 링크를 눌러야 하고 브라우저로 범위가 넘어간다
+    "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
     "kind": "active",
     "stage": "probe",
     "severity": "medium",

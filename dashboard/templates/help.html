@@ -12,7 +12,7 @@
   <a href="#targets">대상</a><a href="#modules">모듈</a><a href="#surface">표면</a><a href="#tools">도구</a>
   <a href="#results">결과</a><a href="#history">요청 기록</a><a href="#attack">ATT&CK</a><a href="#scenario">시나리오</a>
   <span class="toc-gap">알아 둘 것</span>
-  <a href="#wordlists">사전</a><a href="#roles">역할</a><a href="#auth">로그인</a><a href="#needs">실행 전 준비</a><a href="#limits">요청 한도</a><a href="#hostscope">어디까지 하나</a><a href="#safety">안전장치</a>
+  <a href="#wordlists">사전</a><a href="#roles">역할</a><a href="#auth">로그인</a><a href="#cvss">영향도(CVSS)</a><a href="#needs">실행 전 준비</a><a href="#limits">요청 한도</a><a href="#hostscope">어디까지 하나</a><a href="#safety">안전장치</a>
   <span class="toc-gap">만들기</span>
   <a href="#packs">범용과 팩</a><a href="#write">모듈 만들기</a><a href="#todo">아직 없는 것</a>
 </nav>
@@ -225,6 +225,26 @@
     <dt>붙는 곳</dt><dd>그 대상 주소로 가는 요청에만. 다른 주소로는 나가지 않습니다.</dd>
     <dt>보관</dt><dd>이 PC 의 <code>instance/</code> DB 에만 있고, 화면·기록에는 이름만 보입니다.</dd>
     <dt>주의</dt><dd>테스트 계정 토큰만 넣습니다.</dd>
+  </dl>
+</section>
+
+<section id="cvss">
+  <h2>영향도 매기기 (CVSS 3.1)</h2>
+  <p>결과 하나하나에 <b>얼마나 심각한지</b>를 숫자로 매깁니다. 팀 노션
+    '웹 서비스 취약점 목록' 이 쓰는 그 형식이고, 보고서에 그대로 들어갑니다.</p>
+  <p>결과 탭에서 줄을 누르면 오른쪽에 <b>영향도 (CVSS 3.1)</b> 가 있습니다.
+    여덟 칸을 고르면 점수가 바로 나오고, 저장하면 그 점수로 <b>심각도까지 다시 매깁니다</b>.</p>
+  <dl class="facts">
+    <dt>왜 따로 안 적나</dt><dd>점수를 손으로 적게 두면 벡터와 어긋납니다.
+      실제로 노션의 한 항목은 속성이 <b>High</b> 인데 본문 영향도는 <b>Medium(6.5)</b> 로 적혀 있습니다.
+      여기서는 <b>벡터 하나만 저장</b>하고 점수·등급은 그때그때 계산합니다.</dd>
+    <dt>제안값</dt><dd>모듈이 전형적인 벡터를 들고 있으면 미리 채워 둡니다.
+      <b>그대로 쓰라는 뜻이 아닙니다</b> — 실제 상황(권한이 필요한지, 무엇까지 읽혔는지)에 맞게 고치고 저장하세요.
+      저장하기 전까지 보고서에는 <code>미확정(모듈 제안값)</code> 으로 나갑니다.</dd>
+    <dt>안 매기면</dt><dd>보고서에 <code>미평가</code> 로 나갑니다. 없는 것을 있는 척하지 않습니다.</dd>
+    <dt>노션 등급</dt><dd>노션 속성은 Low·Medium·High 세 가지라, Critical 은 High 로 옮겨 적습니다.</dd>
+    <dt>보고서</dt><dd>결과마다 <b>1. 취약점 개요 / 2. 상세설명 / 3. 악용 시나리오 / 4. 조치방안</b> 으로 나갑니다.
+      3절은 비워 둡니다 — 사람이 쓸 자리입니다.</dd>
   </dl>
 </section>
 
