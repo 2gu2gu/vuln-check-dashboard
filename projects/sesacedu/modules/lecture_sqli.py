@@ -25,6 +25,8 @@ META = {
     "roles": ["user_web", "practice"],  # 이 역할의 대상에서만 보인다
     "stage": "tool",
     "severity": "critical",
+    # 로그인 없이 네트워크에서, DB 내용이 읽힌다(쓰기·중단은 아님)
+    "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
     "attack": [
         {"tactic": "TA0009", "technique": "T1005", "name": "Data from Local System"},
         {"tactic": "TA0006", "technique": "T1552", "name": "Unsecured Credentials"},
