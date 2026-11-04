@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
                    render_template, request, url_for)
 
-from . import cvss, jobs, login as login_mod, needs, scope, wordlists
+from . import cvss, grouping, jobs, login as login_mod, needs, scope, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -187,6 +187,17 @@ def job_cancel(run_id):
     return {"ok": True}
 
 
+@bp.get("/jobs/exchange/<int:xid>")
+def job_exchange_raw(xid):
+    """터미널 화면에서 한 줄을 누르면 그 **패킷 원문**을 그 자리에 편다.
+
+    요청 기록 탭으로 넘어가면 보던 흐름을 잃는다. 돌고 있는 것을 보는 중이라면 더 그렇다.
+    """
+    x = get_db().execute("SELECT * FROM exchanges WHERE id = ?", [xid]).fetchone() or abort(404)
+    return {"id": xid, "request": _raw_request(x), "response": _raw_response(x),
+            "ms": x["ms"], "size": x["size"], "error": x["error"] or ""}
+
+
 @bp.get("/jobs/<int:run_id>/exchanges")
 def job_exchanges(run_id):
     """그 실행이 지금까지 보낸 요청. 드로어에서 눌러 들어가면 실시간으로 쌓인다."""
@@ -315,23 +326,18 @@ def modules():
     target, targets = _current_target()
     available = _modules_for(target)
     project = _project_of(target) if target else None
-    groups = [("범용 모듈", "모든 대상에 쓰는 고정 모듈 · modules/", [m for m in available.values() if not m.project])]
-    if target:
-        if project.id != GENERAL:
-            groups.append((f"{project.name} 전용", f"이 프로젝트 대상에만 보임 · {project.source}modules/",
-                           [m for m in available.values() if m.project == project.id]))
-    else:
-        for p in _projects().values():
-            if p.id != GENERAL:
-                groups.append((f"{p.name} 전용", f"{p.source}modules/", [m for m in available.values() if m.project == p.id]))
+    way = request.args.get("by", grouping.DEFAULT_WAY)
+    rows = grouping.group(list(available.values()), way)
     runs = get_db().execute(
         "SELECT runs.*, targets.name AS target_name, "
         "(SELECT COUNT(*) FROM findings f WHERE f.run_id = runs.id) AS n, "
         "(SELECT COUNT(*) FROM exchanges x WHERE x.run_id = runs.id) AS reqs "
         "FROM runs JOIN targets ON targets.id = runs.target_id ORDER BY runs.id DESC LIMIT 15").fetchall()
-    return render_template("modules.html", groups=groups, all_modules=_modules(), project=project,
+    return render_template("modules.html", rows=rows, all_modules=_modules(), project=project,
                            hidden=len(_modules()) - len(available), errors=current_app.config["MODULE_ERRORS"],
-                           target=target, targets=targets, runs=runs, tactic_name=TACTIC_NAME)
+                           target=target, targets=targets, runs=runs, tactic_name=TACTIC_NAME,
+                           ways=grouping.WAYS, way=way if way in grouping.KEYS else grouping.DEFAULT_WAY,
+                           missing=grouping.empty_groups(way, rows), total=len(available))
 
 
 def module_needs(mod, t=None):

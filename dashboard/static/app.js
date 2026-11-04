@@ -55,6 +55,24 @@
     cost();
   });
 
+  // ── 왼쪽 묶음 드로어 접기 ────────────────────────────────
+  // 접은 상태를 기억한다 — 매번 다시 접게 하면 성가시다.
+  (function () {
+    var layout = document.querySelector(".mod-layout");
+    var btn = document.getElementById("mod-drawer-toggle");
+    if (!layout || !btn) return;
+    try {
+      if (localStorage.getItem("modDrawer") === "folded") layout.classList.add("folded");
+    } catch (e) {}
+    function sync() {
+      var folded = layout.classList.contains("folded");
+      btn.setAttribute("aria-expanded", folded ? "false" : "true");
+      try { localStorage.setItem("modDrawer", folded ? "folded" : "open"); } catch (e) {}
+    }
+    sync();
+    btn.addEventListener("click", function () { layout.classList.toggle("folded"); sync(); });
+  })();
+
   // ── 실행 알림(토스트) ────────────────────────────────────
   // 전에는 화면마다 끝난 작업을 전부 다시 그려서 쌓였다. 이제 한 번만 뜨고
   // 몇 초 뒤 사라진다. 실패는 읽어야 하니 남겨 두고 사람이 닫는다.
@@ -97,16 +115,17 @@
       var a = card.getBoundingClientRect(), b = dest.getBoundingClientRect();
       var fly = document.createElement("div");
       fly.className = "flyer";
-      fly.style.left = (a.left + a.width / 2 - 13) + "px";
-      fly.style.top = (a.top + 20) + "px";
+      fly.textContent = "\u25b6";
+      fly.style.left = (a.left + a.width / 2 - 23) + "px";
+      fly.style.top = (a.top + 24) + "px";
       document.body.appendChild(fly);
       requestAnimationFrame(function () {
         fly.style.transform = "translate(" + (b.left + b.width / 2 - a.left - a.width / 2) + "px,"
-                            + (b.top + b.height / 2 - a.top - 20) + "px) scale(.3)";
+                            + (b.top + b.height / 2 - a.top - 24 - 23) + "px) scale(.45) rotate(18deg)";
         fly.style.opacity = "0";
       });
-      setTimeout(function () { fly.remove(); dest.classList.add("bump"); }, 560);
-      setTimeout(function () { dest.classList.remove("bump"); }, 950);
+      setTimeout(function () { fly.remove(); dest.classList.add("bump"); }, 1150);
+      setTimeout(function () { dest.classList.remove("bump"); }, 1700);
     }, true);
   })();
 
@@ -118,7 +137,7 @@
     var $ = function (id) { return document.getElementById(id); };
     var drawer = $("jobs-drawer"), openBtn = $("jobs-open");
     if (!drawer || !openBtn) return;
-    var list = $("job-list"), detail = $("job-detail"), exBody = $("job-ex");
+    var list = $("job-list"), detail = $("job-detail"), term = $("job-term"), caret = null;
     var label = $("jobs-label"), spin = $("jobs-spin"), count = $("jobs-count");
     var watching = null, lastEx = 0, timer = null;
 
@@ -172,30 +191,67 @@
       }).catch(function () {});
     }
 
+    // 한 줄 = 보낸 요청 하나. 누르면 그 자리에서 패킷 원문이 펴진다.
+    function line(x) {
+      var el = document.createElement("div");
+      el.className = "term-line";
+      el.dataset.xid = x.id;
+      var code = x.error ? "ERR" : String(x.status);
+      var cls = x.error ? "code-x" : "code-" + code.charAt(0);
+      var path = x.url.replace(/^https?:\/\/[^/]+/, "") || "/";
+      el.innerHTML = '<span class="arrow">\u2192</span> <span class="meta"></span> '
+                   + '<span class="path"></span> <span class="' + cls + '"></span>'
+                   + ' <span class="meta"></span>';
+      var s = el.querySelectorAll("span");
+      s[1].textContent = x.method;
+      s[2].textContent = path;
+      s[3].textContent = code;
+      s[4].textContent = x.error ? x.error : (x.size + "B \u00b7 " + x.ms + "ms");
+      el.addEventListener("click", function () { toggleRaw(el, x.id); });
+      return el;
+    }
+
+    function toggleRaw(el, xid) {
+      var open = el.nextElementSibling;
+      if (open && open.classList.contains("term-raw")) { open.remove(); return; }
+      var box = document.createElement("div");
+      box.className = "term-raw";
+      box.textContent = "\u2026";
+      el.insertAdjacentElement("afterend", box);
+      fetch("/jobs/exchange/" + xid).then(function (r) { return r.json(); }).then(function (d) {
+        box.textContent = "";
+        var req = document.createElement("b"); req.textContent = "\u2500 \ubcf4\ub0b8 \uc694\uccad";
+        var rq = document.createTextNode("\n" + (d.request || "(\uc5c6\uc74c)") + "\n");
+        var res = document.createElement("b"); res.textContent = "\u2500 \ubc1b\uc740 \uc751\ub2f5";
+        var rs = document.createTextNode("\n" + (d.error ? d.error : (d.response || "(\uc5c6\uc74c)")));
+        box.append(req, rq, res, rs);
+      }).catch(function () { box.textContent = "\ubabb \uc77d\uc5c8\uc2b5\ub2c8\ub2e4"; });
+    }
+
     function pullExchanges() {
-      if (!watching) return;
+      if (!watching || !term) return;
       fetch("/jobs/" + watching + "/exchanges?after=" + lastEx)
         .then(function (r) { return r.json(); })
         .then(function (d) {
+          var stick = term.scrollTop + term.clientHeight >= term.scrollHeight - 30;
           d.exchanges.forEach(function (x) {
             lastEx = Math.max(lastEx, x.id);
-            var tr = document.createElement("tr");
-            var code = x.error ? "실패" : x.status;
-            tr.innerHTML = '<td class="mono"></td><td class="mono"></td><td class="mono"></td>';
-            tr.cells[0].textContent = code;
-            tr.cells[1].textContent = x.method;
-            tr.cells[2].textContent = x.url.replace(/^https?:\/\/[^/]+/, "");
-            tr.title = x.error || x.url;
-            exBody.appendChild(tr);
+            term.insertBefore(line(x), caret);
           });
-          if (d.exchanges.length) exBody.parentNode.scrollTop = exBody.parentNode.scrollHeight;
+          caret.hidden = !d.live;
+          if (d.exchanges.length && stick) term.scrollTop = term.scrollHeight;
         }).catch(function () {});
     }
 
     function watch(j) {
       watching = j.run_id;
       lastEx = 0;
-      exBody.innerHTML = "";
+      term.innerHTML = "";
+      caret = document.createElement("div");
+      caret.className = "term-cursor";
+      caret.textContent = "\u2588";
+      caret.hidden = !j.live;
+      term.appendChild(caret);
       $("job-detail-title").textContent = j.module + " — " + j.target;
       detail.hidden = false;
       pullExchanges();

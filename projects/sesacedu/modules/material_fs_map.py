@@ -32,6 +32,8 @@ META = {
     "id": "sesacedu_material_fs_map",
     "name": "칼리 fsmap 결과 가져오기 (파일시스템 지도)",
     "category": "경로 조작",
+    # 노션 '웹 서비스 취약점 목록' 의 취약점 유형 — 경로 조작으로 그린 파일시스템 지도를 읽어 들이는 것
+    "vuln": "FILE",
     "kind": "passive",
     "roles": ["user_web", "practice"],
     "stage": "tool",

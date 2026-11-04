@@ -12,7 +12,7 @@
   <a href="#targets">대상</a><a href="#modules">모듈</a><a href="#surface">표면</a><a href="#tools">도구</a>
   <a href="#results">결과</a><a href="#history">요청 기록</a><a href="#attack">ATT&CK</a><a href="#scenario">시나리오</a>
   <span class="toc-gap">알아 둘 것</span>
-  <a href="#wordlists">사전</a><a href="#roles">역할</a><a href="#runs">뒤에서 도는 실행</a><a href="#auth">로그인</a><a href="#cvss">영향도(CVSS)</a><a href="#needs">실행 전 준비</a><a href="#limits">요청 한도</a><a href="#hostscope">어디까지 하나</a><a href="#safety">안전장치</a>
+  <a href="#wordlists">사전</a><a href="#grouping">모듈 묶기</a><a href="#roles">역할</a><a href="#runs">뒤에서 도는 실행</a><a href="#auth">로그인</a><a href="#cvss">영향도(CVSS)</a><a href="#needs">실행 전 준비</a><a href="#limits">요청 한도</a><a href="#hostscope">어디까지 하나</a><a href="#safety">안전장치</a>
   <span class="toc-gap">만들기</span>
   <a href="#packs">범용과 팩</a><a href="#write">모듈 만들기</a><a href="#todo">아직 없는 것</a>
 </nav>
@@ -233,6 +233,25 @@
     <dt>어디에 적나</dt><dd>프로젝트 팩의 <code>PROJECT["login"]</code> — 보낼 주소·본문 모양·토큰이 든 자리.
       앱 본체는 특정 서비스의 로그인 모양을 모릅니다.</dd>
     <dt>주의</dt><dd>테스트 계정 토큰만 넣습니다.</dd>
+  </dl>
+</section>
+
+<section id="grouping">
+  <h2>모듈 묶어 보기</h2>
+  <p>모듈 화면 위 탭에서 <b>어떻게 묶을지</b>를 고릅니다. 기본은 <b>단계</b> — 그게 쓰는 순서라서,
+    처음 쓰는 팀원이 위에서 아래로 따라가면 됩니다. 왼쪽 목록으로 묶음 사이를 건너뛰고, 접어 둘 수 있습니다.</p>
+  <dl class="facts">
+    <dt>단계</dt><dd>표면 수집 → 지점 점검 → 대상 점검 → 도구. <b>쓰는 순서</b>입니다.</dd>
+    <dt>전술</dt><dd>ATT&amp;CK 전술. 발표·보고서 쓸 때 씁니다. 한 모듈이 전술을 둘 달고 있으면
+      <b>두 묶음에 다 나옵니다</b> — 숨기면 '그 전술에는 쓸 모듈이 없다' 로 읽힙니다.</dd>
+    <dt>분야</dt><dd>하는 일의 갈래. "SQL 주입 도구 어디 있지" 하고 찾을 때.</dd>
+    <dt>취약점</dt><dd>팀 노션 '웹 서비스 취약점 목록' 과 <b>같은 어휘</b>입니다 —
+      정보노출 · AUTH · XSS · FILE · SQL. 그래야 모듈·노션 항목·CVSS 가 같은 말로 묶입니다.
+      이 어휘로 안 맞는 모듈(표면 수집 등)은 <b>기타</b> 입니다 — 억지로 끼워 맞추지 않습니다.</dd>
+    <dt>비어 있는 칸</dt><dd>취약점으로 묶으면 <b>아직 모듈이 없는 유형</b>을 왼쪽에 적어 둡니다.
+      팀원이 다음에 무엇을 만들지 고를 때 봅니다.</dd>
+    <dt>모듈에 적는 법</dt><dd><code>META["vuln"]</code> 에 그 다섯 중 하나. 안 적으면 <b>기타</b> 입니다.
+      어휘에 없는 말을 적으면 <b>모듈이 아예 안 올라갑니다</b> — 어휘가 갈라지면 노션과 안 묶이기 때문입니다.</dd>
   </dl>
 </section>
 

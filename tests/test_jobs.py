@@ -266,3 +266,41 @@ def test_the_record_stays_in_the_drawer(app, client, monkeypatch, fake_fetch):
     client.post("/modules/http_security_headers/run", data={"target_id": tid, "path": "/"})
     client.get(f"/?target={tid}")               # 한 번 알리고 지나간다
     assert len(client.get(f"/jobs?target={tid}").get_json()["jobs"]) == 1
+
+
+# ── 터미널 화면: 줄을 누르면 패킷 원문 ──────────────────────────
+# "오른쪽 실행 중인 프로세스를 누르면 터미널처럼 과정이 보였으면" (사용자, 11-04)
+
+def test_raw_packet_for_one_request(app, client, real_http):
+    add_target(client)
+    tid = only_target(app)
+    client.post("/modules/http_security_headers/run", data={"target_id": tid, "path": "/"})
+    run_id = jobs.listing()[0]["run_id"]
+    xid = client.get(f"/jobs/{run_id}/exchanges").get_json()["exchanges"][0]["id"]
+
+    d = client.get(f"/jobs/exchange/{xid}").get_json()
+    assert d["id"] == xid
+    assert "GET " in d["request"] and "HTTP/1.1" in d["request"]
+    assert "200" in d["response"]
+
+
+def test_raw_packet_hides_secrets(app, client, real_http):
+    """요청 기록과 같은 기준 — 인증 값은 *** 로."""
+    add_target(client)
+    tid = only_target(app)
+    client.post(f"/targets/{tid}/headers", data={"headers": "Authorization: Bearer 비밀토큰"},
+                follow_redirects=True)
+    client.post("/modules/http_security_headers/run", data={"target_id": tid, "path": "/"})
+    run_id = jobs.listing()[0]["run_id"]
+    xid = client.get(f"/jobs/{run_id}/exchanges").get_json()["exchanges"][0]["id"]
+    raw = client.get(f"/jobs/exchange/{xid}").get_json()["request"]
+    assert "비밀토큰" not in raw and "***" in raw
+
+
+def test_missing_exchange_is_404(client):
+    assert client.get("/jobs/exchange/999999").status_code == 404
+
+
+def test_terminal_pane_is_in_the_drawer(client):
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="job-term"' in html and 'role="log"' in html
