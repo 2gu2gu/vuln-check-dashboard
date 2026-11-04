@@ -9,7 +9,13 @@
 | /about?ref=       | 돌려주지 않음                  | 안전          |
 | POST /guestbook   | 받은 글을 그대로(저장 안 함)     | 취약          |
 | /admin, /config.json | 링크 없음 — 사전으로만 찾힘 | —            |
+| POST /backend/login | 토큰 발급(계정은 아래 ACCOUNTS) | —          |
+| /backend/me       | 토큰이 맞는지 확인             | —            |
+
+인증이 필요한 모듈을 여기서 먼저 돌려 볼 수 있게 로그인을 뒀다. 계정은 이 파일에
+그대로 적어 두고 첫 화면에도 띄운다 — 다 가짜고, 안 보이면 기능을 돌려 볼 수가 없다.
 """
+import base64
 import json
 import os
 import sqlite3
@@ -21,6 +27,33 @@ from flask import Flask, Response, request
 from markupsafe import escape
 
 app = Flask(__name__)
+
+# ── 연습용 계정 ───────────────────────────────────────────────
+# 전부 가짜다. 이 서버는 127.0.0.1 에서만 열리고 아무것도 저장하지 않는다.
+# 숨기지 않는 이유: 로그인 기능을 시험해 보려면 넣을 값이 보여야 한다.
+ACCOUNTS = {
+    "demo@sesacedu.test": {"pw": "demo1234", "role": "STUDENT", "auth": 1, "userId": 101},
+    "teacher@sesacedu.test": {"pw": "teach1234", "role": "INSTRUCTOR", "auth": 2, "userId": 104},
+}
+
+
+def _b64(blob) -> str:
+    return base64.urlsafe_b64encode(json.dumps(blob, separators=(",", ":")).encode()).decode().rstrip("=")
+
+
+def _fake_jwt(email: str, who: dict) -> str:
+    """JWT 모양만 흉내 낸 글자열. 서명이 없어 진짜 서버에서는 안 통한다."""
+    return "%s.%s.demo-signature-not-real" % (
+        _b64({"alg": "HS256", "typ": "JWT"}),
+        _b64({"sub": email, "role": who["role"], "auth": who["auth"], "userId": who["userId"]}),
+    )
+
+
+def _envelope(code, message, result, status=200):
+    """실서버와 같은 봉투 {code, message, result} — 대시보드가 토큰을 찾는 자리를 맞춰 둔다."""
+    return Response(json.dumps({"code": code, "message": message, "result": result},
+                               ensure_ascii=False),
+                    status=status, mimetype="application/json")
 
 # ── 연습용 모래상자 ───────────────────────────────────────────
 # 경로 조작·SQL 주입을 실제로 시험할 수 있게, 진짜처럼 동작하되
@@ -65,12 +98,23 @@ HOME = """<!doctype html><meta charset="utf-8"><title>연습용 대상</title>
 <form action="/search" method="get"><input name="q" value="sql"><button>찾기</button></form>
 <form action="/guestbook" method="post"><input name="name"><textarea name="message"></textarea><button>남기기</button></form>
 <script>fetch('/api/items?keyword=a')</script>
+<h2>연습용 계정</h2>
+<p>전부 가짜입니다. <code>POST /backend/login</code> 에
+<code>{"email": ..., "pw": ...}</code> 로 보내면 <code>result.token</code> 에 토큰이 옵니다.</p>
+<table border="1" cellpadding="4">
+<tr><th>이메일</th><th>비밀번호</th><th>권한</th></tr>
+__ACCOUNT_ROWS__
+</table>
+<p>받은 토큰은 <code>GET /backend/me</code> 에 <code>Authorization: Bearer ...</code> 로 넣어 확인합니다.</p>
 """
 
 
 @app.get("/")
 def home():
-    return HOME
+    rows = "\n".join(
+        "<tr><td><code>%s</code></td><td><code>%s</code></td><td>%s</td></tr>"
+        % (email, who["pw"], who["role"]) for email, who in ACCOUNTS.items())
+    return HOME.replace("__ACCOUNT_ROWS__", rows)
 
 
 @app.get("/search")
@@ -158,5 +202,44 @@ def lectures():
     return Response(json.dumps({"page": {"total": total}}), mimetype="application/json")
 
 
+# ── 로그인 ────────────────────────────────────────────────────
+# 주소·보내는 모양·응답 봉투를 실서버와 똑같이 맞췄다. 여기서 되면 거기서도 된다.
+
+@app.post("/backend/login")
+def login():
+    body = request.get_json(silent=True) or {}
+    email, pw = str(body.get("email", "")), str(body.get("pw", ""))
+    missing = [{"field": f, "message": "필수입니다."} for f, v in (("email", email), ("pw", pw)) if not v]
+    if missing:
+        return _envelope("INVALID_INPUT", "입력값을 확인해주세요.", {"errors": missing}, status=400)
+    who = ACCOUNTS.get(email)
+    if not who or who["pw"] != pw:
+        # 어느 쪽이 틀렸는지 알려 주지 않는다 — 실서버도 그렇다.
+        return _envelope("LOGIN_FAILED", "이메일 또는 비밀번호가 올바르지 않습니다.", None, status=400)
+    token = _fake_jwt(email, who)
+    return _envelope("SUCCESS", "로그인 성공", {
+        "token": token,
+        "authorizationHeader": "Bearer " + token,
+        "role": who["role"], "auth": who["auth"], "userId": who["userId"],
+    })
+
+
+@app.get("/backend/me")
+def me():
+    """토큰이 제대로 붙었는지 보는 자리. 서명은 확인하지 않는다 — 연습용이다."""
+    raw = request.headers.get("Authorization", "")
+    if not raw.startswith("Bearer "):
+        return _envelope("UNAUTHORIZED", "인증 헤더가 없습니다.", None, status=401)
+    body = raw[7:].split(".")
+    if len(body) != 3:
+        return _envelope("UNAUTHORIZED", "토큰 모양이 아닙니다.", None, status=401)
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(body[1] + "=" * (-len(body[1]) % 4)))
+    except Exception:
+        return _envelope("UNAUTHORIZED", "토큰을 읽을 수 없습니다.", None, status=401)
+    return _envelope("SUCCESS", "확인됨", claims)
+
+
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5051, debug=False)
+    # 5051 이 이미 쓰이고 있으면 DEMO_PORT 로 옮긴다 (대상 등록 주소도 같이 바꿔야 한다)
+    app.run(host="127.0.0.1", port=int(os.environ.get("DEMO_PORT", "5051")), debug=False)

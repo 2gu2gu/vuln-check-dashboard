@@ -69,15 +69,23 @@
           <form method="post" action="{{ url_for('dash.target_login', tid=t.id) }}" class="login-get">
             {{ csrf_field() }}
             <b class="small">로그인해서 토큰 받기</b>
+            {% set demo = logins[t.id].get('demo') %}
             <div class="login-row">
-              <input name="ident" type="text" autocomplete="off"
+              <input name="ident" type="text" autocomplete="off" value="{{ demo.ident if demo else '' }}"
                      placeholder="{{ logins[t.id].get('id_label') or '아이디' }}" aria-label="아이디">
-              <input name="secret" type="password" autocomplete="off"
+              {# 연습용 계정은 가리지 않는다 — 가짜고, 안 보이면 뭘 보냈는지 모른다 #}
+              <input name="secret" type="{{ 'text' if demo else 'password' }}" autocomplete="off"
+                     value="{{ demo.secret if demo else '' }}"
                      placeholder="비밀번호" aria-label="비밀번호">
               <button class="btn" type="submit">받아서 넣기</button>
             </div>
+            {% if demo %}
+            <small class="sub">{{ demo.note }}
+              <span class="mono">{{ demo.ident }} / {{ demo.secret }}</span></small>
+            {% else %}
             <small class="sub">{{ logins[t.id].get('note') or
               '비밀번호는 저장하지 않습니다 — 한 번 보내고 버립니다. 받은 토큰만 위 인증 헤더에 들어갑니다.' }}</small>
+            {% endif %}
             <small class="sub mono">POST {{ logins[t.id].get('path') }}</small>
           </form>
           {% endif %}

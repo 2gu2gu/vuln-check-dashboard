@@ -13,10 +13,19 @@ PROJECT = {
     "login": {
         "path": "/backend/login",
         "json": {"email": "{id}", "pw": "{secret}"},
-        "token_keys": ["token", "accessToken", "access_token", "data.token", "data.accessToken"],
+        # 이 API 의 봉투는 {code, message, result} 다(11-05 실측: 빈 로그인 요청의 400 응답).
+        # result 아래를 안 보고 있어서 토큰을 못 찾고 있었다.
+        "token_keys": ["result.token", "result.accessToken", "result.access_token",
+                       "result.authorizationHeader", "token", "accessToken", "access_token",
+                       "authorizationHeader", "data.token", "data.accessToken"],
         "header": "Authorization",
         "prefix": "Bearer ",
+        # 연습용 대상(demo_target.py)도 같은 주소·같은 봉투로 토큰을 준다.
         "roles": ["user_web", "practice"],
+        # 연습용 서버의 계정은 화면에 그대로 띄운다 — 가짜고, 안 보이면 돌려 볼 수가 없다.
+        # 실서버 역할에는 넣지 않는다. 사람이 자기 테스트 계정을 직접 넣는다.
+        "demo_accounts": {"practice": {"ident": "demo@sesacedu.test", "secret": "demo1234",
+                                       "note": "연습용 서버의 가짜 계정입니다. 그대로 두고 눌러 보세요."}},
         "id_label": "이메일",
         "note": "**테스트 계정만 쓰세요.** 비밀번호는 저장하지 않습니다 — 한 번 보내고 버리고, "
                 "요청 기록에도 남기지 않습니다. 받아 온 토큰만 이 대상의 인증 헤더에 들어갑니다.",
