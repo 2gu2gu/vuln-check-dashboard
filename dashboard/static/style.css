@@ -372,3 +372,39 @@ mark { background: #F2D36B; color: #1C1C1C; border-radius: 2px; padding: 0 1px; 
 .job-detail > p, .job-detail > table { margin: 0 12px; }
 .job-detail table { display: block; overflow: auto; }
 @media (prefers-reduced-motion: reduce) { .job-bar i, .spin { animation: none; } }
+
+/* 실행 알림(토스트) — 몇 초 뒤 사라진다. 화면을 가리지 않게 아래 왼쪽, 드로어 반대쪽 */
+.toasts { position: fixed; left: 16px; bottom: 16px; z-index: 40; display: flex;
+          flex-direction: column-reverse; gap: 8px; max-width: min(420px, calc(100vw - 32px)); }
+.toast { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 8px;
+         background: var(--surface); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0,0,0,.12);
+         font-size: 13px; animation: toast-in .22s ease-out; }
+.toast.leaving { animation: toast-out .22s ease-in forwards; }
+.toast > div { flex: 1 1 auto; min-width: 0; }
+.toast .sub { font-size: 11px; }
+.toast-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex: 0 0 auto; background: var(--sev-low); }
+.toast.error .toast-dot { background: var(--hit); }
+.toast-x { border: 0; background: none; color: var(--sub); cursor: pointer; font-size: 12px; padding: 0 2px; }
+@keyframes toast-in  { from { opacity: 0; transform: translateY(10px) scale(.98); } }
+@keyframes toast-out { to   { opacity: 0; transform: translateX(-12px); } }
+
+/* 상단 스크롤 진행바 — 긴 화면에서 어디쯤인지 */
+.scroll-bar { position: fixed; top: 0; left: 0; height: 2px; width: 0;
+              background: var(--accent); z-index: 50; transition: width .08s linear; }
+
+/* 실행을 누르면 아이콘이 오른쪽 '도는 중' 으로 날아간다 — 뒤로 갔다는 신호 */
+.flyer { position: fixed; z-index: 45; width: 26px; height: 26px; border-radius: 6px;
+         background: var(--accent); opacity: .9; pointer-events: none;
+         transition: transform .55s cubic-bezier(.3,.8,.4,1), opacity .55s ease-in; }
+#jobs-open.bump { animation: bump .35s ease-out; }
+@keyframes bump { 30% { transform: scale(1.18); } }
+
+/* 카드를 누르면 그 자리에서 커진다 */
+.mod.zoom, .tool-pick.zoom { animation: zoom-in .2s ease-out; }
+@keyframes zoom-in { from { transform: scale(.97); opacity: .6; } }
+.mod { transition: box-shadow .15s ease, transform .15s ease; }
+.mod:focus-within { box-shadow: 0 4px 16px rgba(0,0,0,.1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .toast, .toast.leaving, .flyer, .mod.zoom, #jobs-open.bump { animation: none; transition: none; }
+}

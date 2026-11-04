@@ -229,3 +229,40 @@ def test_budget_still_applies_in_the_worker(app, monkeypatch):
     assert jobs.wait_all(timeout=10)
     with app.app_context():
         assert get_db().execute("SELECT status FROM runs ORDER BY id DESC").fetchone()[0] == "error"
+
+
+# ── 알림은 한 번만 ────────────────────────────────────────────
+# 전에는 화면을 그릴 때마다 끝난 작업을 전부 다시 그렸다. 새로고침할수록
+# 쌓여서 화면을 가렸다(사용자 지적 11-04).
+
+def test_a_finished_run_is_announced_once(app, client, monkeypatch, fake_fetch):
+    monkeypatch.setattr(http_security_headers, "fetch", fake_fetch({"/": {}}))
+    add_target(client)
+    tid = only_target(app)
+    client.post("/modules/http_security_headers/run", data={"target_id": tid, "path": "/"})
+
+    first = client.get(f"/?target={tid}").get_data(as_text=True)
+    assert first.count('role="status"') == 1
+    again = client.get(f"/?target={tid}").get_data(as_text=True)
+    assert 'role="status"' not in again         # 두 번째 화면에는 안 뜬다
+
+
+def test_failures_are_kept_until_closed(app, client, monkeypatch):
+    """실패는 읽어야 한다 — 저절로 사라지지 않게 표시해 둔다."""
+    monkeypatch.setattr(http_security_headers, "fetch",
+                        lambda url, **k: core.fetch("https://example.com/"))
+    add_target(client)
+    tid = only_target(app)
+    client.post("/modules/http_security_headers/run", data={"target_id": tid, "path": "/"})
+    page = client.get(f"/?target={tid}").get_data(as_text=True)
+    assert 'data-keep="yes"' in page and "toast error" in page
+
+
+def test_the_record_stays_in_the_drawer(app, client, monkeypatch, fake_fetch):
+    """알림은 사라져도 기록은 남는다."""
+    monkeypatch.setattr(http_security_headers, "fetch", fake_fetch({"/": {}}))
+    add_target(client)
+    tid = only_target(app)
+    client.post("/modules/http_security_headers/run", data={"target_id": tid, "path": "/"})
+    client.get(f"/?target={tid}")               # 한 번 알리고 지나간다
+    assert len(client.get(f"/jobs?target={tid}").get_json()["jobs"]) == 1

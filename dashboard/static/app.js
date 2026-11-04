@@ -55,6 +55,61 @@
     cost();
   });
 
+  // ── 실행 알림(토스트) ────────────────────────────────────
+  // 전에는 화면마다 끝난 작업을 전부 다시 그려서 쌓였다. 이제 한 번만 뜨고
+  // 몇 초 뒤 사라진다. 실패는 읽어야 하니 남겨 두고 사람이 닫는다.
+  (function () {
+    var box = document.getElementById("toasts");
+    if (!box) return;
+    function drop(el) {
+      el.classList.add("leaving");
+      setTimeout(function () { el.remove(); }, 250);
+    }
+    [].forEach.call(box.children, function (el) {
+      el.querySelector(".toast-x").addEventListener("click", function () { drop(el); });
+      if (!el.dataset.keep) setTimeout(function () { drop(el); }, 6000);
+    });
+  })();
+
+  // ── 상단 스크롤 진행바 ───────────────────────────────────
+  (function () {
+    var bar = document.createElement("div");
+    bar.className = "scroll-bar";
+    document.body.appendChild(bar);
+    function draw() {
+      var h = document.documentElement.scrollHeight - window.innerHeight;
+      bar.style.width = (h > 20 ? (window.scrollY / h) * 100 : 0) + "%";
+    }
+    window.addEventListener("scroll", draw, {passive: true});
+    window.addEventListener("resize", draw);
+    draw();
+  })();
+
+  // ── 실행하면 아이콘이 '도는 중' 으로 날아간다 ────────────
+  // 눌렀는데 화면이 그대로면 아무 일도 안 일어난 줄 안다. 뒤로 갔다는 신호다.
+  (function () {
+    document.addEventListener("submit", function (e) {
+      var form = e.target;
+      if (!form.action || form.action.indexOf("/run") === -1) return;
+      var card = form.closest(".mod, .tool-form, .probe-bar") || form;
+      var dest = document.getElementById("jobs-open");
+      if (!dest || !card.getBoundingClientRect) return;
+      var a = card.getBoundingClientRect(), b = dest.getBoundingClientRect();
+      var fly = document.createElement("div");
+      fly.className = "flyer";
+      fly.style.left = (a.left + a.width / 2 - 13) + "px";
+      fly.style.top = (a.top + 20) + "px";
+      document.body.appendChild(fly);
+      requestAnimationFrame(function () {
+        fly.style.transform = "translate(" + (b.left + b.width / 2 - a.left - a.width / 2) + "px,"
+                            + (b.top + b.height / 2 - a.top - 20) + "px) scale(.3)";
+        fly.style.opacity = "0";
+      });
+      setTimeout(function () { fly.remove(); dest.classList.add("bump"); }, 560);
+      setTimeout(function () { dest.classList.remove("bump"); }, 950);
+    }, true);
+  })();
+
   // ── 모듈 실행 드로어 ─────────────────────────────────────
   // 실행은 뒤에서 돈다. 여기서 진행을 보고, 눌러 들어가면 그 실행이 보낸
   // 요청이 들어오는 대로 쌓인다.

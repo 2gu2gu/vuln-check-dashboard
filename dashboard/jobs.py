@@ -47,6 +47,7 @@ class Job:
         self.started = time.time()
         self.finished = None
         self.ctx = None                  # RunContext — 보낸 요청 수를 여기서 읽는다
+        self.announced = False           # 끝났다고 화면에 한 번 알렸는지
         self._stop = threading.Event()
 
     # ── 화면이 보는 것 ────────────────────────────────────────
@@ -93,6 +94,25 @@ def listing(target_id=None):
         rows = [j for j in _jobs.values() if target_id is None or j.target_id == target_id]
     rows.sort(key=lambda j: (not j.live, -j.started))
     return [j.as_dict() for j in rows]
+
+
+def take_announcements(target_id=None):
+    """끝난 작업 중 **아직 안 알린 것**만. 한 번 가져가면 다시 안 준다.
+
+    전에는 화면을 그릴 때마다 끝난 작업을 전부 다시 그려서, 새로고침할수록
+    알림이 쌓여 화면을 가렸다. 알림은 한 번이면 된다 — 기록은 드로어에 남는다.
+    """
+    out = []
+    with _lock:
+        for j in _jobs.values():
+            if j.live or j.announced:
+                continue
+            if target_id is not None and j.target_id != target_id:
+                continue
+            j.announced = True
+            out.append(j)
+    out.sort(key=lambda j: j.finished or 0)
+    return [j.as_dict() for j in out]
 
 
 def cancel(run_id):
