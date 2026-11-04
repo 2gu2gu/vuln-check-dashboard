@@ -2,7 +2,8 @@
 {% block title %}대상{% endblock %}
 {% block content %}
 <h1>대상</h1>
-<p class="lead">대상은 프로젝트에 묶입니다. 프로젝트마다 허용 범위가 달라서, 범위 밖 주소는 등록되지 않습니다.</p>
+<p class="lead">대상은 프로젝트에 묶입니다. 프로젝트마다 허용 범위가 달라서, 범위 밖 주소는 등록되지 않습니다.
+  <b>연습용</b>으로 표시된 것은 우리가 띄운 가짜 서버라 점검 대상이 아닙니다 — 모듈을 먼저 시험해 보는 자리입니다.</p>
 
 <div class="proj-list">
   {% for p in PROJECTS.values() %}
@@ -10,7 +11,7 @@
     <b>{{ p.name }}</b>
     <span class="sub">{{ p.description }}</span>
     <span class="mono small">{% for h in p.scope %}{{ h }}{{ ", " if not loop.last }}{% endfor %}</span>
-    {% if p.roles %}{% for rid, r in p.roles.items() %}<span class="sub small">{{ r.name }}{% if r.scope %} — <span class="mono">{{ r.scope | join(", ") }}</span>{% endif %}</span>{% endfor %}{% endif %}
+    {% if p.roles %}{% for rid, r in p.roles.items() %}<span class="sub small">{{ r.name }}{% if r.practice %} <span class="practice-tag">연습용</span>{% endif %}{% if r.scope %} — <span class="mono">{{ r.scope | join(", ") }}</span>{% endif %}</span>{% endfor %}{% endif %}
   </div>
   {% endfor %}
 </div>
@@ -44,7 +45,9 @@
   <tbody>
   {% for t in targets %}
     <tr>
-      <td><span class="proj-badge">{{ PROJECTS[t.project].name if t.project in PROJECTS else t.project ~ " (팩 없음)" }}</span></td>
+      {% set tp = PROJECTS[t.project] if t.project in PROJECTS else none %}
+      <td>{% if tp and tp.is_practice(t.role) %}<span class="practice-badge" title="우리가 띄운 가짜 서버입니다. 점검 대상이 아닙니다.">연습용</span>
+          {%- else %}<span class="proj-badge">{{ tp.name if tp else t.project ~ " (팩 없음)" }}</span>{% endif %}</td>
       <td class="sub">{{ PROJECTS[t.project].role_name(t.role) if t.project in PROJECTS else t.role }}</td>
       <td><a href="{{ url_for('dash.results', target=t.id) }}">{{ t.name }}</a></td>
       <td class="mono">{{ t.url }}</td>

@@ -42,9 +42,17 @@
     <label class="check"><input type="checkbox" id="pick-all"> 전체 선택</label>
     <span class="sub" id="picked">0개 선택</span>
     {% if probes %}
-    <select name="module_id" id="probe-module" aria-label="지점 점검 모듈">
-      {% for m in probes.values() %}<option value="{{ m.id }}" data-kind="{{ m.kind }}">{{ m.name }}</option>{% endfor %}
-    </select>
+    {# 무엇으로 점검하는지가 안 보여서 "모듈 선택이 없잖아" 소리를 들었다(11-05).
+       이름표가 없으면 그냥 설정 하나로 읽힌다. 고른 지점 → 무엇으로 → 그 모듈의 칸 순서로 읽히게 한다. #}
+    <label class="field probe-pick">
+      <span class="field-name">무엇으로 점검할지
+        <span class="req-mark req" title="비워 두면 안 됩니다">필수</span>
+      </span>
+      <select name="module_id" id="probe-module">
+        {% for m in probes.values() %}<option value="{{ m.id }}" data-kind="{{ m.kind }}">{{ m.name }}</option>{% endfor %}
+      </select>
+      <small class="sub">고른 지점마다 이 모듈이 값을 한 번씩 넣어 봅니다. 아래 칸은 <b>고른 모듈의 것</b>입니다.</small>
+    </label>
     {% for m in probes.values() %}
     <div class="probe-params" data-for="{{ m.id }}" {{ 'hidden' if not loop.first }}>
       {% for p in m.params %}{{ param_input(p, m.id ~ "__") }}{% endfor %}

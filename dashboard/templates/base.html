@@ -7,7 +7,12 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+  {# 메뉴가 열렸는지 닫혔는지를 그리기 전에 정한다 — 늦게 정하면 한 번 번쩍인다.
+     좁은 화면은 저장된 값과 상관없이 닫고 시작한다(열린 채로 본문을 덮으면 못 읽는다). #}
+  <script>(function(){var r=document.documentElement;r.dataset.side="open";
+  try{var t=localStorage.getItem("theme");if(t)r.dataset.theme=t;
+      if(localStorage.getItem("sideNav")==="closed")r.dataset.side="closed";}catch(e){}
+  if(window.innerWidth<=900)r.dataset.side="closed";})();</script>
 </head>
 <body data-delay-ms="{{ config.DELAY_MS }}">
 {% set nav = [
@@ -21,8 +26,13 @@
   ("dash.scenario", "수사보드", "M5 5h4v4H5zM15 15h4v4h-4zM9 7h4a2 2 0 0 1 2 2v6"),
 ] %}
 <div class="shell">
-  <aside class="side">
-    <div class="brand">딸깍이<span>DAST 대시보드</span></div>
+  <aside class="side" id="side-nav" aria-label="화면 이동">
+    <div class="brand-row">
+      <div class="brand">딸깍이<span>DAST 대시보드</span></div>
+      <button class="btn ghost icon" type="button" id="side-close" aria-label="메뉴 닫기" title="메뉴 닫기">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+    </div>
     <nav>
       {% for ep, label, d in nav %}
       <a href="{{ url_for(ep, target=target.id if target else none) }}" class="{{ 'on' if request.endpoint == ep }}">
@@ -37,24 +47,38 @@
     </nav>
     <div class="side-foot">범위: 자체 실습 환경만<br><span class="mono">127.0.0.1 전용 · v{{ VERSION }}</span></div>
   </aside>
+  {# 좁은 화면에서는 메뉴가 본문을 덮는다. 뒤를 눌러도 닫히게 둔다. #}
+  <div class="side-scrim" id="side-backdrop"></div>
 
   <div class="main">
     <header class="top">
+      <button class="btn ghost icon" type="button" id="side-toggle"
+              aria-expanded="true" aria-controls="side-nav"
+              aria-label="메뉴 여닫기" title="메뉴 여닫기 (왼쪽 메뉴를 숨기면 본문이 넓어집니다)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM9.5 5v14"/></svg>
+      </button>
       {% if targets is defined and targets %}
       <form method="get" class="target-pick">
         <label for="target">대상</label>
         <select id="target" name="target" data-autosubmit>
-          {% for pid, group in targets | groupby("project") %}
-          <optgroup label="{{ PROJECTS[pid].name if pid in PROJECTS else pid }}">
-            {% for t in group %}
+          {# 연습용은 따로 뒤 묶음으로 — 점검 대상 두 개와 같은 이름 아래 있으면 안 된다 #}
+          {% for g in targets | grouped %}
+          <optgroup label="{{ g.label }}">
+            {% for t in g.targets %}
             <option value="{{ t.id }}" {{ 'selected' if target and t.id == target.id }}>{{ t.name }} — {{ t.url }}</option>
             {% endfor %}
           </optgroup>
           {% endfor %}
         </select>
       </form>
-      {% if target %}<span class="proj-badge">{{ PROJECTS[target.project].name if target.project in PROJECTS else target.project }}</span>
-      {% if target.role %}<span class="role-badge">{{ PROJECTS[target.project].role_name(target.role) if target.project in PROJECTS else target.role }}</span>{% endif %}
+      {% if target %}
+      {% set pj = PROJECTS[target.project] if target.project in PROJECTS else none %}
+      {% if pj and pj.is_practice(target.role) %}
+      <span class="practice-badge" title="우리가 띄운 가짜 서버입니다. 점검 대상이 아닙니다.">연습용 — 점검 대상 아님</span>
+      {% else %}
+      <span class="proj-badge">{{ pj.name if pj else target.project }}</span>
+      {% endif %}
+      {% if target.role %}<span class="role-badge">{{ pj.role_name(target.role) if pj else target.role }}</span>{% endif %}
       {% endif %}
       {% endif %}
       <div class="top-spacer"></div>

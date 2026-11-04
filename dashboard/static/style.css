@@ -57,10 +57,26 @@ h2 { font-size: 15px; margin: 0; }
 h3 { font-size: 14px; margin: 0; }
 .lead { color: var(--sub); margin: 0 0 20px; }
 
-/* 뼈대 */
+/* 뼈대 — 왼쪽 메뉴는 드로어다. 닫으면 그 폭을 본문에 돌려준다
+   (ATT&CK 표·수사보드처럼 가로로 긴 화면이 있어 200px 이 아쉽다).
+   좁은 화면에서는 자리를 비워 두지 않고 본문 위를 덮으며 열린다. */
 .shell { display: grid; grid-template-columns: 200px 1fr; min-height: 100vh; }
-.side { background: var(--surface); border-right: 1px solid var(--line); padding: 18px 12px; display: flex; flex-direction: column; gap: 18px; position: sticky; top: 0; height: 100vh; }
-.brand { font-weight: 700; font-size: 15px; padding: 0 8px; }
+.side { position: fixed; top: 0; left: 0; z-index: 25; width: 200px; height: 100vh; overflow-y: auto;
+        background: var(--surface); border-right: 1px solid var(--line); padding: 18px 12px;
+        display: flex; flex-direction: column; gap: 18px;
+        transition: transform .18s ease, visibility 0s; }
+/* 닫히면 탭 순서에서도 빠져야 한다 — 안 보이는데 초점이 들어가면 길을 잃는다.
+   visibility 는 미끄러짐이 끝난 뒤에 끈다(여는 쪽은 바로). */
+:root[data-side="closed"] .shell { grid-template-columns: 0 1fr; }
+:root[data-side="closed"] .side { transform: translateX(-100%); visibility: hidden;
+                                  transition: transform .18s ease, visibility 0s .18s; }
+.side-scrim { display: none; }
+/* 열려 있으면 머리의 여는 단추는 숨긴다 — 안쪽 닫기 단추와 같은 일을 해서 둘이 겹친다 */
+:root[data-side="open"] #side-toggle { display: none; }
+.brand-row { display: flex; align-items: flex-start; gap: 4px; }
+.brand { font-weight: 700; font-size: 15px; padding: 0 8px; flex: 1 1 auto; min-width: 0; }
+#side-close { flex: 0 0 auto; }
+@media (prefers-reduced-motion: reduce) { .side { transition: none; } }
 .brand span { display: block; font-weight: 400; font-size: 12px; color: var(--sub); }
 .side nav { display: flex; flex-direction: column; gap: 2px; }
 .side nav.nav-sub { border-top: 1px solid var(--line); padding-top: 10px; margin-top: -8px; }
@@ -70,7 +86,8 @@ h3 { font-size: 14px; margin: 0; }
 .side svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .side-foot { margin-top: auto; font-size: 12px; color: var(--sub); padding: 0 8px; }
 
-.main { min-width: 0; display: flex; flex-direction: column; }
+/* 메뉴가 fixed 라 자동 배치에서 빠진다 — 본문의 칸을 못박아 둔다 */
+.main { grid-column: 2; min-width: 0; display: flex; flex-direction: column; }
 .top { display: flex; align-items: center; gap: 10px; padding: 10px 24px; background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
 .top-spacer { flex: 1; }
 .target-pick { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -78,6 +95,14 @@ h3 { font-size: 14px; margin: 0; }
 .target-pick select { max-width: 420px; min-width: 0; width: 100%; }
 .proj-badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
 .role-badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--sub); white-space: nowrap; }
+/* 연습용 대상 — 우리가 띄운 가짜 서버다. 점검 대상과 같은 뱃지를 달면 안 된다.
+   채운 색(.proj-badge)이 아니라 점선 테두리로, '세지 않는 것' 처럼 보이게 한다. */
+.practice-badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px;
+                  border: 1px dashed var(--sub); color: var(--sub); background: transparent;
+                  white-space: nowrap; cursor: help; }
+.practice-tag { display: inline-block; font-size: 11px; line-height: 1.6; padding: 0 6px;
+                border-radius: 999px; border: 1px dashed var(--sub); color: var(--sub);
+                white-space: nowrap; }
 .content { padding: 24px; max-width: 1400px; width: 100%; }
 
 /* 컨트롤 */
@@ -213,7 +238,11 @@ table.grid { width: 100%; border-collapse: collapse; }
 /* 표면 */
 .probe-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 12px; position: sticky; top: 62px; z-index: 1; }
 .probe-bar label.check, .run label.check { display: flex; align-items: center; gap: 6px; }
-.probe-params { display: flex; gap: 10px; flex-wrap: wrap; }
+/* 고른 모듈의 칸은 줄을 바꿔 세로줄 안쪽에 둔다 — 모듈 고르기와 섞여 보이면
+   어느 칸이 무엇에 딸린 것인지 알 수 없다(11-05 지적). */
+.probe-params { flex: 1 1 100%; display: flex; gap: 10px 14px; flex-wrap: wrap; align-items: flex-end;
+                padding: 2px 0 2px 12px; border-left: 2px solid var(--line); }
+.probe-pick { min-width: 220px; }
 .probe-params label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--sub); }
 .grid.surface tr.ep td { background: var(--surface-2); font-weight: 600; border-top: 1px solid var(--line); }
 .grid.surface td:first-child { width: 28px; }
@@ -297,10 +326,10 @@ mark { background: var(--mark); color: var(--mark-ink); border-radius: 2px; padd
 .empty .btn { margin-top: 8px; }
 
 @media (max-width: 900px) {
-  .shell { grid-template-columns: 1fr; }
-  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px 16px; }
-  .side nav { flex-direction: row; flex-wrap: wrap; }
-  .side-foot { display: none; }
+  /* 좁은 화면에서는 메뉴가 자리를 차지하지 않는다 — 열면 본문 위를 덮는다 */
+  .shell, :root[data-side="closed"] .shell { grid-template-columns: 0 1fr; }
+  :root[data-side="open"] .side-scrim { display: block; position: fixed; inset: 0; z-index: 24;
+                                        background: rgba(0, 0, 0, .4); }
   .top { flex-wrap: wrap; padding: 10px 16px; }
   .target-pick { flex: 1 1 100%; }
   .target-pick select { max-width: none; }

@@ -14,6 +14,12 @@
 
 인증이 필요한 모듈을 여기서 먼저 돌려 볼 수 있게 로그인을 뒀다. 계정은 이 파일에
 그대로 적어 두고 첫 화면에도 띄운다 — 다 가짜고, 안 보이면 기능을 돌려 볼 수가 없다.
+
+자료 내려받기(`/backend/lectures/<id>/material/download?file=`)는 실서버와 같은
+응답 코드를 준다 — 파일 200, 디렉터리 500, 없으면 404. 구조 그리기 모듈이 이 코드를
+오라클로 쓰므로 연습 서버에서도 같아야 한다. 다만 **탐색 권한이 없어 404 가 되는 경우**는
+여기서 흉내 내지 않는다(윈도에서 그 상태를 만들 수 없다). 실서버에서 404 를 '없음'으로
+읽으면 안 되는 이유가 그것이다.
 """
 import base64
 import json
@@ -59,10 +65,29 @@ def _envelope(code, message, result, status=200):
 # 경로 조작·SQL 주입을 실제로 시험할 수 있게, 진짜처럼 동작하되
 # 이 폴더 밖으로는 절대 나가지 않는 가짜 서버 한 채를 임시 폴더에 만든다.
 SANDBOX = Path(tempfile.gettempdir()) / "vcd-demo-root"
+# 경로 이름을 실서버와 같게 둔다 — 씨앗 사전(fs-seeds-sesacedu.txt)이 그대로 맞아야
+# 퍼징 모듈을 여기서 시험하는 의미가 있다.
+MATERIAL_DIR = "srv/sesacedu/material"
 FILES = {
     "etc/passwd": "root:x:0:0:root:/root:/bin/bash\ndemo:x:1000:1000:demo:/home/demo:/bin/sh\n",
-    "etc/nginx/sites-enabled/default": "server {\n  listen 80;\n  root /srv/demo;\n}\n",
-    "srv/demo/material/강의자료.pdf": "(연습용 자료 파일)\n",
+    "etc/os-release": 'PRETTY_NAME="Ubuntu 22.04.4 LTS"\nVERSION_ID="22.04"\n',
+    "etc/nginx/sites-enabled/default":
+        "server {\n  listen 80;\n  root /srv/sesacedu/web;\n"
+        "  access_log /var/log/nginx/sesacedu.access.log;\n}\n",
+    # 수확 고리용 — 이 안에 적힌 절대경로가 다음 요청을 만든다
+    "etc/systemd/system/sesacedu-api.service":
+        "[Service]\nWorkingDirectory=/srv/sesacedu/app\n"
+        "EnvironmentFile=/srv/sesacedu/config/api.env\n"
+        "Environment=JAVA_HOME=/opt/java/jdk-11.0.24+8\n"
+        "ExecStart=/opt/java/jdk-11.0.24+8/bin/java -jar /srv/sesacedu/app/api.jar\n",
+    "srv/sesacedu/config/api.env":
+        "APP_STORAGE_ROOT=/srv/sesacedu/material\n"
+        "APP_BACKUP_DIR=/var/backups/sesacedu-2026-11\n"
+        "DB_PASSWORD=demo-not-real\n",
+    # 어떤 사전에도 없는 이름 — 수확으로만 나온다
+    "opt/java/jdk-11.0.24+8/release": 'JAVA_VERSION="11.0.24"\n',
+    "var/backups/sesacedu-2026-11/dump.sql": "-- (연습용 덤프)\n",
+    MATERIAL_DIR + "/강의자료.pdf": "(연습용 자료 파일)\n",
 }
 
 
@@ -179,12 +204,20 @@ def material_download(lid):
     if "../" in decoded:                       # 올라가기가 통한 경우
         path = SANDBOX / decoded.replace("../", "")
     else:
-        path = SANDBOX / "srv/demo/material" / decoded
+        path = SANDBOX / MATERIAL_DIR / decoded
 
     real = os.path.realpath(path)
-    if not real.startswith(str(SANDBOX.resolve())) or not os.path.isfile(real):
-        return Response("not found", status=404)
-    return Response(Path(real).read_text(encoding="utf-8", errors="replace"), mimetype="text/plain")
+    if not real.startswith(str(SANDBOX.resolve())):
+        return Response("not found", status=404)   # 모래상자 밖은 없는 것으로 둔다
+    # 실서버와 같은 응답 코드를 돌려준다. 구조 그리기 모듈이 이 코드를 오라클로 쓴다.
+    #   파일이면 200, 있는데 파일로 못 보내면 500(디렉터리), stat 가 실패하면 404
+    if os.path.isfile(real):
+        return Response(Path(real).read_text(encoding="utf-8", errors="replace"),
+                        mimetype="text/plain")
+    if os.path.exists(real):
+        return Response('{"status":500,"error":"Internal Server Error"}',
+                        status=500, mimetype="application/json")
+    return Response("not found", status=404)
 
 
 @app.get("/backend/lectures")

@@ -112,7 +112,8 @@
   {% for r in runs %}
     <tr>
       <td class="sub">{{ r.started_at | kst }}</td>
-      <td>{{ r.target_name }}</td>
+      {% set rp = PROJECTS[r.target_project] if r.target_project in PROJECTS else none %}
+      <td>{{ r.target_name }}{% if rp and rp.is_practice(r.target_role) %} <span class="practice-tag">연습용</span>{% endif %}</td>
       <td>{{ all_modules[r.module_id].name if r.module_id in all_modules else r.module_id }}</td>
       <td>{{ r.n }}건</td>
       <td>{% if r.reqs %}<a href="{{ url_for('dash.history', target=r.target_id, run=r.id) }}">{{ r.reqs }}개 보기</a>{% else %}<span class="sub">0</span>{% endif %}</td>
