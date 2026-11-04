@@ -167,9 +167,8 @@ def _jobs_for_page():
         tid = request.args.get("target", type=int)
     except RuntimeError:          # 요청 밖에서 렌더할 때
         tid = None
-    rows = jobs.listing(tid)
-    return {"job_rows": rows,
-            "job_live": sum(1 for j in rows if j["live"]),
+    return {"job_toasts": jobs.take_announcements(tid),
+            "job_live": jobs.live_count(),
             "job_max": jobs.MAX_LIVE}
 
 

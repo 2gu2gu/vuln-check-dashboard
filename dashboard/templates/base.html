@@ -73,22 +73,29 @@
       </button>
     </header>
 
-    {% for j in job_rows %}
-      {% if not j.live %}
-      <div class="flash {{ 'error' if j.status in ('error', 'cancelled') else 'ok' }} job-done" data-run="{{ j.run_id }}">
-        <b>{{ j.module }}</b>
-        {%- if j.status == 'done' %}: {{ j.message }} · 요청 {{ j.sent }}개 · {{ j.seconds }}초
-        {%- elif j.status == 'cancelled' %} 멈췄습니다 — 요청 {{ j.sent }}개까지 보냈습니다
-        {%- else %} 실패: {{ j.error }}{% endif %}
-      </div>
-      {% endif %}
-    {% endfor %}
     {% with msgs = get_flashed_messages(with_categories=true) %}
       {% for cat, msg in msgs %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
     {% endwith %}
 
     <main class="content">{% block content %}{% endblock %}</main>
   </div>
+</div>
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false">
+  {% for j in job_toasts %}
+  <div class="toast {{ 'error' if j.status in ('error', 'cancelled') else 'ok' }}"
+       data-keep="{{ 'yes' if j.status == 'error' else '' }}" role="status">
+    <span class="toast-dot" aria-hidden="true"></span>
+    <div>
+      <b>{{ j.module }}</b>
+      {%- if j.status == 'done' %} <span class="sub">요청 {{ j.sent }}개 · {{ j.seconds }}초</span>
+        <div>{{ j.message }}</div>
+      {%- elif j.status == 'cancelled' %} <span class="sub">멈춤</span>
+        <div>요청 {{ j.sent }}개까지 보냈습니다. 그때까지 찾은 것은 남아 있습니다.</div>
+      {%- else %} <span class="sub">실패</span><div>{{ j.error }}</div>{% endif %}
+    </div>
+    <button class="toast-x" type="button" aria-label="닫기">✕</button>
+  </div>
+  {% endfor %}
 </div>
 <aside class="drawer" id="jobs-drawer" hidden aria-label="돌고 있는 모듈">
   <div class="drawer-head">
