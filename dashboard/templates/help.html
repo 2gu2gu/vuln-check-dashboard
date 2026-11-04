@@ -220,10 +220,18 @@
 
 <section id="auth">
   <h2>로그인한 상태로 점검</h2>
-  <p>대상 탭의 <b>인증 헤더</b>에 <code>Cookie: …</code> 나 <code>Authorization: Bearer …</code> 를 한 줄에 하나씩 넣습니다.</p>
+  <p>대상 탭의 <b>인증 헤더</b>에 <code>Cookie: …</code> 나 <code>Authorization: Bearer …</code> 를 한 줄에 하나씩 넣습니다.
+    로그인 방법이 정해진 대상은 <b>로그인해서 토큰 받기</b> 칸에 아이디·비밀번호를 넣으면
+    대시보드가 로그인해 토큰을 그 자리에 넣어 줍니다 — 터미널에서 받아다 붙일 필요가 없습니다.</p>
   <dl class="facts">
     <dt>붙는 곳</dt><dd>그 대상 주소로 가는 요청에만. 다른 주소로는 나가지 않습니다.</dd>
     <dt>보관</dt><dd>이 PC 의 <code>instance/</code> DB 에만 있고, 화면·기록에는 이름만 보입니다.</dd>
+    <dt>비밀번호</dt><dd><b>저장하지 않습니다.</b> 받아서 한 번 보내고 버립니다 —
+      DB 에도, 요청 기록에도 남지 않습니다. 남는 것은 받아 온 토큰뿐이고 그것도 기록에서는 *** 로 가려집니다.
+      안내문에는 토큰 앞뒤 몇 글자만 보여 줍니다(<code>abcdef…rstu</code>) — 화면 캡처가 발표에 그대로 나가도 되게.</dd>
+    <dt>다시 받으면</dt><dd>인증 줄만 새 토큰으로 바뀌고 <code>Cookie:</code> 같은 다른 줄은 그대로 둡니다.</dd>
+    <dt>어디에 적나</dt><dd>프로젝트 팩의 <code>PROJECT["login"]</code> — 보낼 주소·본문 모양·토큰이 든 자리.
+      앱 본체는 특정 서비스의 로그인 모양을 모릅니다.</dd>
     <dt>주의</dt><dd>테스트 계정 토큰만 넣습니다.</dd>
   </dl>
 </section>
