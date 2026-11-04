@@ -60,6 +60,22 @@
               {% if header_names[t.id] %}<button class="btn ghost danger" type="submit" name="clear" value="yes">지우기</button>{% endif %}
             </div>
           </form>
+          {% if logins.get(t.id) %}
+          <form method="post" action="{{ url_for('dash.target_login', tid=t.id) }}" class="login-get">
+            {{ csrf_field() }}
+            <b class="small">로그인해서 토큰 받기</b>
+            <div class="login-row">
+              <input name="ident" type="text" autocomplete="off"
+                     placeholder="{{ logins[t.id].get('id_label') or '아이디' }}" aria-label="아이디">
+              <input name="secret" type="password" autocomplete="off"
+                     placeholder="비밀번호" aria-label="비밀번호">
+              <button class="btn" type="submit">받아서 넣기</button>
+            </div>
+            <small class="sub">{{ logins[t.id].get('note') or
+              '비밀번호는 저장하지 않습니다 — 한 번 보내고 버립니다. 받은 토큰만 위 인증 헤더에 들어갑니다.' }}</small>
+            <small class="sub mono">POST {{ logins[t.id].get('path') }}</small>
+          </form>
+          {% endif %}
         </details>
       </td>
       <td class="sub">{{ t.note }}</td>

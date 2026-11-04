@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
                    render_template, request, url_for)
 
-from . import cvss, jobs, needs, scope, wordlists
+from . import cvss, jobs, login as login_mod, needs, scope, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -229,7 +229,10 @@ def targets():
         return redirect(url_for("dash.targets"))
     target, targets = _current_target()
     names = {t["id"]: list(_parse_headers(t["headers"])) for t in targets}
-    return render_template("targets.html", target=target, targets=targets, header_names=names)
+    logins = {row["id"]: login_mod.config_for(_projects().get(row["project"]), row["role"])
+              for row in targets}
+    return render_template("targets.html", target=target, targets=targets,
+                           header_names=names, logins=logins)
 
 
 @bp.post("/targets/<int:tid>/delete")
@@ -269,6 +272,40 @@ def target_headers(tid):
     except ValueError as e:
         flash(str(e), "error")
     return redirect(url_for("dash.targets", target=tid))
+
+
+@bp.post("/targets/<int:tid>/login")
+def target_login(tid):
+    """로그인해서 토큰을 받아 이 대상의 인증 헤더에 넣는다. 비밀번호는 저장하지 않는다."""
+    db = get_db()
+    t = db.execute("SELECT * FROM targets WHERE id = ?", [tid]).fetchone() or abort(404)
+    back = url_for("dash.targets", target=tid)
+    cfg = login_mod.config_for(_projects().get(t["project"]), t["role"])
+    if not cfg:
+        flash("이 대상에는 로그인 방법이 정해져 있지 않습니다", "error")
+        return redirect(back)
+
+    hosts = _project_of(t).role_scope(t["role"])
+    try:
+        g.scope_hosts = hosts
+        token = login_mod.fetch_token(t["url"], cfg, request.form.get("ident", "").strip(),
+                                      request.form.get("secret", ""), hosts=hosts)
+    except (login_mod.LoginFailed, scope.OutOfScope, OSError) as e:
+        flash(str(e), "error")
+        return redirect(back)
+    finally:
+        g.pop("scope_hosts", None)
+
+    # 이미 있던 헤더는 두고 인증 줄만 바꾼다
+    name = (cfg.get("header") or "Authorization").lower()
+    keep = [ln for ln in (t["headers"] or "").splitlines()
+            if ln.strip() and ln.split(":", 1)[0].strip().lower() != name]
+    text = "\n".join(keep + [login_mod.header_line(cfg, token)])
+    db.execute("UPDATE targets SET headers = ? WHERE id = ?", [text, tid])
+    db.commit()
+    flash("로그인했습니다. 토큰을 인증 헤더에 넣었습니다 (%s). 비밀번호는 저장하지 않았습니다."
+          % login_mod.mask(token), "ok")
+    return redirect(back)
 
 
 # ── 모듈 ──────────────────────────────────────────────────────
