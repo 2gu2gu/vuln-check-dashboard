@@ -68,7 +68,7 @@
       <span class="need-state">{% if n.ready %}준비됨{% elif n.ready is false %}{{ '없음 — 지금은 실행해도 실패합니다' if n.required else '없음 — 없어도 돌아갑니다' }}{% else %}{{ '직접 준비해야 합니다' if n.required else '선택' }}{% endif %}</span>
       <p class="sub small">{{ n.why }}</p>
       <p class="small"><b>준비:</b> {{ n.how }}
-        {% if n.kind == "auth_header" and target %}<a href="{{ url_for('dash.targets', target=target.id) }}">대상 탭에서 넣기 →</a>{% endif %}
+        {% if n.kind == "auth_header" and target %}<a href="{{ url_for('dash.targets', target=target.id) }}#hdr-{{ target.id }}">대상 탭에서 넣기 →</a>{% endif %}
       </p>
     </div>
   </div>
