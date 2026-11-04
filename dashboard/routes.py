@@ -692,7 +692,7 @@ def report_json(tid):
     t, rows, exchanges = _report_rows(tid)
     mods = _modules()
     data = {
-        "tool": "vuln-check-dashboard", "version": current_app.jinja_env.globals["VERSION"], "generated_at": now_iso(),
+        "tool": "딸깍이 (DAST 대시보드)", "version": current_app.jinja_env.globals["VERSION"], "generated_at": now_iso(),
         "target": {"name": t["name"], "url": t["url"], "project": _project_of(t).name,
                    "role": _role_label(t)},
         "findings": [{
@@ -711,7 +711,7 @@ def report_json(tid):
 def report(tid):
     t, rows, exchanges = _report_rows(tid)
     mods = _modules()
-    lines = [f"# 점검 결과 — {t['name']}", "", f"- 프로젝트: {_project_of(t).name}",
+    lines = [f"# 점검 결과 — {t['name']}", "", "- 도구: 딸깍이 (DAST 대시보드)", f"- 프로젝트: {_project_of(t).name}",
              f"- 대상: {t['url']}" + (f" ({_role_label(t)})" if _role_label(t) else ""),
              f"- 작성: {fmt_kst(now_iso())} (KST)", f"- 발견: {len(rows)}건", "",
              "| # | 심각도 | 항목 | 위치 | ATT&CK | 상태 |", "|---|---|---|---|---|---|"]

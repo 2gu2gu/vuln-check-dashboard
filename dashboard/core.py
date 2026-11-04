@@ -131,7 +131,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 _opener = urllib.request.build_opener(_NoRedirect)
 
-USER_AGENT = "vuln-check-dashboard/0.2"
+USER_AGENT = "ddalkkak-dast/0.2"      # 점검 로그에서 우리 요청을 가려내려고 이름을 밝힌다
 SECRET_HEADERS = {"cookie", "authorization", "proxy-authorization", "x-api-key", "x-auth-token"}
 BODY_LIMIT = 200_000  # 요청 기록에 남기는 응답 본문 최대 글자 수
 
