@@ -21,7 +21,7 @@
 
 {% if mod %}
 <div class="panel tool-form">
-  <p class="sub">{{ mod.description }}
+  <p class="sub">{{ mod.description | strong }}
     {% for a in mod.attack %}<span class="tag"><span class="mono">{{ a.technique }}</span></span>{% endfor %}
   </p>
   {% if target %}{{ needs_block(module_needs(mod, target), target) }}{% endif %}
@@ -80,7 +80,7 @@
   <ul class="plain">{% for f in result.findings %}<li>{{ sev(f.severity) }} {{ f.title }}</li>{% endfor %}</ul>
   {% endif %}
 
-  {% if result.note %}<p class="sub small">{{ result.note }}</p>{% endif %}
+  {% if result.note %}<p class="sub small">{{ result.note | strong }}</p>{% endif %}
 </div>
 {% endif %}
 {% endif %}

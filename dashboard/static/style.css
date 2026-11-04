@@ -541,6 +541,16 @@ html { scroll-behavior: smooth; }
 .bd-note { margin-top: 12px; line-height: 1.6; }
 @media (max-width: 760px) { .bd-col { flex-basis: 85vw; } }
 
+/* 입력칸이 필수인지 선택인지 안 보여 못 쓰겠다는 지적(11-05) */
+/* 칸 이름과 같은 줄에 둔다 — .field 가 세로 flex 라 그냥 두면 혼자 한 줄을 차지한다.
+   이름은 need-mark 가 아니다. 그건 준비물 칸의 8px 점이 이미 쓰고 있다. */
+.field-name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.req-mark { font-size: 10px; font-weight: 600; letter-spacing: .02em; line-height: 1.5;
+            border-radius: 999px; padding: 0 6px; cursor: help; white-space: nowrap; }
+.req-mark.req { color: var(--accent); border: 1px solid var(--accent); }
+.req-mark.when { color: var(--sub); border: 1px solid var(--line); }
+.req-mark.opt { color: var(--sub); border: 1px solid transparent; font-weight: 500; opacity: .75; }
+
 /* 인증 헤더 칸 — 표 안에 접혀 있어 눌러야 하는 줄 모른다는 지적(11-05) */
 .hdr-edit > summary { cursor: pointer; display: flex; align-items: center; gap: 6px; }
 .hdr-cue { font-size: 11px; font-weight: 600; color: var(--accent);

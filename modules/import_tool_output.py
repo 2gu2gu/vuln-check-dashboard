@@ -30,7 +30,7 @@ META = {
          "how": "칼리에서 직접 돌리고(ffuf 는 -of json, nuclei 는 -jsonl) 나온 결과를 붙여 넣습니다"},
     ],
     "params": [
-        {"name": "output", "label": "도구 결과 붙여 넣기", "type": "textarea", "default": "",
+        {"name": "output", "need": "required", "label": "도구 결과 붙여 넣기", "type": "textarea", "default": "",
          "placeholder": '{"results":[{"url":"https://example.test/admin","status":200,"length":1234}]}\n'
                         '또는  /admin  (Status: 200) [Size: 1234]\n'
                         '또는  https://example.test/api/v1/users'},

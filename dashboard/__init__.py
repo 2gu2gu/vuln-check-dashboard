@@ -30,6 +30,17 @@ def mark_tokens(text) -> Markup:
     return Markup(TOKEN.sub(r"<mark>\1</mark>", str(escape(text or ""))))
 
 
+STRONG = re.compile(r"\*\*(.+?)\*\*", re.S)
+
+
+def strong(text) -> Markup:
+    """글 속의 **강조** 를 굵게. 모듈이 설명에 쓰는 표시인데 그동안 별 두 개가 그대로 보였다.
+
+    먼저 이스케이프하고 나서 표시만 감싼다 — 모듈 글에 든 꺾쇠가 태그가 되지 않게.
+    """
+    return Markup(STRONG.sub(r"<b>\g<1></b>", str(escape(text or ""))))
+
+
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
     instance = Path(app.instance_path)
@@ -73,6 +84,7 @@ def create_app(test_config=None):
 
     app.jinja_env.filters["kst"] = fmt_kst
     app.jinja_env.filters["mark_tokens"] = mark_tokens
+    app.jinja_env.filters["strong"] = strong
     def csrf_field():
         return Markup('<input type="hidden" name="_csrf" value="%s">' % escape(csrf_token()))
 
