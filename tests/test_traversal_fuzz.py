@@ -39,11 +39,13 @@ def seeded(pages, default=404):
 def run(monkeypatch, pages, **params):
     fetch = seeded(pages)
     monkeypatch.setattr(mod, "fetch", fetch)
-    body = dict({"mode": "seed", "wordlist": "", "limit": "10",
+    # 사전은 두 번 읽힌다(씨앗 1단계·이름 2단계). lambda 안에서 pop 하면
+    # 첫 번째만 _words 를 받고 두 번째가 기본값으로 떨어진다.
+    words = params.pop("_words", None) or WORDS
+    body = dict({"mode": "seed", "wordlist": "", "names": "", "limit": "10",
                  "kinds": "yes", "depth": "9", "scheme": "double-full",
                  "lecture": "123"}, **params)
-    monkeypatch.setattr(mod.wordlists, "load",
-                        lambda *_a, **_k: (params.pop("_words", None) or WORDS, False))
+    monkeypatch.setattr(mod.wordlists, "load", lambda *_a, **_k: (list(words), False))
     return mod.run(T, body), fetch
 
 
@@ -196,3 +198,75 @@ def test_empty_wordlist_is_refused(monkeypatch):
         mod.run(T, {"mode": "seed", "wordlist": "", "limit": "5", "kinds": "no",
                     "depth": "9", "scheme": "double-full", "lecture": "123"})
     assert "사전" in str(exc.value)
+
+
+# ── 파이프라인: 한 번 실행으로 끝까지 간다 ───────────────────────────
+# 씨앗으로 디렉터리를 확정하고 → 그 디렉터리 아래를 사전으로 넓히고 →
+# 500 종류를 가리고 → 트리까지. 사람이 중간에서 결과를 읽고 다시 타이핑하지 않는다.
+
+def pipeline(monkeypatch, pages, seeds, names, **params):
+    fetch = seeded(pages)
+    monkeypatch.setattr(mod, "fetch", fetch)
+    turn = {"n": 0}
+
+    def load(*_a, **_k):
+        turn["n"] += 1
+        return (list(seeds) if turn["n"] == 1 else list(names)), False
+
+    monkeypatch.setattr(mod.wordlists, "load", load)
+    body = dict({"mode": "pipeline", "wordlist": "s", "names": "n", "limit": "50",
+                 "kinds": "yes", "depth": "9", "scheme": "double-full",
+                 "lecture": "123", "hints": ""}, **params)
+    return mod.run(T, body), fetch
+
+
+DIRS = {"/srv/app": 500, "/srv/app/..": 500,
+        "/srv/app/conf": 500, "/srv/app/conf/..": 500,
+        "/srv/app/api.env": 200}
+
+
+def test_stage_two_uses_what_stage_one_found(monkeypatch):
+    """핵심 — 2단계 기준 디렉터리를 사람이 적지 않는다. 1단계가 찾은 것을 쓴다."""
+    r, fetch = pipeline(monkeypatch, DIRS, seeds=["srv/app", "etc/nope"],
+                        names=["conf", "api.env"])
+    assert "/srv/app/conf" in fetch.calls and "/srv/app/api.env" in fetch.calls
+    # 1단계에서 404 였던 곳 아래로는 넓히지 않는다 — 요청 낭비다
+    assert "/etc/nope/conf" not in fetch.calls
+    assert [p for p in r.rows if p[0] == "/srv/app/api.env"][0][5] == "확장"
+
+
+def test_tree_is_drawn_in_the_same_run(monkeypatch):
+    r, _ = pipeline(monkeypatch, DIRS, seeds=["srv/app"], names=["conf", "api.env"])
+    assert "srv/" in r.text and "api.env" in r.text        # 트리가 같은 실행에서 나온다
+    assert "출처" in r.text
+
+
+def test_stages_are_reported(monkeypatch):
+    r, _ = pipeline(monkeypatch, DIRS, seeds=["srv/app"], names=["conf"])
+    assert "씨앗" in r.summary and "확장" in r.summary
+
+
+def test_hints_are_kept_apart(monkeypatch):
+    """사람·AI 가 넣은 경로는 '퍼징이 찾았다'로 집계되지 않는다."""
+    pages = dict(DIRS, **{"/opt/x+1": 500, "/opt/x+1/..": 500})
+    r, _ = pipeline(monkeypatch, pages, seeds=["srv/app"], names=["conf"], hints="opt/x+1")
+    row = [p for p in r.rows if p[0] == "/opt/x+1"][0]
+    assert row[5] == "단서(밖에서)"
+    assert "밖에서 받아 확인만 함 1개" in r.text
+    assert "퍼징이 찾은 것이 아니다" in r.text
+    assert "출처가 섞여 있습니다" in r.note
+    f = r.findings[0]
+    assert "단서로 받아 확인한 것 1개" in f.evidence
+    assert "/opt/x+1" not in f.evidence.split("단서로 받아")[0]   # 앞쪽(퍼징 성과)에는 없다
+
+
+def test_pipeline_without_hints_says_nothing_about_them(monkeypatch):
+    r, _ = pipeline(monkeypatch, DIRS, seeds=["srv/app"], names=["conf"])
+    assert "단서" not in r.note and "밖에서" not in r.text
+
+
+def test_budget_is_not_exceeded(monkeypatch):
+    r, fetch = pipeline(monkeypatch, DIRS,
+                        seeds=["srv/app"] + [f"d{i}" for i in range(500)],
+                        names=[f"n{i}" for i in range(500)])
+    assert len(fetch.calls) <= mod.MAX_REQUESTS
