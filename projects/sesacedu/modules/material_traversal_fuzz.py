@@ -88,6 +88,7 @@ import re
 from dashboard.core import Finding, ToolResult, fetch
 from dashboard.payloads import ENCODINGS, traversal
 from dashboard import wordlists
+from projects.sesacedu.fs_knowledge import describe
 from projects.sesacedu.modules.material_fs_map import _size, _tree
 
 META = {
@@ -135,6 +136,11 @@ META = {
          "help": "1단계가 찾은 디렉터리 아래에 붙일 **이름** 목록입니다. SecLists 를 붙이면 함께 뜹니다."},
         {"name": "base", "label": "기준 디렉터리 (확장만 모드)", "default": "srv/sesacedu",
          "help": "'확장만' 에서 이 아래를 때립니다. 맨 앞 / 는 빼고 씁니다. 다른 모드에서는 무시합니다."},
+        {"name": "min_severity", "label": "결과로 올릴 최소 민감도", "type": "select", "default": "high",
+         "options": [{"value": v, "label": l} for v, l in
+                     (("critical", "치명만"), ("high", "높음 이상"), ("medium", "보통 이상"),
+                      ("low", "낮음 이상"), ("none", "따로 올리지 않음"))],
+         "help": "읽힌 파일 중 이 등급 이상은 결과 탭에 따로 올립니다. 트리에는 전부 보입니다."},
         {"name": "rounds", "label": "수확 바퀴", "type": "int", "default": "2",
          "help": "읽힌 설정 파일 안에 적힌 절대경로를 뽑아 다시 때립니다. 거기서 또 파일이 읽히면 "
                  "한 바퀴 더. 0 이면 수확하지 않습니다. 사전으로는 못 찾는 이름(버전·난수)이 "
@@ -415,6 +421,12 @@ def run(target, params):
     if want_kinds and not walker.auth_stop:
         walker.sort_kinds([n for n in walker.nodes if n["kind"] is None])
 
+    # ── 찾은 것에 '무엇인지' 를 붙인다 ──
+    # 퍼징은 경로를 찾을 뿐 의미는 모른다. api.env 를 찾아 놓고 크기만 적으면
+    # 보고서를 읽는 사람이 왜 중요한지 알 수 없다.
+    for n in walker.nodes:
+        n["note"], n["severity"] = describe(n["path"])
+
     nodes = walker.nodes
     auth_stop = walker.auth_stop
     sent = walker.sent
@@ -471,6 +483,23 @@ def run(target, params):
                             "자료 번호로만 찾는 것입니다. 구조가 드러나면 다음 공격의 표적이 "
                             "좁혀지므로, 읽힌 설정 파일에 든 자격증명은 전부 교체해야 합니다."),
             response=(readable or nodes)[0]["_r"]))
+
+    # 읽힌 민감 파일은 따로 올린다 — 트리 하나로는 'api.env 가 읽혔다' 가 묻힌다
+    rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+    want = rank.get(params.get("min_severity", "high"), 1) if params.get("min_severity") != "none" else -1
+    for n in sorted(readable, key=lambda x: (rank.get(x["severity"], 4), x["path"])):
+        if want < 0 or rank.get(n["severity"], 4) > want:
+            continue
+        findings.append(Finding(
+            title="민감 파일 노출: %s" % n["path"],
+            severity=n["severity"],
+            location=target.url + PATH.format(lecture=lecture, payload="<" + scheme + ">"),
+            evidence="%s · %s · 응답 %s · 출처 %s\n%s"
+                     % (n["path"], _size(n["size"]), n["status"], SOURCE_LABEL[n["source"]],
+                        n["note"] or "표에 없는 경로입니다 — 무엇인지는 사람이 확인하세요."),
+            recommendation="이 파일이 밖에서 읽힌다면 안에 든 값(자격증명·키·내부 주소)은 "
+                           "전부 노출된 것으로 보고 교체해야 합니다. 경로 조작 자체를 막는 것이 먼저입니다.",
+            response=n["_r"]))
 
     note = ["파일 내용은 가져오지 않았습니다 — 응답 코드와 길이만 봅니다. "
             "내용을 보려면 읽힌 행의 '내용 보기' 로 넘어갑니다."]

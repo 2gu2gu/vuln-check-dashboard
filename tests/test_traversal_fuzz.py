@@ -415,3 +415,47 @@ def test_harvested_plus_path_survives_the_round_trip():
     from dashboard.payloads import traversal
     path = next(p for p in mod.harvest_paths(REAL_UNIT) if "+" in p)
     assert "+" not in traversal(path, 9, "double-full")
+
+
+# ── 찾은 것에 '무엇인지' 를 붙인다 ───────────────────────────────────
+# 퍼징은 경로를 찾을 뿐 의미는 모른다. api.env 를 찾아 놓고 크기만 적으면
+# 보고서를 읽는 사람이 왜 중요한지 알 수 없다.
+
+def test_known_paths_get_a_description():
+    from projects.sesacedu.fs_knowledge import describe
+    desc, sev = describe("etc/sesacedu/api.env")
+    assert sev == "critical" and "JWT" in desc
+
+
+def test_guessed_descriptions_are_marked():
+    """짐작을 본 것처럼 적으면 보고서가 틀린다."""
+    from projects.sesacedu.fs_knowledge import describe
+    desc, sev = describe("srv/whatever/secrets.env")
+    assert sev == "critical" and desc.endswith("(추정)")
+    assert describe("etc/sesacedu/api.env")[0].endswith("(추정)") is False
+
+
+def test_unknown_path_says_nothing():
+    from projects.sesacedu.fs_knowledge import describe
+    assert describe("opt/zzz/thing") == ("", "info")
+
+
+def test_tree_carries_the_descriptions(monkeypatch):
+    pages = dict(DIRS, **{"/etc/sesacedu/api.env": 200})
+    r, _ = pipeline(monkeypatch, pages, seeds=["etc/sesacedu/api.env"], names=["conf"])
+    assert "DB·JWT 서명키" in r.text
+
+
+def test_sensitive_reads_become_their_own_findings(monkeypatch):
+    pages = dict(DIRS, **{"/etc/sesacedu/api.env": 200})
+    r, _ = pipeline(monkeypatch, pages, seeds=["etc/sesacedu/api.env"], names=["conf"])
+    one = [f for f in r.findings if f.title.startswith("민감 파일 노출")]
+    assert one and one[0].severity == "critical"
+    assert "/etc/sesacedu/api.env" in one[0].title
+
+
+def test_min_severity_can_turn_that_off(monkeypatch):
+    pages = dict(DIRS, **{"/etc/sesacedu/api.env": 200})
+    r, _ = pipeline(monkeypatch, pages, seeds=["etc/sesacedu/api.env"], names=["conf"],
+                    min_severity="none")
+    assert not [f for f in r.findings if f.title.startswith("민감 파일 노출")]
