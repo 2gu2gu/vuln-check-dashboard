@@ -11,6 +11,8 @@ META = {
     "category": "입력 검증",
     # 반사형 XSS 의 전형값 — 피해자가 링크를 눌러야 하고 브라우저로 범위가 넘어간다
     "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+    # 노션 '웹 서비스 취약점 목록' 의 취약점 유형 — 넣은 특수문자가 걸러지지 않고 본문·속성·스크립트 자리로 돌아오는지
+    "vuln": "XSS",
     "kind": "active",
     "stage": "probe",
     "severity": "medium",

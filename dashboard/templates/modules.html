@@ -18,16 +18,47 @@
   {{ empty("대상을 먼저 등록하세요", "모듈은 등록된 대상에만 실행됩니다.", url_for('dash.targets'), "대상 등록") }}
 {% endif %}
 
-{% for title, hint, mods in groups %}
-<div class="group-head"><h2>{{ title }}</h2><span class="sub mono small">{{ hint }}</span></div>
-{% if not mods %}<p class="sub">아직 모듈이 없습니다.</p>{% endif %}
+<div class="by-tabs" role="tablist" aria-label="묶는 기준">
+  <span class="sub small">묶는 기준</span>
+  {% for key, label, hint in ways %}
+  <a class="by-tab {{ 'on' if key == way }}" role="tab" aria-selected="{{ 'true' if key == way else 'false' }}"
+     title="{{ hint }}"
+     href="{{ url_for('dash.modules', target=target.id if target else none, by=key) }}">{{ label }}</a>
+  {% endfor %}
+  <span class="sub small by-hint">
+    {%- for key, label, hint in ways %}{% if key == way %}{{ hint }}{% endif %}{% endfor -%}
+  </span>
+</div>
+
+<div class="mod-layout">
+  <nav class="side-drawer" id="mod-drawer" aria-label="묶음 건너뛰기">
+    <div class="side-head">
+      <b class="small">묶음 {{ rows | length }}</b>
+      <button class="btn ghost icon small-btn" type="button" id="mod-drawer-toggle"
+              aria-expanded="true" aria-controls="mod-drawer-list" title="접기/펴기">‹</button>
+    </div>
+    <ul id="mod-drawer-list">
+      {% for b in rows %}
+      <li><a href="#g-{{ loop.index }}"><span>{{ b.label }}</span><span class="sub">{{ b.modules | length }}</span></a></li>
+      {% endfor %}
+    </ul>
+    {% if missing %}
+    <p class="sub small side-missing">아직 없는 유형<br>{{ missing | join(' · ') }}<br>
+      <span class="sub">팀원이 다음에 만들 것을 고를 때 봅니다.</span></p>
+    {% endif %}
+  </nav>
+
+  <div class="mod-main">
+{% for b in rows %}
+<div class="group-head" id="g-{{ loop.index }}"><h2>{{ b.label }}</h2>
+  <span class="sub small">{{ b.modules | length }}개{% if b.hint %} · {{ b.hint }}{% endif %}</span></div>
 <div class="mod-grid">
-{% for m in mods %}
+{% for m in b.modules %}
   <article class="panel mod">
     <header>
       <span><span class="stage stage-{{ m.stage }}">{{ m.stage_label }}</span>
         <span class="kind kind-{{ m.kind }}">{{ "수동(읽기)" if m.kind == "passive" else "능동" }}</span></span>
-      <span class="sub">{{ m.category }}</span>
+      <span class="sub">{{ m.category }}{% if m.vuln and m.vuln != '기타' %} · <b>{{ m.vuln }}</b>{% endif %}</span>
     </header>
     <h3>{{ m.name }}</h3>
     <p>{{ m.description }}</p>
@@ -55,6 +86,8 @@
 {% endfor %}
 </div>
 {% endfor %}
+  </div>
+</div>
 
 {% if runs %}
 <div class="group-head"><h2>최근 실행</h2></div>

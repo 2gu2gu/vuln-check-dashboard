@@ -8,6 +8,8 @@ META = {
     "id": "tech_fingerprint",
     "name": "서버 정보 노출",
     "category": "정보 수집",
+    # 노션 '웹 서비스 취약점 목록' 의 취약점 유형 — Server·X-Powered-By 헤더와 오류 페이지의 버전·스택 트레이스 — 응답에 있으면 안 될 것이 그대로 나오는 것
+    "vuln": "정보노출",
     "kind": "passive",
     "attack": [{"tactic": "TA0043", "technique": "T1592.002", "name": "Gather Victim Host Information: Software"}],
     "description": "Server·X-Powered-By 헤더, generator 메타 태그, 오류 페이지의 버전·스택 트레이스 노출을 봅니다.",

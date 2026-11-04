@@ -17,6 +17,8 @@ META = {
     "category": "경로 조작",
     # 로그인한 사용자가 저장소 밖 파일을 읽는다
     "cvss": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+    # 노션 '웹 서비스 취약점 목록' 의 취약점 유형 — 저장 폴더 밖의 파일을 읽어 오는 것
+    "vuln": "FILE",
     "kind": "active",
     "roles": ["user_web", "practice"],  # 이 역할의 대상에서만 보인다
     "stage": "tool",
