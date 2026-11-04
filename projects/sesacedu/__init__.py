@@ -11,11 +11,14 @@ PROJECT = {
     "roles": {
         "user_web": {
             "name": "사용자 웹 (EC2 ①, sesacedu.store)",
-            "scope": ["sesacedu.store"],
+            # '=' 는 그 호스트만 — admin.sesacedu.store 로는 못 나간다
+            "scope": ["=sesacedu.store", "=www.sesacedu.store"],
         },
         "admin_web": {
-            "name": "관리자 웹 (EC2 ②, 터널 3000)",
-            "scope": ["localhost:3000", "127.0.0.1:3000"],
+            # 11-04 8443 포트를 닫고 서브도메인으로 옮겼다. nginx 가 접속 이름(SNI)으로 가른다.
+            # 터널(localhost:3000)도 아직 살아 있어 둘 다 둔다.
+            "name": "관리자 웹 (EC2 ②, admin.sesacedu.store)",
+            "scope": ["=admin.sesacedu.store", "localhost:3000", "127.0.0.1:3000"],
         },
         "siem": {
             "name": "Wazuh (EC2 ③, 터널 8443)",

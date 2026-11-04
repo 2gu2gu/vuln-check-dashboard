@@ -32,3 +32,38 @@ def test_fetch_blocks_before_sending(app, monkeypatch):
         with pytest.raises(scope.OutOfScope):
             core.fetch("https://example.com/")
     assert sent == []
+
+
+# ── '=' 는 그 호스트만 (하위 도메인 제외) ──────────────────────────
+# 관리자 웹이 8443 포트에서 admin.sesacedu.store 로 옮겨 가면서,
+# 역할 범위 'sesacedu.store' 가 관리자 하위 도메인까지 덮는 문제가 생겼다.
+
+def test_bare_entry_still_covers_subdomains():
+    assert scope.is_in_scope("https://admin.sesacedu.store/", ["sesacedu.store"])
+
+
+def test_exact_entry_excludes_subdomains():
+    assert scope.is_in_scope("https://sesacedu.store/", ["=sesacedu.store"])
+    assert not scope.is_in_scope("https://admin.sesacedu.store/", ["=sesacedu.store"])
+
+
+def test_user_web_role_cannot_reach_admin_host():
+    from dashboard.registry import discover_projects
+    projects = discover_projects()[0]
+    roles = projects["sesacedu"].roles
+    assert not scope.is_in_scope("https://admin.sesacedu.store/", roles["user_web"]["scope"])
+    assert scope.is_in_scope("https://admin.sesacedu.store/", roles["admin_web"]["scope"])
+    # 터널도 아직 살아 있다
+    assert scope.is_in_scope("http://localhost:3000/", roles["admin_web"]["scope"])
+
+
+def test_exact_entry_with_port():
+    assert scope.is_in_scope("http://localhost:3000/", ["=localhost:3000"])
+    assert not scope.is_in_scope("http://localhost:8443/", ["=localhost:3000"])
+
+
+def test_host_scan_respects_exact_entry():
+    from dashboard.scope import ensure_host_allowed, OutOfScope
+    ensure_host_allowed("sesacedu.store", ["=sesacedu.store"])
+    with pytest.raises(OutOfScope):
+        ensure_host_allowed("admin.sesacedu.store", ["=sesacedu.store"])
