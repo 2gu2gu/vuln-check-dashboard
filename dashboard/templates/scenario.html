@@ -1,24 +1,81 @@
 {% extends "base.html" %}
 {% from "_macros.html" import sev, empty %}
-{% block title %}시나리오{% endblock %}
+{% block title %}수사보드{% endblock %}
 {% block content %}
-<h1>시나리오 초안</h1>
-<p class="lead">미확인·확인됨 결과를 ATT&CK 전술 순서로 늘어놓았습니다. 실제 시나리오는 팀이 이 흐름을 보고 정합니다.</p>
+<h1>수사보드</h1>
+<p class="lead">전술을 공격 진행 순서로 세웠습니다. 칸마다
+  <b class="bd-k-done">확인됨</b>(실제로 돌려서 나온 것)과
+  <b class="bd-k-todo">제안</b>(그 전술을 다루는데 아직 안 돌린 모듈)을 <b>따로</b> 담습니다 —
+  섞어 두면 발표에서 "이건 실제로 한 건가요?" 에 답을 못 합니다.</p>
 
-{% if not steps %}
-  {{ empty("이어 붙일 결과가 없습니다", "점검 결과가 쌓이면 전술 단계별로 묶여 보입니다.", url_for('dash.modules', target=target.id if target else none), "모듈로 가기") }}
+{% if not target %}
+  {{ empty("대상을 먼저 고르세요", "수사보드는 대상 하나의 진행을 보여 줍니다.", url_for('dash.targets'), "대상 등록") }}
+{% elif not rows %}
+  {{ empty("아직 아무것도 없습니다", "모듈을 하나 돌리면 여기에 흐름이 생깁니다.", url_for('dash.modules', target=target.id), "모듈로 가기") }}
 {% else %}
-<ol class="flow">
-  {% for s in steps %}
-  <li>
-    <div class="flow-head"><span class="step">{{ loop.index }}</span><b>{{ s.name }}</b><span class="mono sub">{{ s.tactic }}</span></div>
-    <ul>
-      {% for f in s.findings %}
-      <li>{{ sev(f.severity) }} {{ f.title }} <span class="mono sub">{{ f.location }} · {{ f.technique }}</span></li>
+
+<div class="panel bd-head">
+  <div>
+    <b>{{ head.done }}</b> / {{ head.tactics }} 전술에서 결과가 나왔습니다
+    {%- if head.last %} · 가장 멀리 간 곳 <b>{{ head.last }}</b>{% endif %}
+  </div>
+  {% if head.next %}
+  <div class="sub">다음으로 해 볼 곳 <b>{{ head.next }}</b>
+    {%- if head.next_mods %} — {{ head.next_mods | join(' · ') }}{% endif %}</div>
+  {% endif %}
+  {% if head.blocked %}
+  <div class="sub bd-k-blocked">준비가 안 돼 못 돌리는 모듈 {{ head.blocked }}개 — 칸 안에 이유가 적혀 있습니다</div>
+  {% endif %}
+</div>
+
+<div class="board">
+{% for r in rows %}
+  <section class="bd-col {{ 'on' if r.done }}">
+    <header class="bd-col-head">
+      <span class="bd-step">{{ loop.index }}</span>
+      <b>{{ r.name }}</b>
+      <span class="sub mono small">{{ r.tactic }}</span>
+    </header>
+
+    {% if r.found %}
+    <div class="bd-group">
+      <div class="bd-kind bd-k-done">확인됨 {{ r.found | length }}</div>
+      {% for f in r.found %}
+      <a class="bd-card done" href="{{ url_for('dash.results', target=target.id, severity=f.severity) }}">
+        <div class="bd-card-top">{{ sev(f.severity) }}
+          <span class="sub mono small">{{ f.technique }}</span></div>
+        <div class="bd-card-title">{{ f.title }}</div>
+        <div class="sub small mono bd-loc">{{ f.location }}</div>
+        {% if f.cvss_vector %}<div class="sub small">{{ f.cvss_vector }}</div>{% endif %}
+      </a>
       {% endfor %}
-    </ul>
-  </li>
-  {% endfor %}
-</ol>
+    </div>
+    {% endif %}
+
+    {% if r.suggest %}
+    <div class="bd-group">
+      <div class="bd-kind bd-k-todo">제안 {{ r.suggest | length }} <span class="sub">— 아직 안 돌린 모듈</span></div>
+      {% for s in r.suggest %}
+      <a class="bd-card todo {{ s.state }}"
+         href="{{ url_for('dash.surface' if s.mod.stage == 'probe' else ('dash.tools' if s.mod.stage == 'tool' else 'dash.modules'),
+                          target=target.id, tool=s.mod.id if s.mod.stage == 'tool' else none) }}">
+        <div class="bd-card-top">
+          <span class="stage stage-{{ s.mod.stage }}">{{ s.stage }}</span>
+          {% if s.mod.vuln and s.mod.vuln != '기타' %}<span class="sub small">{{ s.mod.vuln }}</span>{% endif %}
+        </div>
+        <div class="bd-card-title">{{ s.mod.name }}</div>
+        {% if s.why %}<div class="sub small bd-why">{{ s.why }}</div>
+        {% else %}<div class="sub small">여기서 바로 돌릴 수 있습니다 →</div>{% endif %}
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+{% endfor %}
+</div>
+
+<p class="sub small bd-note">전술 순서는 ATT&amp;CK 의 것이고, 각 칸의 모듈은 그 모듈이 <code>META["attack"]</code> 에
+  직접 적어 둔 전술로 들어갑니다. <b>"이 기법 다음엔 저 기법" 같은 연결은 쓰지 않습니다</b> —
+  그 데이터를 갖고 있지 않아 지어내게 됩니다. 실제 시나리오는 팀이 이 흐름을 보고 정합니다.</p>
 {% endif %}
 {% endblock %}
