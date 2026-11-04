@@ -141,6 +141,23 @@ def _tree(nodes):
     return "\n".join(lines)
 
 
+def _sent_text(blob):
+    """칼리 fsmap 이 보낸 요청 수.
+
+    0 을 '0건' 이라고 쓰면 안 된다 — **센 적이 없다**는 뜻일 수 있다. fsmap 을 이어서
+    돌리면 Prober 가 새로 만들어져 카운터가 0 부터 시작하는데, 예전 내보내기는 그
+    0 을 그대로 실었다. 94개를 찾아 놓고 '보낸 요청 0건' 으로 보이던 원인이다.
+    """
+    st = blob.get("stats") or {}
+    sent = st.get("요청")
+    if not sent:
+        n404 = blob.get("unstat_count")
+        hint = (" — 404 만 %d건이니 실제로는 그보다 많이 보냈습니다" % n404) if n404 else ""
+        return "기록 없음%s" % hint
+    spans = st.get("세션") or len(st.get("구간") or []) or 1
+    return "%d건%s" % (sent, " (%d회에 나눠 실행)" % spans if spans > 1 else "")
+
+
 def run(target, params):
     text = (params.get("fsmap") or "").strip()
     if not text:
@@ -191,14 +208,14 @@ def run(target, params):
             title="경로 조작으로 서버 파일시스템 구조 확인 (읽힌 파일 %d개)" % len(readable),
             severity="high",
             location=meta.get("base_url", target.url) + (meta.get("endpoint") or ""),
-            evidence=("인코딩 %s · 올라간 단계 %s · 보낸 요청 %s건 · 실행 %s\n"
+            evidence=("인코딩 %s · 올라간 단계 %s · 칼리 fsmap 이 보낸 요청 %s · 실행 %s\n"
+                      "(딸깍이는 이 모듈에서 요청을 보내지 않습니다 — 칼리 결과를 읽기만 합니다)\n"
                       "존재 %d · 읽힘 %d · 디렉터리 %d · 못 들어감 %d · 막힌 가지 %d\n\n"
                       "읽힌 파일(앞 20개)\n%s\n\n"
                       "해석 주의: 404 였던 경로는 '없다'고 단정하지 않는다 — "
                       "상위 경로에 탐색 권한이 없어도 404 가 온다."
                       % (meta.get("scheme", "?"), meta.get("depth", "?"),
-                         (blob.get("stats") or {}).get("요청", "?"),
-                         meta.get("window", "?"),
+                         _sent_text(blob), meta.get("window") or "기록 없음",
                          len(nodes), len(readable), len(dirs), len(opaque), len(blocked),
                          "\n".join("  %s (%s)" % (n["path"], _size(n.get("size", 0)))
                                    for n in readable[:20]))),
