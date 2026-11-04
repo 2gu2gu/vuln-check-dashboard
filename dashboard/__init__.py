@@ -80,6 +80,7 @@ def create_app(test_config=None):
                                  csrf_token=csrf_token, csrf_field=csrf_field, VERSION=__version__,
                                  wordlist_options=wordlists.available)
 
-    from .routes import bp
+    from .routes import bp, module_needs
+    app.jinja_env.globals["module_needs"] = module_needs
     app.register_blueprint(bp)
     return app

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import empty, param_input %}
+{% from "_macros.html" import empty, param_input, needs_block %}
 {% block title %}모듈{% endblock %}
 {% block content %}
 <h1>모듈</h1>
@@ -36,6 +36,7 @@
       <span class="tag" title="{{ a.name }}"><b>{{ tactic_name[a.tactic] }}</b> <span class="mono">{{ a.technique }}</span></span>
       {% endfor %}
     </div>
+    {% if target %}{{ needs_block(module_needs(m, target), target) }}{% endif %}
     {% if target and m.stage == "probe" %}
     <div class="run"><a class="btn ghost" href="{{ url_for('dash.surface', target=target.id) }}">표면 탭에서 지점을 골라 실행 →</a></div>
     {% elif target %}

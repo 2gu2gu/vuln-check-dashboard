@@ -42,6 +42,11 @@ META = {
     ],
     "description": "칼리 fsmap 의 out/fsmap.json 을 붙여 넣으면 서버 디렉터리 구조를 "
                    "트리로 그리고, 읽힌 민감 파일을 결과로 올립니다. 요청은 보내지 않습니다.",
+    "needs": [
+        {"kind": "tool", "name": "fsmap",
+         "why": "이 모듈은 요청을 보내지 않습니다 — 칼리에서 사람이 돌린 결과를 읽기만 합니다",
+         "how": "08_모의해킹/file_inclution/fsmap 에서 python3 run.py walk --export all 을 돌려 out/fsmap.json 을 만든 뒤 붙여 넣습니다"},
+    ],
     "params": [
         {"name": "fsmap", "label": "fsmap.json 붙여 넣기", "type": "textarea", "default": "",
          "placeholder": '{"tool":"fsmap","nodes":[{"path":"/etc/passwd","class":"readable",'

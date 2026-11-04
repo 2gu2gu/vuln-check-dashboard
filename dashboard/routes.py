@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
                    render_template, request, url_for)
 
-from . import scope, wordlists
+from . import needs, scope, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -213,6 +213,12 @@ def modules():
                            target=target, targets=targets, runs=runs, tactic_name=TACTIC_NAME)
 
 
+def module_needs(mod, t=None):
+    """이 모듈이 미리 준비해야 하는 것 + 지금 준비됐는지. 화면에서도 쓴다."""
+    header_names = list(_parse_headers(t["headers"])) if t and t["headers"] else []
+    return needs.check(mod, header_names)
+
+
 def _guard(mod, t, back):
     """실행 전 확인. 문제가 있으면 돌아갈 redirect, 없으면 None."""
     if mod.project not in ("", t["project"]):
@@ -220,6 +226,11 @@ def _guard(mod, t, back):
         return redirect(back)
     if mod.kind == "active" and request.form.get("confirm") != "yes":
         flash("능동 모듈은 '자체 환경 확인'에 체크해야 실행됩니다", "error")
+        return redirect(back)
+    missing = needs.blocking(mod, list(_parse_headers(t["headers"])) if t["headers"] else [])
+    if missing:
+        n = missing[0]
+        flash(f"{mod.name} 은 {n['label']}{(' ' + n['name']) if n['name'] else ''} 가 있어야 돌아갑니다 — {n['how']}", "error")
         return redirect(back)
     return None
 

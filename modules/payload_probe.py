@@ -25,6 +25,11 @@ META = {
         {"tactic": "TA0002", "technique": "T1059.007", "name": "Command and Scripting Interpreter: JavaScript"},
     ],
     "description": "사전의 입력을 지점마다 차례로 넣고, 그대로 돌아오는지·오류가 새는지 봅니다. {T} 는 그 요청의 표식으로 바뀝니다.",
+    "needs": [
+        {"kind": "env", "name": "DASH_WORDLISTS", "required": False,
+         "why": "저장소에 든 씨앗 사전만으로는 찾는 범위가 좁습니다. SecLists 를 붙이면 고르는 칸에 함께 뜹니다",
+         "how": "SecLists 를 받아 대시보드를 띄우기 전에 DASH_WORDLISTS 에 그 폴더를 넣습니다 (wordlists/README.md)"},
+    ],
     "params": [
         {"name": "wordlist", "label": "사전", "type": "wordlist", "default": "payload-reflect.txt"},
         {"name": "limit", "label": "지점마다 몇 개", "type": "int", "default": "6",

@@ -12,7 +12,7 @@
   <a href="#targets">대상</a><a href="#modules">모듈</a><a href="#surface">표면</a><a href="#tools">도구</a>
   <a href="#results">결과</a><a href="#history">요청 기록</a><a href="#attack">ATT&CK</a><a href="#scenario">시나리오</a>
   <span class="toc-gap">알아 둘 것</span>
-  <a href="#wordlists">사전</a><a href="#roles">역할</a><a href="#auth">로그인</a><a href="#limits">요청 한도</a><a href="#hostscope">어디까지 하나</a><a href="#safety">안전장치</a>
+  <a href="#wordlists">사전</a><a href="#roles">역할</a><a href="#auth">로그인</a><a href="#needs">실행 전 준비</a><a href="#limits">요청 한도</a><a href="#hostscope">어디까지 하나</a><a href="#safety">안전장치</a>
   <span class="toc-gap">만들기</span>
   <a href="#packs">범용과 팩</a><a href="#write">모듈 만들기</a><a href="#todo">아직 없는 것</a>
 </nav>
@@ -220,6 +220,36 @@
     <dt>붙는 곳</dt><dd>그 대상 주소로 가는 요청에만. 다른 주소로는 나가지 않습니다.</dd>
     <dt>보관</dt><dd>이 PC 의 <code>instance/</code> DB 에만 있고, 화면·기록에는 이름만 보입니다.</dd>
     <dt>주의</dt><dd>테스트 계정 토큰만 넣습니다.</dd>
+  </dl>
+</section>
+
+<section id="needs">
+  <h2>실행 전에 준비할 것</h2>
+  <p>입력칸은 실행할 때 그 자리에서 채우는 값이고, <b>준비할 것</b>은 화면 밖에서 미리 해 둬야 하는 것입니다 —
+    로그인 토큰, 환경변수, 칼리에서 먼저 돌려야 하는 도구 같은 것. 모듈 카드에 미리 보여 줍니다.</p>
+  <div class="table-wrap">
+  <table class="grid">
+    <thead><tr><th>표시</th><th>뜻</th><th>실행</th></tr></thead>
+    <tbody>
+      <tr><td><b>준비됨</b></td><td>지금 이 대상에 갖춰져 있습니다</td><td>그대로 돌아갑니다</td></tr>
+      <tr><td><b>없음</b></td><td>필수인데 아직 없습니다</td><td><b>막습니다</b> — 돌려도 실패할 것이기 때문입니다</td></tr>
+      <tr><td><b>없어도 돌아갑니다</b></td><td>있으면 더 넓게 보지만 없어도 됩니다</td><td>막지 않습니다</td></tr>
+      <tr><td><b>직접 준비해야 합니다</b></td><td>사람이 준비했는지 대시보드가 알 수 없습니다(칼리 도구·서버 접속 등)</td><td>막지 않습니다</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <dl class="facts">
+    <dt>인증 헤더</dt><dd>자료 다운로드 경로 조작처럼 로그인이 필요한 모듈이 씁니다.
+      대상 탭의 <b>인증 헤더</b> 에 <code>Authorization: Bearer …</code> 를 넣으면 <b>준비됨</b> 으로 바뀝니다.
+      <b>테스트 계정 토큰만</b> 넣으세요.</dd>
+    <dt>환경변수</dt><dd><code>DASH_WORDLISTS</code> 처럼 대시보드를 띄우기 전에 정해야 하는 값입니다.
+      띄운 뒤에 바꾸면 다시 실행해야 반영됩니다.</dd>
+    <dt>바깥 도구</dt><dd>ffuf·nuclei·fsmap 은 대시보드가 대신 돌리지 않습니다 — 그러면 범위 검사가
+      그 도구가 보내는 것까지 닿지 못합니다. 칼리에서 돌리고 결과만 붙여 넣습니다.</dd>
+    <dt>모듈에 적는 법</dt><dd><code>META["needs"]</code> 에
+      <code>{"kind": …, "name": …, "why": …, "how": …}</code>. <code>kind</code> 는
+      <code>auth_header</code> · <code>env</code> · <code>wordlist</code> · <code>tool</code> · <code>account</code>.
+      <code>required: False</code> 면 없어도 돌아갑니다.</dd>
   </dl>
 </section>
 

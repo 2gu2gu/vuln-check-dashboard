@@ -19,7 +19,7 @@ META = {
     "kind": "active",
     "stage": "tool",
     "severity": "medium",
-    "needs": ["tcp"],          # HTTP 가 아니라 TCP 로 나간다는 표시
+    "transport": "tcp",        # HTTP 가 아니라 TCP 로 나간다는 표시(기록용)
     "attack": [{"tactic": "TA0043", "technique": "T1595.001", "name": "Active Scanning: Scanning IP Blocks"}],
     "description": "적어 둔 포트에 TCP 연결만 해 보고 밖에서 닿는지 확인합니다. 대상 호스트에만, 적어 둔 포트에만 보냅니다.",
     "params": [

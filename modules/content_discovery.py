@@ -18,6 +18,11 @@ META = {
     "stage": "collect",
     "attack": [{"tactic": "TA0043", "technique": "T1595.003", "name": "Active Scanning: Wordlist Scanning"}],
     "description": "사전의 경로를 하나씩 요청해 링크에 없는 엔드포인트를 찾습니다. 찾은 경로는 표면 탭에 등록됩니다.",
+    "needs": [
+        {"kind": "env", "name": "DASH_WORDLISTS", "required": False,
+         "why": "저장소에 든 씨앗 사전만으로는 찾는 범위가 좁습니다. SecLists 를 붙이면 고르는 칸에 함께 뜹니다",
+         "how": "SecLists 를 받아 대시보드를 띄우기 전에 DASH_WORDLISTS 에 그 폴더를 넣습니다 (wordlists/README.md)"},
+    ],
     "params": [
         {"name": "wordlist", "label": "사전", "type": "wordlist", "default": "web-common.txt"},
         {"name": "base", "label": "기준 경로", "default": "/",

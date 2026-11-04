@@ -24,6 +24,14 @@ META = {
         {"tactic": "TA0009", "technique": "T1005", "name": "Data from Local System"},
     ],
     "description": "읽을 경로를 한 줄에 하나씩 넣으면 인코딩해 보내고 응답 코드를 보여 줍니다. 한 줄만 넣으면 내용까지 보여 줍니다.",
+    "needs": [
+        {"kind": "auth_header", "name": "Authorization",
+         "why": "강의 자료는 로그인한 사용자만 내려받을 수 있어, 토큰이 없으면 전부 401 로 돌아옵니다",
+         "how": "대상 탭에서 그 대상의 '인증 헤더' 에 Authorization: Bearer <토큰> 을 한 줄 넣습니다. 테스트 계정 토큰만 쓰세요"},
+        {"kind": "account", "required": False,
+         "why": "남의 계정 토큰으로 돌리면 그 사람 권한으로 요청이 나갑니다",
+         "how": "테스트 계정으로 로그인해 받은 토큰을 씁니다"},
+    ],
     "params": [
         {"name": "paths", "label": "읽을 경로 (한 줄에 하나)", "type": "textarea",
          "default": "etc/passwd\netc/systemd/system/sesacedu-api.service\netc/nginx/sites-enabled/default",
