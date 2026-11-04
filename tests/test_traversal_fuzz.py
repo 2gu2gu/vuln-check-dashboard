@@ -270,3 +270,148 @@ def test_budget_is_not_exceeded(monkeypatch):
                         seeds=["srv/app"] + [f"d{i}" for i in range(500)],
                         names=[f"n{i}" for i in range(500)])
     assert len(fetch.calls) <= mod.MAX_REQUESTS
+
+
+# ── 수확: 읽은 파일이 다음 경로를 알려 준다 ──────────────────────────
+# 사전은 이름을 '맞혀야' 찾지만 설정 파일은 경로를 '적어 놓는다'.
+# 사람이 눈으로 하던 일(systemd 유닛에서 JAVA_HOME 읽기)을 모듈 안으로 넣었다.
+
+UNIT = ("[Service]\n"
+        "WorkingDirectory=/srv/sesacedu\n"
+        "EnvironmentFile=/etc/sesacedu/api.env\n"
+        "Environment=JAVA_HOME=/opt/java/jdk-11.0.24+8\n")
+ENVFILE = "DB_PASSWORD=hunter2\nAPP_STORAGE_ROOT=/srv/sesacedu/storage\n"
+
+
+def test_harvest_reads_paths_out_of_a_systemd_unit():
+    got = mod.harvest_paths(UNIT)
+    assert "srv/sesacedu" in got
+    assert "etc/sesacedu/api.env" in got
+    assert "opt/java/jdk-11.0.24+8" in got, "버전이 든 이름은 사전에 없다 — 이 길로만 나온다"
+
+
+def test_harvest_reads_nginx_and_env():
+    assert "var/www/x" in mod.harvest_paths("server {\n  root /var/www/x;\n}")
+    assert "srv/sesacedu/storage" in mod.harvest_paths(ENVFILE)
+
+
+def test_harvest_does_not_pick_up_secrets():
+    """경로처럼 생기지 않은 값은 가져오지 않는다."""
+    got = mod.harvest_paths(ENVFILE)
+    assert not any("hunter2" in p for p in got)
+    assert not any("jdbc" in p for p in mod.harvest_paths("DB_URL=jdbc:oracle:thin:@10.0.1.5:1521/XE"))
+
+
+def test_harvest_skips_noise():
+    got = mod.harvest_paths("ExecStart=/bin/sh -c 'x > /dev/null'")
+    assert "dev/null" not in got and "bin/sh" not in got
+
+
+def bodies(monkeypatch, pages, seeds, **params):
+    """경로별로 본문까지 돌려주는 가짜 서버."""
+    calls = []
+
+    def fetch(url, **_kw):
+        payload = parse_qs(urlsplit(url).query).get("file", [""])[0]
+        path = "/" + unquote(unquote(payload)).replace("../", "").lstrip("/")
+        calls.append(path)
+        base = path[:-3] if path.endswith("/..") else path
+        if base in pages and isinstance(pages[base], str):
+            return Response(url=url, status=200, headers=[], body=pages[base])
+        if base in pages:
+            return Response(url=url, status=pages[base], headers=[], body="")
+        return Response(url=url, status=404, headers=[], body="")
+
+    fetch.calls = calls
+    monkeypatch.setattr(mod, "fetch", fetch)
+    turn = {"n": 0}
+
+    def load(*_a, **_k):
+        turn["n"] += 1
+        return (list(seeds) if turn["n"] == 1 else ["zzz"]), False
+
+    monkeypatch.setattr(mod.wordlists, "load", load)
+    body = dict({"mode": "pipeline", "wordlist": "s", "names": "n", "limit": "50",
+                 "kinds": "yes", "depth": "9", "scheme": "double-full",
+                 "lecture": "123", "hints": "", "rounds": "2"}, **params)
+    return mod.run(T, body), fetch
+
+
+CHAIN = {"/etc/systemd/system/sesacedu-api.service": UNIT,
+         "/etc/sesacedu/api.env": ENVFILE,
+         "/srv/sesacedu": 500, "/opt/java/jdk-11.0.24+8": 500,
+         "/srv/sesacedu/storage": 500}
+
+
+def test_harvest_chains_one_seed_into_a_whole_tree(monkeypatch):
+    """씨앗 1개 → 유닛 읽음 → 거기 적힌 경로 → 그중 .env 읽음 → 또 그 안의 경로."""
+    r, fetch = bodies(monkeypatch, CHAIN, seeds=["etc/systemd/system/sesacedu-api.service"])
+    found = {row[0] for row in r.rows}
+    assert "/opt/java/jdk-11.0.24+8" in found    # 1바퀴
+    assert "/srv/sesacedu/storage" in found      # 2바퀴 — .env 를 읽고 나서야 나온다
+    assert "수확" in r.summary
+    by = {row[0]: row[5] for row in r.rows}
+    assert by["/opt/java/jdk-11.0.24+8"] == "수확"
+
+
+def test_harvest_can_be_turned_off(monkeypatch):
+    r, _ = bodies(monkeypatch, CHAIN, seeds=["etc/systemd/system/sesacedu-api.service"],
+                  rounds="0")
+    assert "/opt/java/jdk-11.0.24+8" not in {row[0] for row in r.rows}
+    assert "수확" not in r.summary
+
+
+def test_file_contents_never_leave_the_module(monkeypatch):
+    """설정 파일에는 자격증명이 섞여 있다. 경로만 쓰고 내용은 버린다."""
+    r, _ = bodies(monkeypatch, CHAIN, seeds=["etc/systemd/system/sesacedu-api.service"])
+    everywhere = r.text + r.note + str(r.rows) + "".join(f.evidence for f in r.findings)
+    assert "hunter2" not in everywhere
+    assert "DB_PASSWORD" not in everywhere
+
+
+def test_harvest_counts_as_the_modules_own_work(monkeypatch):
+    """수확은 모듈이 스스로 한 일이다 — 사람이 넣은 '단서' 와 다르다."""
+    r, _ = bodies(monkeypatch, CHAIN, seeds=["etc/systemd/system/sesacedu-api.service"])
+    assert "퍼징이 스스로 찾음" in r.text
+    assert "밖에서 받아" not in r.text
+
+
+# ── 실측 유닛 파일로 고정 ────────────────────────────────────────────
+# 11-04 실서버에서 읽힌 /etc/systemd/system/sesacedu-api.service (546B) 의 모양이다.
+# 모의해킹 세션이 **눈으로 읽어 손으로 넣어야 했던** 경로 3개가 여기서 나왔다.
+# 그 셋을 수확기가 자동으로 찾아내는지 못박는다.
+
+REAL_UNIT = """[Unit]
+Description=SesacEdu API
+[Service]
+Type=simple
+User=sesacedu
+WorkingDirectory=/srv/sesacedu/api
+EnvironmentFile=/etc/sesacedu/api.env
+Environment=JAVA_HOME=/opt/java/jdk-11.0.24+8
+Environment=CATALINA_HOME=/opt/apache-tomcat-10.1.1
+ExecStart=/opt/apache-tomcat-10.1.1/bin/catalina.sh run
+"""
+
+
+@pytest.mark.parametrize("path, why", [
+    ("etc/sesacedu/api.env", "api.env 는 어느 사전에도 없다"),
+    ("opt/java/jdk-11.0.24+8", "버전 문자열이 든 이름은 사전에 있을 수 없다"),
+    ("opt/apache-tomcat-10.1.1", "같은 이유"),
+])
+def test_harvests_what_a_person_had_to_read_by_eye(path, why):
+    assert path in mod.harvest_paths(REAL_UNIT), why
+
+
+def test_nested_environment_key_is_unwrapped():
+    """Environment=KEY=/path 는 '='가 한 번 더 중첩돼 있다."""
+    got = mod.harvest_paths("Environment=JAVA_HOME=/opt/java/jdk-11.0.24+8\n")
+    assert "opt/java/jdk-11.0.24+8" in got
+    assert not any(p.startswith("JAVA_HOME") for p in got)
+
+
+def test_harvested_plus_path_survives_the_round_trip():
+    """수확한 '+' 경로를 다시 보낼 때 공백으로 읽히면 안 된다(payloads 수정과 한 쌍)."""
+    from dashboard.payloads import traversal
+    path = next(p for p in mod.harvest_paths(REAL_UNIT) if "+" in p)
+    assert "+" not in traversal(path, 9, "double-full")
