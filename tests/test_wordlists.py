@@ -276,6 +276,9 @@ def test_skips_hidden_folders(seclists):
     ("Discovery/DNS/subdomains.txt", "subdomain"),
     ("Discovery/Variables/burp-parameter-names.txt", "param"),
     ("Fuzzing/LFI/LFI-Jhaddix.txt", "payload"),
+    # 같은 LFI 묶음이라도 경로 목록은 경로다 — 안 가르면 경로 찾기 모듈에서 밀려난다
+    ("seclists/LFI-gracefulsecurity-linux.txt", "path"),
+    ("Fuzzing/LFI/LFI-LFISuite-pathtotest-huge.txt", "path"),
     ("Passwords/Common-Credentials/top-100.txt", "password"),
     ("Usernames/top-usernames.txt", "username"),
     ("Ai/LLM_Testing/prompts.txt", "other"),
@@ -284,6 +287,44 @@ def test_skips_hidden_folders(seclists):
 ])
 def test_classify_by_folder_then_name(rel, want):
     assert wordlists.classify(rel) == want
+
+
+# ── 저장소에 담아 둔 SecLists 발췌 ─────────────────────────────
+# 칼리에만 있으면 윈도에서 돌는 대시보드가 못 본다. 팀원마다 받게 하지 않고 세 개만 담았다.
+
+@pytest.mark.parametrize("name", [
+    "seclists/LFI-gracefulsecurity-linux.txt",
+    "seclists/raft-small-directories.txt",
+    "seclists/raft-small-files.txt",
+])
+def test_the_seclists_excerpt_is_bundled_and_counts_as_paths(name):
+    """경로 목록으로 분류돼야 경로 찾기·퍼징 모듈의 '이 모듈용' 묶음에 뜬다."""
+    one = next((o for o in wordlists.available("path")["items"] if o["name"] == name), None)
+    assert one is not None, name
+    assert one["purpose"] == "path" and one["match"]
+
+
+def test_the_linux_list_holds_absolute_paths():
+    """`traversal()` 이 맨 앞 / 를 떼므로 그대로 씨앗으로 쓸 수 있다."""
+    lines, _ = wordlists.load(pick("seclists/LFI-gracefulsecurity-linux.txt"), limit=50)
+    assert len(lines) == 50
+    assert all(l.startswith("/") for l in lines)
+
+
+def test_the_linux_list_brings_paths_our_seeds_do_not_have():
+    """담아 둔 이유가 이것이다 — 없으면 이 파일은 저장소에 있을 값이 없다.
+
+    `/etc/ssh/ssh_host_dsa_key`(서버 호스트 개인키)는 우리 씨앗에 없다. 거꾸로 이 목록은
+    오래된 것이라 요즘 이름(`ssh_host_ed25519_key`)이 없다 — **넓다고 다 들어 있는 것은
+    아니다.** 그래서 요즘 이름은 우리 씨앗에 직접 넣었다. 둘이 서로를 메운다.
+    """
+    theirs, _ = wordlists.load(pick("seclists/LFI-gracefulsecurity-linux.txt"), limit=5000)
+    ours, _ = wordlists.load(pick("fs-seeds-sesacedu.txt"), limit=5000)
+    theirs = {p.strip("/") for p in theirs}
+    ours = {p.strip("/") for p in ours}
+    assert "etc/ssh/ssh_host_dsa_key" in theirs - ours
+    assert len(theirs - ours) > 500
+    assert "etc/ssh/ssh_host_ed25519_key" in ours - theirs      # 우리가 메운 쪽
 
 
 def test_matching_purpose_comes_first(seclists):
