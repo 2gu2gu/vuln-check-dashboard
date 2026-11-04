@@ -107,9 +107,19 @@ var/lib/cloud/instance/user-data.txt
 var/lib/cloud/instance/scripts/part-001
 var/lib/cloud/instance/obj.pkl
 
+# ── SSH ──
+# 서버 호스트 개인키. SecLists 의 리눅스 경로 목록(seclists/LFI-gracefulsecurity-linux.txt)에는
+# dsa·rsa1 세대만 있어서 요즘 이름(ed25519·rsa·ecdsa)이 빠져 있다 — 11-05 확인. 그래서 여기 적는다.
+etc/ssh/sshd_config
+etc/ssh/ssh_host_ed25519_key
+etc/ssh/ssh_host_rsa_key
+etc/ssh/ssh_host_ecdsa_key
+
 # ── 계정 흔적 ──
 home/ubuntu/.bash_history
 home/ubuntu/.ssh/authorized_keys
+home/ubuntu/.ssh/id_rsa
+home/ubuntu/.ssh/id_ed25519
 home/alice
 home/alice/.bash_history
 root/.bash_history
