@@ -41,7 +41,7 @@
   <p>점검할 서버 하나가 대상 하나입니다. 프로젝트와 역할에 묶입니다.</p>
   <dl class="facts">
     <dt>프로젝트</dt><dd>점검 대상이 되는 서비스 한 벌. 허용 범위(어디까지 요청해도 되는지)를 갖습니다.</dd>
-    <dt>역할</dt><dd>그 서비스 안에서 이 서버가 무엇인지(사용자 웹·관리자 웹·Wazuh). 아래 <a href="#roles">역할</a> 참고.</dd>
+    <dt>역할</dt><dd>그 서비스 안에서 이 서버가 무엇인지(사용자 웹·관리자 웹·연습용). 아래 <a href="#roles">역할</a> 참고.</dd>
     <dt>인증 헤더</dt><dd>로그인이 필요한 곳을 점검할 때 넣습니다. 아래 <a href="#auth">로그인</a> 참고.</dd>
     <dt>지우면</dt><dd>그 대상의 실행 기록·결과·수집 지점이 같이 지워집니다.</dd>
   </dl>
@@ -197,11 +197,11 @@
 
 <section id="roles">
   <h2>역할 — 서버가 여럿일 때</h2>
-  <p>한 프로젝트에 사용자 웹·관리자 웹·Wazuh 가 같이 있습니다. 터널로 열면 셋 다 <code>localhost</code> 라
+  <p>한 프로젝트에 서버가 여럿 있습니다. 터널로 열면 전부 <code>localhost</code> 라
     <b>다른 것은 포트뿐</b>이고, 하위 도메인으로 가르면 <b>호스트 이름이 서로를 덮습니다</b>.
     그래서 대상마다 역할을 골라 두고, 역할이 허용 호스트와 포트를 함께 정합니다.</p>
   <dl class="facts">
-    <dt>가두는 것</dt><dd>관리자 웹 대상으로 돌린 모듈은 <code>localhost:8443</code>(Wazuh)으로,
+    <dt>가두는 것</dt><dd>관리자 웹 대상으로 돌린 모듈은 <code>localhost:5051</code>(연습용)로,
       사용자 웹 대상으로 돌린 모듈은 <code>admin.sesacedu.store</code> 로 나가지 못합니다.
       등록할 때도, 실행 중에도 막습니다.</dd>
     <dt>범위 적는 법</dt><dd><code>=</code> 를 앞에 붙이면 <b>그 호스트만</b>(<code>=sesacedu.store</code> 는 <code>admin.sesacedu.store</code> 를 빼고),

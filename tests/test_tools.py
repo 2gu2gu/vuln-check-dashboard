@@ -287,19 +287,19 @@ def test_role_required_when_project_has_roles(client):
 
 def test_modules_filtered_by_role(app, client):
     add_target(client, "사용자 웹", "https://sesacedu.store", "user_web")
-    add_target(client, "Wazuh", "http://localhost:8443", "siem")
+    add_target(client, "관리자 웹", "http://localhost:3000", "admin_web")
     with app.app_context():
         ids = {r["role"]: r["id"] for r in get_db().execute("SELECT id, role FROM targets")}
 
     web = client.get(f"/tools?target={ids['user_web']}").get_data(as_text=True)
     assert "강의 목록 SQL 주입" in web
 
-    siem = client.get(f"/tools?target={ids['siem']}").get_data(as_text=True)
-    assert "강의 목록 SQL 주입" not in siem       # 사용자 웹 전용이라 숨는다
-    assert "서버 명령 출력 읽기" in siem           # 역할을 가리지 않는 모듈은 보인다
+    admin = client.get(f"/tools?target={ids['admin_web']}").get_data(as_text=True)
+    assert "강의 목록 SQL 주입" not in admin      # 사용자 웹·연습용 전용이라 숨는다
+    assert "서버 명령 출력 읽기" in admin          # 역할을 가리지 않는 모듈은 보인다
 
     page = client.post("/tools/run", data={
-        "target_id": ids["siem"], "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "probe",
+        "target_id": ids["admin_web"], "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "probe",
         "dbms": "oracle", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""})
     assert page.status_code == 404                # 숨은 모듈은 돌릴 수도 없다
 
@@ -351,10 +351,10 @@ def test_host_report_needs_input():
 @pytest.mark.parametrize("url, role, ok", [
     ("http://localhost:3000/admin", "admin_web", True),
     ("http://127.0.0.1:3000/admin", "admin_web", True),
-    ("http://localhost:8443/", "admin_web", False),     # 같은 호스트, 다른 서버(Wazuh)
-    ("http://localhost:5051/", "admin_web", False),
-    ("http://localhost:8443/", "siem", True),
-    ("http://localhost:3000/", "siem", False),
+    ("http://localhost:5051/", "admin_web", False),     # 같은 호스트, 다른 서버(연습용)
+    ("http://localhost:8443/", "admin_web", False),
+    ("http://localhost:5051/", "practice", True),
+    ("http://localhost:3000/", "practice", False),
     ("https://sesacedu.store/", "user_web", True),
     ("http://localhost:3000/", "user_web", False),      # 사용자 웹 역할로 터널에 못 간다
 ])
@@ -380,16 +380,16 @@ def test_registering_target_checks_role_port(client):
 
 
 def test_module_cannot_reach_other_tunnel_port(app, client, monkeypatch):
-    """관리자 웹 대상으로 돌린 모듈이 Wazuh 포트로 나가려 하면 막힌다."""
+    """관리자 웹 대상으로 돌린 모듈이 같은 호스트의 다른 포트로 나가려 하면 막힌다."""
     from dashboard import core
     from modules import http_security_headers
     add_target(client, "관리자", "http://localhost:3000", "admin_web")
-    monkeypatch.setattr(http_security_headers, "fetch", lambda url, **k: core.fetch("http://localhost:8443/"))
+    monkeypatch.setattr(http_security_headers, "fetch", lambda url, **k: core.fetch("http://localhost:5051/"))
     with app.app_context():
         tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
     page = client.post("/modules/http_security_headers/run", data={"target_id": tid, "path": "/"},
                        follow_redirects=True).get_data(as_text=True)
-    assert "허용 범위 밖" in page and "8443" in page
+    assert "허용 범위 밖" in page and "5051" in page
 
 
 # ── 포트 확인: HTTP 가 아닌 길은 따로 검사한다 ────────────────
