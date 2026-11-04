@@ -91,9 +91,17 @@ STATUSES = {"open": "미확인", "confirmed": "확인됨", "fixed": "조치됨",
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(current_app.config["DATABASE"])
+        # 백그라운드 작업자가 저마다 app_context 를 열어 쓰므로 연결이 여럿이 된다.
+        # WAL 은 읽기와 쓰기가 서로를 막지 않게 하고, busy_timeout 은 쓰기가 겹칠 때
+        # 바로 'database is locked' 로 죽지 않고 기다리게 한다.
+        g.db = sqlite3.connect(current_app.config["DATABASE"], timeout=10)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
+        g.db.execute("PRAGMA busy_timeout = 10000")
+        try:
+            g.db.execute("PRAGMA journal_mode = WAL")
+        except sqlite3.Error:        # :memory: 등 WAL 이 안 되는 곳은 그냥 둔다
+            pass
     return g.db
 
 
@@ -112,6 +120,9 @@ MIGRATIONS = [
     ("targets", "role", "TEXT NOT NULL DEFAULT ''"),
     # CVSS 벡터만 저장한다. 점수·등급은 벡터에서 계산한다 — 따로 적으면 둘이 어긋난다
     ("findings", "cvss_vector", "TEXT NOT NULL DEFAULT ''"),
+    # 백그라운드 실행 — 끝난 뒤에도 무슨 일이 있었는지 남는다
+    ("runs", "sent", "INTEGER NOT NULL DEFAULT 0"),
+    ("runs", "message", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 
