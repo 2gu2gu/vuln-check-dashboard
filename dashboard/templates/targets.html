@@ -39,7 +39,7 @@
 
 {% if targets %}
 <div class="table-wrap">
-<table class="grid">
+<table class="grid targets">
   <thead><tr><th>프로젝트</th><th>역할</th><th>이름</th><th>주소</th><th>인증 헤더</th><th>메모</th><th>등록</th><th></th></tr></thead>
   <tbody>
   {% for t in targets %}
@@ -49,8 +49,12 @@
       <td><a href="{{ url_for('dash.results', target=t.id) }}">{{ t.name }}</a></td>
       <td class="mono">{{ t.url }}</td>
       <td>
-        <details class="hdr-edit">
-          <summary>{% if header_names[t.id] %}<span class="mono small">{{ header_names[t.id] | join(", ") }}</span>{% else %}<span class="sub">없음</span>{% endif %}</summary>
+        <details class="hdr-edit" id="hdr-{{ t.id }}">
+          <summary>
+            {%- if header_names[t.id] %}<span class="mono small">{{ header_names[t.id] | join(", ") }}</span>
+              <span class="sub small">고치기</span>
+            {%- else %}<span class="sub">없음</span> <span class="hdr-cue">넣기</span>{% endif -%}
+          </summary>
           <form method="post" action="{{ url_for('dash.target_headers', tid=t.id) }}">
             {{ csrf_field() }}
             <textarea name="headers" rows="3" class="mono" placeholder="Cookie: JSESSIONID=...&#10;Authorization: Bearer ...">{{ header_text[t.id] }}</textarea>

@@ -68,6 +68,24 @@
     if (window.ResizeObserver) new ResizeObserver(measure).observe(head);
   })();
 
+  // ── #hdr-N 으로 들어오면 그 인증 헤더 칸을 펴 준다 ───────
+  // 모듈 카드의 '대상 탭에서 넣기 →' 로 왔는데 표 맨 위에 떨어지고,
+  // 칸이 접혀 있어 '없음' 을 눌러야 하는 줄 몰랐다(사용자 지적 11-05).
+  (function () {
+    function open() {
+      var m = /^#hdr-\d+$/.test(location.hash) && document.querySelector(location.hash);
+      if (!m) return;
+      m.open = true;
+      m.classList.add("landed");
+      setTimeout(function () { m.scrollIntoView({block: "center"}); }, 0);
+      var box = m.querySelector("textarea");
+      if (box) setTimeout(function () { box.focus(); }, 200);
+      setTimeout(function () { m.classList.remove("landed"); }, 1800);
+    }
+    open();
+    window.addEventListener("hashchange", open);
+  })();
+
   // ── 모듈 카드 접었다 펴기 ────────────────────────────────
   // 15개가 다 펴져 있으면 화면이 끝없이 길어진다. 어느 것을 펴 뒀는지는 기억한다 —
   // 같은 모듈을 연달아 돌려 보는 일이 흔하기 때문이다.

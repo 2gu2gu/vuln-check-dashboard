@@ -540,3 +540,19 @@ html { scroll-behavior: smooth; }
 .bd-card.elsewhere .bd-why { color: var(--sub); }
 .bd-note { margin-top: 12px; line-height: 1.6; }
 @media (max-width: 760px) { .bd-col { flex-basis: 85vw; } }
+
+/* 인증 헤더 칸 — 표 안에 접혀 있어 눌러야 하는 줄 모른다는 지적(11-05) */
+.hdr-edit > summary { cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.hdr-cue { font-size: 11px; font-weight: 600; color: var(--accent);
+           border: 1px solid var(--accent); border-radius: 999px; padding: 0 7px; }
+.hdr-edit > summary:hover .hdr-cue { background: var(--accent-soft); }
+.hdr-edit { scroll-margin-top: calc(var(--sticky-h, 150px) + 14px); }
+.hdr-edit.landed { animation: landed 1.6s ease-out; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .hdr-edit.landed { animation: none; } }
+
+/* 대상 표 — 인증 헤더 칸을 펴면 다른 칸이 글자 하나 너비로 쪼그라들었다.
+   줄여서 맞추지 말고 가로로 넘기게 둔다(.table-wrap 이 이미 스크롤한다). */
+.grid.targets td:nth-child(4) { min-width: 180px; }   /* 주소 */
+.grid.targets td:nth-child(5) { min-width: 300px; }   /* 인증 헤더 */
+.grid.targets td:nth-child(6) { min-width: 120px; }   /* 메모 */
+.grid.targets td.mono { overflow-wrap: break-word; }  /* 글자 하나씩 끊지 않는다 */
