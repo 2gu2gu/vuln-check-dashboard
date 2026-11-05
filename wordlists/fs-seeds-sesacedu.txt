@@ -1,4 +1,4 @@
-# 새싹에듀 ① 서버 파일시스템 씨앗 — 패키지를 설치하면 반드시 생기는 경로
+# 새싹에듀 ① 서버 파일시스템 씨앗 — 대부분 '패키지를 설치하면 생기는 경로'
 # 2026-11-04 실서버 실측으로 추린 것. 우선순위 낮은 숫자부터 적중률이 높다.
 # 맨 앞 / 는 빼고 쓴다. 설명은 '#' 줄로 두었다(사전 읽기에서 건너뛴다).
 
@@ -120,6 +120,9 @@ home/ubuntu/.bash_history
 home/ubuntu/.ssh/authorized_keys
 home/ubuntu/.ssh/id_rsa
 home/ubuntu/.ssh/id_ed25519
+# 아래 두 줄은 패키지 기본값이 아니다 — 11-03 에 /etc/passwd 를 읽어 확인한
+# 계정 이름이다. 이 서버에서 적중하는 것은 **이미 알아낸 답**이기 때문이고,
+# 다른 서버에서는 맞을 이유가 없다. 보고서에 '퍼징이 찾았다' 로 쓸 때 주의한다.
 home/alice
 home/alice/.bash_history
 root/.bash_history
