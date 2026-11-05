@@ -106,6 +106,10 @@ def fetch_token(target_url: str, cfg: dict, ident: str, secret: str, hosts=None)
                    record_body=False)             # 응답에 토큰이 들어 있다
     if r.status >= 400:
         raise LoginFailed(f"로그인이 거절됐습니다 (응답 {r.status}) — 계정이 맞는지 확인하세요")
+    # 본문이 아니라 응답 헤더(Authorization: Bearer …)로 토큰을 주는 서버가 있다(새싹에듀 /backend/login)
+    got = r.header(cfg.get("header") or "Authorization")
+    if got and got.strip():
+        return re.sub(r"^\s*Bearer\s+", "", got.strip())
     return find_token(r.body, cfg.get("token_keys"))
 
 
