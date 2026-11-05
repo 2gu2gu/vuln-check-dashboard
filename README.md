@@ -34,7 +34,7 @@ python -m venv .venv
 | `DASH_PORT` | 5050 | 대시보드 포트. 이 주소는 점검 대상이 될 수 없다 |
 | `DASH_SCOPE` | localhost,127.0.0.1 | 범용 대상의 허용 범위 |
 | `DASH_DELAY_MS` | 100 | 실행 하나에서 요청 사이 간격 |
-| `DASH_MAX_REQUESTS` | 2000 | 실행 하나의 요청 수 한도(넘으면 멈춤) |
+| `DASH_MAX_REQUESTS` | 6000 | 실행 하나의 요청 수 한도(넘으면 멈춤). 경로 조작 퍼징이 구조 전체를 그릴 때 3,000 쯤 쓴다 |
 | `DASH_WORDLISTS` | — | 사전을 더 둘 폴더. `;` 로 여러 개 (예: SecLists 의 `Discovery/Web-Content`) |
 
 **연습용 대상**(`demo_target.py`): 실서버 대신 모듈을 시험한다. 반사 확인을 돌리면 취약 4 · 잠재 2 · 안전 1 이 나오도록 만들었다(파일 맨 위 표). 127.0.0.1 에서만 열고 아무것도 저장하지 않는다.

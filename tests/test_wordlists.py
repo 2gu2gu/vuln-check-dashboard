@@ -327,6 +327,51 @@ def test_the_linux_list_brings_paths_our_seeds_do_not_have():
     assert "etc/ssh/ssh_host_ed25519_key" in ours - theirs      # 우리가 메운 쪽
 
 
+# 11-04 실측에서 **확장 단계가 실제로 찾아낸 이름**. 사전에 이름이 없으면 그 경로는
+# 영원히 안 나오므로, 이 16개가 사전의 값을 재는 직접적인 기준이다.
+MEASURED_EXPANSION_HITS = [
+    "api", "bin", "catalina.properties", "conf", "context.xml", "lib",
+    "logging.properties", "logs", "releases", "server.xml", "storage", "temp",
+    "tomcat-users.xml", "web", "web.xml", "webapps",
+]
+# raft 가 전부 놓치는 여섯 개. 실측에서 api/conf·web/conf 두 곳에서 11개 노드를 열었다.
+RAFT_BLIND_SPOT = ["catalina.properties", "context.xml", "logging.properties",
+                   "server.xml", "tomcat-users.xml", "web.xml"]
+
+
+def test_our_name_list_covers_every_measured_hit():
+    """우리 159줄이 16개를 전부 담아야 한다 — 하나라도 빠지면 그 노드를 잃는다."""
+    ours, _ = wordlists.load(pick("fs-dirnames.txt"), limit=5000)
+    ours = {w.strip("/") for w in ours}
+    missing = [h for h in MEASURED_EXPANSION_HITS if h not in ours]
+    assert not missing, missing
+
+
+def test_raft_cannot_replace_our_name_list():
+    """raft 31,539줄이 톰캣 설정 파일 이름을 **하나도** 담지 않는다.
+
+    실제 웹에서 긁은 목록이라 `/conf/server.xml` 처럼 웹으로는 안 보이는 파일이 없다.
+    넓은 사전을 기본값으로 바꾸려는 변경을 이 테스트가 막는다 — SecLists 전체에도
+    톰캣 설정 파일 목록이 없다(칼리 /usr/share/seclists 확인, 11-06).
+    """
+    raft = set()
+    for name in ("seclists/raft-small-directories.txt", "seclists/raft-small-files.txt"):
+        words, _ = wordlists.load(pick(name), limit=40000)
+        raft |= {w.strip("/") for w in words}
+    assert len(raft) > 25000                       # 정말로 넓은 목록이다
+    for name in RAFT_BLIND_SPOT:
+        assert name not in raft, name              # 그런데 이건 없다
+
+
+def test_the_default_name_list_is_ours_not_raft():
+    """기본값이 바뀌면 한 번 실행으로 같은 지도가 안 나온다."""
+    from projects.sesacedu.modules import material_traversal_fuzz as fuzz
+    names = next(p for p in fuzz.META["params"] if p["name"] == "names")
+    seedp = next(p for p in fuzz.META["params"] if p["name"] == "wordlist")
+    assert names["default"] == "fs-dirnames.txt"
+    assert seedp["default"] == "fs-seeds-sesacedu.txt"
+
+
 def test_matching_purpose_comes_first(seclists):
     groups = wordlists.available("path")["groups"]
     assert groups[0]["match"] and "경로" in groups[0]["label"]
