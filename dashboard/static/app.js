@@ -206,51 +206,65 @@
   // 보인다. 도구 탭의 '자체 환경 확인'은 실행할 때마다 다시 꺼지므로 자주 걸린다.
   // (모듈·표면 탭은 required 가 없어 서버까지 가고 거기서 말해 준다.)
   // invalid 는 버블링하지 않는다 — 캡처로 받아야 document 에서 잡힌다.
+  var lastJump = 0;
   document.addEventListener("invalid", function (e) {
     var el = e.target;
     if (!el || !el.form) { return; }
     var holder = el.closest("label") || el.parentNode;
     if (!holder || !holder.appendChild) { return; }
 
-    var note = holder.querySelector(".need-note");
-    if (!note) {
-      note = document.createElement("span");
-      note.className = "need-note";
-      note.setAttribute("role", "alert");
-      holder.appendChild(note);
-    }
-    note.textContent = (el.type === "checkbox")
-      ? "여기에 체크해야 실행됩니다"
-      : (el.validationMessage || "이 칸을 채워 주세요");
-    holder.classList.add("need");
-
-    // 여러 칸이 한꺼번에 걸려도 첫 칸으로만 한 번 옮긴다
-    if (!document.documentElement.dataset.toInvalid) {
-      document.documentElement.dataset.toInvalid = "1";
-      if (el.scrollIntoView) { el.scrollIntoView({block: "center", behavior: "smooth"}); }
-      setTimeout(function () { delete document.documentElement.dataset.toInvalid; }, 700);
-    }
-
     function clear() {                      // 고치면 지운다
-      holder.classList.remove("need");
+      holder.classList.remove("field-bad");
       if (note.parentNode) { note.parentNode.removeChild(note); }
       el.removeEventListener("change", clear);
       el.removeEventListener("input", clear);
     }
-    el.addEventListener("change", clear);
-    el.addEventListener("input", clear);
+
+    var note = holder.querySelector(".field-bad-note");
+    if (!note) {
+      note = document.createElement("span");
+      note.className = "field-bad-note warn-text";   // 빨강·굵게는 기존 토큰이 한다
+      note.setAttribute("role", "alert");
+      holder.appendChild(note);
+      el.addEventListener("change", clear);          // 쪽지와 한 생애 — clear 가 둘 다 걷는다
+      el.addEventListener("input", clear);
+    }
+    note.textContent = (el.type === "checkbox")
+      ? "여기에 체크해야 실행됩니다"
+      : (el.validationMessage || "이 칸을 채워 주세요");
+    holder.classList.add("field-bad");
+
+    // 여러 칸이 한꺼번에 걸려도 첫 칸으로만 한 번 옮긴다
+    if (Date.now() - lastJump > 700) {
+      lastJump = Date.now();
+      if (el.scrollIntoView) { el.scrollIntoView({block: "center", behavior: "smooth"}); }
+    }
   }, true);
 
+  // 페이지마다 하나, 세션에 묶인 값이다(base.html 머리). 폼이 없는 탭에도 서랍이
+  // 있어서 숨은 input 에서 주워 읽을 수가 없다 — meta 가 유일한 출처다.
+  var CSRF = (document.querySelector('meta[name=csrf]') || {}).content || "";
+
   // ── 기다리는 동안 남기는 표시 ────────────────────────────
+  // 도구 실행(/tools/run)은 요청 안에서 끝까지 돈다(_execute). 실측 11-06:
+  // port_check 13초, 경로 퍼징 67초. 그동안 화면이 통째로 멈춰 있어서 안 눌린 줄
+  // 알고 또 누른다 — 1분 안에 6번 눌린 기록이 있다.
+  //
   // 버튼을 JS 로 disabled 하지 않는다. 제출 이벤트 중에 끄면 그 버튼의 name/value 가
   // 전송 목록에서 빠져 '이어서 보기'(_drill) 가 죽는다. 막는 건 CSS 가 한다.
-  function waitNote(form, submitter, card) {
+  //
+  // 도구 폼은 페이지에 하나뿐이라(tools.html id=tool-form) 기다리는 표시도 하나다.
+  // 그 하나를 여기 들고 있는다 — 폼의 dataset 과 DOM 조회로 나눠 적으면 '기다리는 중'
+  // 이라는 같은 사실이 세 군데 적히고, 5분 해제 경로에서 서로 어긋난다.
+  var held = null;
+
+  function hold(submitter, card) {
     var note = document.createElement("p");
-    note.className = "wait-note";
+    note.className = "wait-note sub";
     note.setAttribute("role", "status");
     // 초는 화면에만 보인다. role=status 안에서 1초마다 바뀌면 읽어 주는 기계가
     // 문장을 통째로 다시 읽는다 — 그래서 바뀌는 쪽은 접근성 트리에서 숨긴다.
-    note.innerHTML = '<span class="wait-dot" aria-hidden="true"></span>'
+    note.innerHTML = '<span class="spin" aria-hidden="true"></span>'
                    + '<span class="wait-say"></span>'
                    + '<span class="wait-sec" aria-hidden="true"></span>';
     // '이어서 보기' 버튼은 폼 바깥에 있다(form= 속성으로 묶인다). closest("form") 으로
@@ -262,36 +276,54 @@
     }
     var say = note.querySelector(".wait-say");
     var sec = note.querySelector(".wait-sec");
+    var going = "돌고 있습니다 — 끝나면 결과가 이 자리에 뜹니다";
     // live 영역은 '먼저 자리를 잡고 나서' 글이 들어와야 읽힌다
-    setTimeout(function () { say.textContent = "돌고 있습니다 — 끝나면 결과가 이 자리에 뜹니다"; }, 60);
+    setTimeout(function () { say.textContent = going; }, 60);
     var t0 = Date.now();
     var timer = setInterval(function () {
       sec.textContent = " · " + Math.round((Date.now() - t0) / 1000) + "초";
     }, 1000);
-    // 끝내 화면이 안 넘어가는 일이 있어도 영영 못 누르게 두지는 않는다
-    setTimeout(function () {
-      delete form.dataset.waiting;
+
+    // 결과 표의 '이어서 보기' 는 다른 패널에 있다. 거기도 같이 흐려야 보이는 상태와
+    // 실제 상태가 맞는다 — 안 그러면 눌리는 것처럼 보이고 실제로는 막힌다.
+    var out = document.querySelector(".tool-result");
+    card.classList.add("waiting");
+    if (out) { out.classList.add("waiting"); }
+
+    function release() {                     // 다시 누를 수 있게. 남길 글은 부르는 쪽이 정한다
+      held = null;
+      clearInterval(timer);
       card.classList.remove("waiting");
+      if (out) { out.classList.remove("waiting"); }
+    }
+    // 끝내 화면이 안 넘어가는 일이 있어도 영영 못 누르게 두지는 않는다
+    var bail = setTimeout(function () {
+      release();
       say.textContent = "오래 걸립니다 — 다시 눌러 볼 수 있습니다";
     }, 300000);
-    note.again = function () {                 // 기다리는 중에 또 눌렀을 때
-      say.textContent = "이미 보냈습니다 — 끝날 때까지 기다려 주세요";
-      note.classList.add("again");
-      setTimeout(function () {
-        note.classList.remove("again");
-        say.textContent = "돌고 있습니다 — 끝나면 결과가 이 자리에 뜹니다";
-      }, 1800);
+
+    held = {
+      again: function () {                   // 기다리는 중에 또 눌렀을 때
+        say.textContent = "이미 보냈습니다 — 끝날 때까지 기다려 주세요";
+        note.classList.add("warn-text");
+        setTimeout(function () {
+          note.classList.remove("warn-text");
+          say.textContent = going;
+        }, 1800);
+      },
+      drop: function () {                    // 뒤로가기로 돌아왔을 때
+        clearTimeout(bail);
+        release();
+        if (note.parentNode) { note.parentNode.removeChild(note); }
+      }
     };
-    // 뒤로가기로 돌아오면(bfcache) 화면이 그대로 복원된다 — 표시를 걷어낸다
-    window.addEventListener("pageshow", function (ev) {
-      if (!ev.persisted) { return; }
-      clearInterval(timer);
-      if (note.parentNode) { note.parentNode.removeChild(note); }
-      card.classList.remove("waiting");
-      delete form.dataset.waiting;
-    });
-    return note;
   }
+
+  // 뒤로가기(bfcache)로 돌아오면 화면이 그대로 복원된다 — 표시를 걷어낸다.
+  // 리스너는 하나만 단다. 제출할 때마다 달면 돌아올 때마다 하나씩 쌓인다.
+  window.addEventListener("pageshow", function (ev) {
+    if (ev.persisted && held) { held.drop(); }
+  });
 
   // ── 실행하면 그 모듈이 뭉쳐서 '도는 중' 으로 날아간다 ──────
   // 눌렀는데 화면이 그대로면 아무 일도 안 일어난 줄 안다. 뒤로 갔다는 신호다.
@@ -306,41 +338,27 @@
     var FLY = 750, WAIT = 820;   // 날아가는 시간 / 화면을 넘기기까지. WAIT > FLY 여야 한다
     var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    // 어떻게 끝나는 실행인지를 주소로 가린다. 주소에 '/run' 이 들었는지로 보면 틀린다 —
-    // 표면 점검은 뒤에서 도는데도 빠지고(사용자 지적 11-05 "왜 표면 탭에서는 그렇게 안
-    // 날아가"), 도구는 그 자리에서 기다리는데도 들어왔다.
-    var BG = /\/modules\/[^\/]+\/run$|\/surface\/probe$/;   // 뒤에서 돈다 → '도는 중' 으로 날아간다
-    var SYNC = /\/tools\/run$/;                            // 기다려서 그 자리에 띄운다 → 테두리만
-
+    // 어떻게 끝나는 실행인지는 **템플릿이 말해 준다**. data-autosubmit·data-confirm 과
+    // 같은 자리다. 주소 모양으로 되짚으면 틀린다 — 실제로 틀렸었다: stage="tool" 모듈
+    // 카드도 /modules/<mid>/run 으로 보내는데 서버는 아무것도 안 돌리고 도구 탭으로
+    // 넘긴다(routes.py module_run). 주소만 보면 '뒤에서 돈다' 로 읽혀, 도는 것도 없이
+    // 날아갔다. 이제 그 카드에는 data-run 이 없어 아무 일도 안 한다.
     document.addEventListener("submit", function (e) {
       var form = e.target;
-      if (e.defaultPrevented || !form.action) return;
-      var path = form.action.replace(/^[a-z][a-z0-9+.\-]*:\/\/[^\/]*/i, "").split(/[?#]/)[0];
-      var bg = BG.test(path);
-      if (!bg && !SYNC.test(path)) return;   // 지우기·헤더 넣기 같은 건 건드리지 않는다
+      if (e.defaultPrevented) return;
+      var mode = form.dataset.run;           // "bg" | "sync" | 없음(건드리지 않는다)
+      if (mode !== "bg" && mode !== "sync") return;
       // 표면 탭은 폼이 지점 표까지 다 감싼다 — 폼을 카드로 쓰면 화면만 한 덩어리가 된다.
       // 누르는 자리인 안쪽 막대(.probe-bar, sticky 라 늘 보인다)를 집는다.
       var card = form.closest(".mod, .tool-form, .probe-bar")
                  || form.querySelector(".probe-bar") || form;
-      if (!card.getBoundingClientRect) return;
 
-      if (!bg) {
+      if (mode === "sync") {
         // 도구는 가로채지 않는다. form.submit() 은 누른 버튼의 name/value 를 안 보내서
-        // 가로채면 '이어서 보기'(_drill) 가 죽는다. 브라우저에 맡긴다.
-        //
-        // 다만 이쪽은 요청 안에서 끝까지 돌기 때문에(_execute) 그동안 화면이 통째로
-        // 멈춰 있다. 실측 11-06: port_check 13초, 경로 퍼징 67초. 표시가 없으면
-        // 안 눌린 줄 알고 또 누른다 — 실제로 1분 안에 6번 눌린 기록이 있다.
-        // 기다리는 동안 또 누르면 말없이 삼키지 않는다 — 삼키면 그게 또 '안 눌린다' 다
-        if (form.dataset.waiting) {
-          e.preventDefault();
-          var open = document.querySelector(".wait-note");
-          if (open && open.again) { open.again(); }
-          return;
-        }
-        form.dataset.waiting = "1";
-        card.classList.add("waiting");
-        waitNote(form, e.submitter, card);
+        // 가로채면 '이어서 보기'(_drill) 가 죽는다. 브라우저에 맡기고 표시만 남긴다.
+        // 기다리는 동안 또 누르면 말없이 삼키지 않는다 — 삼키면 그게 또 '안 눌린다' 다.
+        if (held) { e.preventDefault(); held.again(); return; }
+        hold(e.submitter, card);
         return;
       }
 
@@ -359,7 +377,8 @@
       // 화면에 보이는 부분에서 출발한다 — 카드가 길어 위아래로 벗어나 있어도
       var r = card.getBoundingClientRect();
       var head = document.querySelector("header.top");
-      var top = Math.max(r.top, head ? head.getBoundingClientRect().bottom + 8 : 8);
+      var lo = head ? head.getBoundingClientRect().bottom + 8 : 8;   // 위에 붙은 머리 밑
+      var top = Math.max(r.top, lo);
       var box = {left: r.left, width: r.width, top: top,
                  height: Math.min(r.bottom, window.innerHeight - 8) - top};
       if (box.height < 60 || box.width < 60) {   // 카드가 거의 안 보이면 누른 버튼 자리에서
@@ -370,7 +389,6 @@
       box.height = Math.min(box.height, 320);    // 너무 길면 윗동강만 떠오른다
       // 어느 쪽으로든 화면을 벗어났으면 끌어온다. 밖에서 출발하면 안 보이고,
       // 안 보이면 아무 일도 안 일어난 것과 같다 — 이번 건의 출발점이 바로 그거였다.
-      var lo = head ? head.getBoundingClientRect().bottom + 8 : 8;
       box.top = Math.min(Math.max(box.top, lo), window.innerHeight - 8 - box.height);
       box.left = Math.min(Math.max(box.left, 8), window.innerWidth - 8 - Math.min(box.width, window.innerWidth - 16));
 
@@ -455,13 +473,14 @@
           e.stopPropagation();
           // _csrf 를 안 실으면 before_request 가 400 으로 자른다 — 지금껏 아무것도
           // 안 멈추고 있었다(실측: POST /jobs/1/cancel → 400).
-          var tok = document.querySelector('meta[name=csrf]');
+          if (!CSRF) { stop.textContent = "토큰 없음"; return; }   // 빈 값을 보내 400 을 자초하지 않는다
           fetch("/jobs/" + j.run_id + "/cancel", {
             method: "POST",
             headers: {"Content-Type": "application/x-www-form-urlencoded"},
-            body: "_csrf=" + encodeURIComponent(tok ? tok.content : "")
+            body: "_csrf=" + encodeURIComponent(CSRF)
           }).then(function (r) {
-            if (!r.ok) { stop.textContent = "못 멈춤"; }
+            // poll() 이 목록을 통째로 다시 그린다 — 실패했으면 글자가 남게 두고 멈춘다
+            if (!r.ok) { stop.textContent = "못 멈춤"; return; }
             return poll();
           });
         });
