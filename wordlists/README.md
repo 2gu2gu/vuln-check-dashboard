@@ -25,7 +25,7 @@ $env:DASH_WORDLISTS = "C:\tools\SecLists\Discovery\Web-Content;C:\tools\SecLists
 | `payload-reflect.txt` | 입력값 넣어 보기 | 특수문자가 걸러지는지 보는 짧은 입력 |
 | `payload-sql-error.txt` | 입력값 넣어 보기 | DB 오류 메시지를 끌어내 보는 입력 |
 | `fs-seeds-sesacedu.txt` | 자료 경로 조작 퍼징(씨앗) | 패키지를 깔면 생기는 전체 경로 115개. 11-04 실측에서 찾은 94개 중 55개가 여기서 나왔다 |
-| `fs-dirnames.txt` | 자료 경로 조작 퍼징(사전) | 자바 웹 배포에서 쓰는 디렉터리·설정 파일 **이름** 159개. 확정된 디렉터리 아래를 넓힐 때 쓴다 |
+| `fs-dirnames.txt` | 자료 경로 조작 퍼징(사전) | 자바 웹 배포에서 쓰는 디렉터리·설정 파일 **이름** 209개(자바 웹앱 안쪽 포함). 확정된 디렉터리 아래를 넓힐 때 쓴다 |
 
 페이로드는 **터지는지 보는 용도가 아니라, 걸러지는지 보는 용도**다.
 `{T}` 는 보낼 때 그 요청의 표식으로 바뀐다 — 응답에서 되돌아온 자리를 찾는 데 쓴다.
@@ -38,7 +38,7 @@ SecLists 는 칼리에 `/usr/share/seclists` 로 1.9 GB 들어 있다. 그런데
 | 파일 | 줄 수 | 쓰는 곳 | 고른 이유 |
 |---|---|---|---|
 | `LFI-gracefulsecurity-linux.txt` | 881 | 퍼징(씨앗) | 리눅스 절대경로 목록. 우리 씨앗과 22개만 겹치고 859개가 새로 들어온다 — `/etc/ssh/ssh_host_dsa_key` 같은 것 |
-| `raft-small-directories.txt` | 20,115 | 숨은 경로 찾기 · 퍼징(2단계 이름) | 실제 웹에서 긁은 디렉터리 이름. 우리 `fs-dirnames.txt` 는 159개뿐이다 |
+| `raft-small-directories.txt` | 20,115 | 숨은 경로 찾기 · 퍼징(2단계 이름) | 실제 웹에서 긁은 디렉터리 이름. 우리 `fs-dirnames.txt` 는 209개뿐이다 |
 | `raft-small-files.txt` | 11,424 | 숨은 경로 찾기 | 같은 출처의 파일 이름 |
 
 **안 담은 것과 이유** (11-05 직접 열어 보고 판단)
@@ -62,7 +62,7 @@ SecLists 는 칼리에 `/usr/share/seclists` 로 1.9 GB 들어 있다. 그런데
 
 | 사전 | 줄 수 | 16개 중 담은 것 |
 |---|---|---|
-| `fs-dirnames.txt` (우리) | 159 | **16 / 16** |
+| `fs-dirnames.txt` (우리) | 209 | **16 / 16** |
 | `raft-small-directories` + `raft-small-files` | 31,539 | 10 / 16 |
 
 raft 가 **전부 놓치는 6개**가 이것이다 — `catalina.properties` · `context.xml` ·

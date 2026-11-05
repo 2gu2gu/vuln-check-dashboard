@@ -172,7 +172,9 @@ META = {
         {"tactic": "TA0043", "technique": "T1595.003", "name": "Active Scanning: Wordlist Scanning"},
     ],
     "description": "씨앗(패키지 기본 경로)이나 사전으로 경로를 때려 응답 코드로 "
-                   "디렉터리 구조를 그립니다. 파일 내용은 가져오지 않습니다.",
+                   "디렉터리 구조를 그립니다. 읽히는 설정 파일은 **거기 적힌 경로를 "
+                   "캐내려고 내용을 받지만**, 받은 내용은 메모리에서만 쓰고 결과·요청 "
+                   "기록 어디에도 남기지 않습니다.",
     "needs": [
         {"kind": "auth_header", "name": "Authorization",
          "why": "강의 자료는 로그인한 사용자만 내려받을 수 있어, 토큰이 없으면 전부 401 로 "
@@ -282,7 +284,10 @@ def _send(target, lecture, depth, scheme, path):
     url = target.url + PATH.format(lecture=lecture, payload=payload)
     # record_body=False 라 요청 기록에 본문이 남지 않는다. 아래 r.body 는 메모리에만 있고
     # 수확이 끝나면 버린다 — 설정 파일에는 자격증명이 섞여 있다.
-    r = fetch(url, record_body=False)
+    #
+    # max_bytes 를 수확 상한에 맞춘다. 기본값은 1MB 라 쓰지도 않을 본문을 그만큼 받아
+    # 왔다(11-06 검수). 구조 판정에는 코드와 길이만 쓰므로 더 받을 이유가 없다.
+    r = fetch(url, record_body=False, max_bytes=MAX_BODY)
     klass = BY_STATUS.get(r.status, "other")
     return klass, r
 
@@ -320,6 +325,10 @@ class _Walker:
         self.auth_stop = False
         self.nodes = []
         self.seen = set()
+        # 응답 종류별 횟수. 전에는 200·500 이 아닌 응답을 **세지도 않고 버렸다** —
+        # 그래서 도중에 403(탈출 검사 차단)·429(속도 제한) 벽이 서도 결과에는
+        # '아무것도 없다' 로만 보였고, 잘린 지도가 완전한 지도로 보고됐다(11-06 검수).
+        self.codes = {}
 
     def hit(self, paths, source):
         """경로 묶음을 때려 200·500 만 남긴다. 401 이면 즉시 멈춘다."""
@@ -333,6 +342,7 @@ class _Walker:
             self.left -= 1
             self.sent += 1
             klass, r = _send(self.t, self.lecture, self.depth, self.scheme, path)
+            self.codes[klass] = self.codes.get(klass, 0) + 1
             if klass == AUTH:
                 self.auth_stop = True
                 break
@@ -356,11 +366,17 @@ class _Walker:
             self.sent += 1
             klass, _ = _send(self.t, self.lecture, self.depth, self.scheme,
                              n["path"].strip("/") + "/..")
+            self.codes[klass] = self.codes.get(klass, 0) + 1
             if klass == AUTH:
                 self.auth_stop = True
                 return
             n["kind"] = DIR if klass == EXISTS else (OPAQUE if klass == UNSTAT else None)
             n["is_dir"] = True if n["kind"] == DIR else None
+            # 403 처럼 뜻을 모르는 응답이 오면 **가리지 못한 것으로 적어 둔다.**
+            # kind 를 None 으로 두면 '아직 안 가림' 과 구별되지 않아 바퀴마다 다시
+            # 때리고, 결국 '미판별' 로 남는 이유도 알 수 없다(11-06 검수).
+            if n["kind"] is None:
+                n["probe_inconclusive"] = klass
 
 
 # 읽힌 파일 안에서 절대경로를 끄집어낸다.
@@ -681,7 +697,7 @@ def _seed_knows_under(path, seed_set):
 # 디렉터리 성격에 따라 이름 묶음을 가른다.
 #
 # `conf` 아래에 있는 것은 설정 **파일** 이름(`server.xml`)이고, 배포 루트 아래에 있는
-# 것은 **디렉터리** 이름(`webapps`)이다. 159개를 한 곳에 전부 보내면 절반이 헛되고,
+# 것은 **디렉터리** 이름(`webapps`)이다. 209개를 한 곳에 전부 보내면 절반이 헛되고,
 # 11-06 1차 실행에서 그 낭비로 8곳에 1,272요청을 써 예산이 바닥나 srv·opt 아래 31개를
 # 놓쳤다. 묶음을 가르면 한 곳에 86개(폴더투) 또는 73개(파일투)만 간다.
 _CONFIGISH = ("conf", "config", "etc", "settings", "WEB-INF", "classes")
@@ -804,7 +820,8 @@ def _calibration_failed(target, lecture, scheme, depth, depth_auto, tried, gates
              + (" ".join(why) if why else
                 "답을 아는 경로가 기대와 다르게 왔습니다. 위 표의 '틀림' 행을 보세요.")
              + " 올라갈 단계 %s · 인코딩 %s 로 시도했습니다."
-               % (("자동 측정 실패" if depth_auto else depth), scheme))
+               % (("자동 측정 %s" % depth if depth_auto and tried else
+                   "자동 측정 실패(자리값 %s)" % depth if depth_auto else depth), scheme))
 
 
 def _auth_failed(target, lecture, scheme, walker):
@@ -856,30 +873,41 @@ def run(target, params):
 
     # 깊이를 재는 동안 쓸 임시값. 측정에 성공하면 바로 덮어쓴다.
     depth = 9 if depth_given is None else depth_given
-    walker = _Walker(target, lecture, depth, scheme, budget)
+    # 끝 교정 몫을 미리 떼어 둔다. 예산 밖으로 더 쓰면 상한(앱 한도 포함)을 넘기고,
+    # 안 떼어 두면 끝 교정이 '예산이 없어' 못 돌아 **가장 중요한 확인이 생략된다.**
+    walker = _Walker(target, lecture, depth, scheme, max(8, budget - len(CALIBRATION)))
     bad = 0
     stages = []          # [(이름, 때린 경로 수)] — 어느 단계가 얼마나 썼는지 보여 준다
 
     # ── 0단계: 올라갈 단계 측정 ──
     # 고정값은 추측이다. 모자라면 전부 404 로 와서 '없는 서버' 로 보인다.
-    depth_tried, depth_auto = [], False
+    depth_tried, depth_auto, depth_measured = [], False, None
     if depth_given is None:
-        measured, depth_tried = measure_depth(walker)
+        depth_measured, depth_tried = measure_depth(walker)
         depth_auto = True
-        if measured:
-            depth = measured
-            walker.depth = measured
+        if depth_measured:
+            depth = depth_measured
+            walker.depth = depth_measured
 
     # ── 0단계: 오라클 교정 ──
     # 응답 코드가 뜻을 갖는지 확인한다. 틀리면 지도를 그리지 않는다 —
     # 조용히 거짓인 그림이 보고서에 올라가는 것보다 멈추는 것이 낫다.
     gates = calibrate(walker)
+    if walker.auth_stop:          # 토큰 문제를 '관문 못 봄' 으로 덮지 않는다
+        return _auth_failed(target, lecture, scheme, walker)
     bad_gates = [g for g in gates if not g["ok"]]
-    if gates and bad_gates:
+    # 관문을 **다 보지 못한** 것도 통과가 아니다. 예산이 모자라거나 401 이 오면
+    # calibrate() 가 모은 것만 돌려주는데, 전에는 `gates and bad_gates` 라서 못 본 관문을
+    # 조용히 넘겼다 — 그러면 교정의 뜻이 사라진다(11-06 검수).
+    if len(gates) < len(CALIBRATION):
+        missing = {"path": "(못 봄)", "want": "—", "got": "—", "ok": False,
+                   "why": "관문 %d개 중 %d개만 확인했습니다"
+                          % (len(CALIBRATION), len(gates))}
+        gates = list(gates) + [missing]     # 표에도 보여야 왜 멈췄는지 안다
+        bad_gates = bad_gates + [missing]
+    if bad_gates:
         return _calibration_failed(target, lecture, scheme, depth, depth_auto,
                                    depth_tried, gates, walker)
-    if walker.auth_stop:
-        return _auth_failed(target, lecture, scheme, walker)
 
     # ── 단서 먼저. 사람이 일부러 넣은 것이라 예산을 못 받는 일이 없게 한다 ──
     if hints:
@@ -887,6 +915,13 @@ def run(target, params):
         stages.append(("단서", len(hints)))
 
     rounds = _as_int(params.get("rounds"), 0, low=0) if mode != "expand" else 0
+    # 이름 사전에서 '경로 조각으로 못 쓰는 줄' 은 사전의 성질이라 **한 번만** 센다.
+    # 묶음을 둘로 갈라 디렉터리마다 돌리므로, 부를 때마다 더하면 수십 배로 부푼다.
+    if names:
+        bad = sum(1 for w in names
+                  if not (w or "").strip().strip("/")
+                  or "/" in (w or "").strip().strip("/")
+                  or ".." in (w or "").strip().strip("/"))
     harvested_total, grown_total, expanded_dirs, loops = 0, 0, [], 0
     out_of_budget = False
     rounds_used_up = False
@@ -924,8 +959,12 @@ def run(target, params):
                 #     사전은 이름을 '맞혀야' 찾지만 설정 파일은 적어 놓는다.
                 #     `jdk-11.0.24+8` 처럼 버전이 든 이름은 이 길로만 나온다.
                 if loops <= rounds:
+                    # 사람이 넣은 '단서' 의 본문에서 캔 경로는 퍼징의 성과가 아니다.
+                    # 전에는 출처 검사가 없어, 단서 한 줄이 수확 한 번을 거치면
+                    # '퍼징이 스스로 찾음' 으로 세탁됐다(11-06 검수).
                     fresh = [n for n in harvest_order(walker.nodes)
-                             if n["class"] == READABLE and n["path"] not in picked_from]
+                             if n["class"] == READABLE and n["source"] in MINE
+                             and n["path"] not in picked_from]
                     crop = []
                     for n in fresh:
                         picked_from.add(n["path"])
@@ -1011,8 +1050,7 @@ def run(target, params):
                                 done_work.add((root, grp))
                                 if not words:
                                     continue
-                                paths, b = _names_under(root, words)
-                                bad += b
+                                paths, _b = _names_under(root, words)
                                 before = len(walker.nodes)
                                 walker.hit(_uniq(paths), EXPAND)
                                 if root not in expanded_dirs:
@@ -1032,21 +1070,46 @@ def run(target, params):
                 if out_of_budget or (not progress and not pending):
                     break
             else:
-                # for 가 break 없이 끝났다 = 바퀴 상한을 다 썼다. 아직 할 일이 남았을 수
-                # 있으므로 '더 안 나와서 멈췄다' 고 적으면 거짓이 된다(11-06 3차 실행).
-                rounds_used_up = pending
+                # for 가 break 없이 끝났다 = **바퀴 상한에 걸려** 잘렸다. 마지막 바퀴가
+                # 새로 찾았든(progress) 할 일이 남았든(pending), 어느 쪽이든 더 돌 수
+                # 있었다는 뜻이다 — `pending` 만 보면 progress 쪽을 놓친다(11-06 검수).
+                rounds_used_up = True
 
         if grown_total:
             stages.append(("확장(%d곳)" % len(expanded_dirs), grown_total))
         if harvested_total:
             stages.append(("수확", harvested_total))
 
-    for n in walker.nodes:          # 본문은 여기서 버린다 — 결과·기록 어디에도 안 남는다
+    # 본문은 여기서 버린다. `_r` 에 매달린 Response 의 .body 까지 비운다 —
+    # 화면은 거기서 요청기록 번호만 읽지만, '어디에도 안 남는다' 를 말이 아니라
+    # 사실로 만들어 둔다(11-06 검수).
+    for n in walker.nodes:
         n.pop("_body", None)
+        r = n.get("_r")
+        if r is not None and getattr(r, "body", None):
+            try:
+                r.body = ""
+            except Exception:
+                pass
 
     # ── 종류 가리기: 아직 안 가린 것만 ──
     if want_kinds and not walker.auth_stop:
         walker.sort_kinds([n for n in walker.nodes if n["kind"] is None])
+
+    # ── 끝에서 교정을 한 번 더 ──
+    # 시작 때 통한 오라클이 **끝까지 통했다는 보장이 없다.** 중간에 WAF·속도 제한·
+    # 403 벽이 서면 그 뒤 모든 탐색이 '없음' 으로 보이고, 그 지도가 '완전한 지도' 로
+    # 보고된다(11-06 검수에서 재현: 400 중 18요청만 쓰고 3노드만 그렸는데 결과는
+    # "교정 4/4 통과 · 새로 찾은 것이 없어 스스로 멈췄습니다" 였다).
+    gates_end, bad_end = [], []
+    if gates and not walker.auth_stop and walker.sent > len(CALIBRATION) * 4:
+        walker.left += len(CALIBRATION)      # 처음에 떼어 둔 몫을 여기서 돌려준다
+        gates_end = calibrate(walker)
+        bad_end = [g for g in gates_end if not g["ok"]]
+        if gates_end and len(gates_end) < len(CALIBRATION) and not bad_end:
+            bad_end = [{"path": "(못 봄)", "want": "—", "got": "—", "ok": False,
+                        "why": "끝 교정에서 관문 %d개 중 %d개만 확인"
+                               % (len(CALIBRATION), len(gates_end))}]
 
     # ── 찾은 것에 '무엇인지' 를 붙인다 ──
     # 퍼징은 경로를 찾을 뿐 의미는 모른다. api.env 를 찾아 놓고 크기만 적으면
@@ -1128,8 +1191,12 @@ def run(target, params):
                            "전부 노출된 것으로 보고 교체해야 합니다. 경로 조작 자체를 막는 것이 먼저입니다.",
             response=n["_r"]))
 
-    note = ["파일 내용은 가져오지 않았습니다 — 응답 코드와 길이만 봅니다. "
-            "내용을 보려면 읽힌 행의 '내용 보기' 로 넘어갑니다."]
+    # 전에는 "파일 내용은 가져오지 않았습니다" 라고 적었다. **거짓이었다** —
+    # 수확하려면 본문을 받아야 한다(11-06 검수). 무엇을 받고 어디까지 남기는지 적는다.
+    note = ["구조 판정에는 응답 코드와 길이만 씁니다. 다만 **읽히는 파일은 거기 적힌 "
+            "경로를 캐내려고 내용을 받습니다**(한 파일 %s까지) — 받은 내용은 경로를 뽑는 "
+            "동안만 메모리에 두고 버리며, 결과·요청 기록 어디에도 남지 않습니다. "
+            "내용을 보려면 읽힌 행의 '내용 보기' 로 넘어갑니다." % _size(MAX_BODY)]
     if outside:
         note.append("**출처가 섞여 있습니다.** 표의 '출처' 열을 보세요 — "
                     "`씨앗`·`확장` 은 이 모듈이 자기 페이로드로 찾은 것이고, "
@@ -1158,16 +1225,53 @@ def run(target, params):
                     "거기 적힌 경로를 자동으로 따라갑니다.")
     if cut:
         note.append("사전이 길어 앞에서부터 %d개만 읽었습니다." % limit)
+    # 벽이 섰으면 **가장 먼저** 적는다. 이 아래 어떤 숫자도 믿을 수 없기 때문이다.
+    if bad_end:
+        note.insert(0, "**이 지도는 검증되지 않았습니다.** 시작 때 통한 오라클이 "
+                       "끝에서는 통하지 않습니다(%s). 도중에 막혔다는 뜻이고, 막힌 "
+                       "뒤의 탐색은 전부 '없음'처럼 보였습니다 — **안 나온 경로를 "
+                       "'없다'로 읽지 마세요.** 잠시 뒤 다시 돌려 같은 지도가 나오는지 "
+                       "확인하세요."
+                       % " · ".join("%s: %s → %s" % (g["path"],
+                                                     LABEL.get(g["want"], g["want"]),
+                                                     LABEL.get(g["got"], g["got"]))
+                                    for g in bad_end))
+    elif gates_end:
+        note.append("**끝에서 교정을 한 번 더 해 %d/%d 통과했습니다.** 시작 때만 "
+                    "확인하면, 도중에 막혀 잘린 지도를 완전한 지도로 보고하게 됩니다."
+                    % (len(gates_end) - len(bad_end), len(gates_end)))
+
+    # 버려진 응답도 센다 — 403·429 는 '없음'이 아니라 **막혔다**는 신호다.
+    noteworthy = {k: v for k, v in walker.codes.items()
+                  if k not in (READABLE, EXISTS, UNSTAT) and v}
+    if noteworthy:
+        note.append("**뜻을 모르는 응답 %s 를 받았습니다.** 403 은 탈출 검사에 걸린 것이고, "
+                    "429 처럼 목록에 없는 코드는 속도 제한일 수 있습니다 — 그런 응답이 온 "
+                    "경로는 '없다'가 아니라 **판정 못 함**입니다."
+                    % " · ".join("%s %d건" % (LABEL.get(k, k), v)
+                                 for k, v in sorted(noteworthy.items())))
+    unclear = [x for x in nodes if x.get("probe_inconclusive")]
+    if unclear:
+        note.append("종류를 가리려 '/..' 를 때렸는데 **뜻을 모르는 응답이 온 곳이 %d곳**입니다 "
+                    "— 표에 '미판별' 로 남았습니다. 디렉터리가 아니라는 뜻이 아닙니다."
+                    % len(unclear))
+
     if gates:
         note.append("**오라클 교정 %d/%d 통과** — 답을 아는 경로(`etc/passwd` 200 · `etc` 500 · "
                     "`etc/..` 500 · `etc/passwd/..` 404)로 응답 코드가 뜻을 갖는지 먼저 "
                     "확인했습니다. 뒤 두 개는 종류 가리기가 의지하는 성질이라, 이것이 통하지 "
                     "않으면 '디렉터리' 판정 전체가 무효입니다."
                     % (len(gates) - len(bad_gates), len(gates)))
-    if depth_auto:
+    if depth_auto and depth_measured:
         note.append("**올라갈 단계를 직접 재서 %s 를 썼습니다**(%d번 시도). 고정값을 쓰면 "
                     "배포가 바뀔 때 전부 404 로 와서 '아무것도 없는 서버' 로 보입니다."
-                    % (depth, len(depth_tried)))
+                    % (depth_measured, len(depth_tried)))
+    elif depth_auto:
+        # 재는 데 실패했으면 **그렇게 적는다.** 전에는 자리값 9 를 '재서 썼다' 고
+        # 적어, 측정하지 않은 값을 측정값으로 보고했다(11-06 검수).
+        note.append("**올라갈 단계를 재지 못해 %s 를 그대로 썼습니다**(%d번 시도). "
+                    "`etc/passwd` 가 어느 단계에서도 읽히지 않았습니다 — 이 값은 "
+                    "측정값이 아니라 자리값입니다." % (depth, len(depth_tried)))
     if expanded_dirs:
         note.append("**넓힌 곳 %d곳** — 찾은 디렉터리 전부에 사전을 조금씩 뿌리지 않고, "
                     "순위를 매겨 앞에 선 곳에 이름 목록을 통째로 줬습니다. 순위는 "
@@ -1197,7 +1301,7 @@ def run(target, params):
                     "한 바퀴에 한 단계씩 내려가므로, 더 깊은 배포 구조는 다시 돌리거나 "
                     "'확장만' 모드로 그 디렉터리를 직접 지정하면 이어서 그려집니다."
                     % (MAX_ROUNDS, walker.left))
-    elif mode == "pipeline" and loops:
+    elif mode == "pipeline" and loops and not bad_end:
         note.append("%d바퀴 돌고 **새로 찾은 것이 없어 스스로 멈췄습니다** — 예산이 모자라 "
                     "끊긴 것이 아닙니다(%d건 남김)." % (loops, walker.left))
     if bad:

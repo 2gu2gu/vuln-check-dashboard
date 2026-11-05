@@ -1234,3 +1234,188 @@ def test_expanded_dirs_is_recorded_even_when_the_first_group_is_empty(monkeypatc
     assert mod._names_for("srv/app", ["server.xml", "web.xml"], 0) == []
     assert "넓힌 곳" in r.note and "srv/app" in r.note
     assert "/srv/app/server.xml" in {row[0] for row in r.rows}
+
+
+# ── 11-06 검수에서 나온 것 ────────────────────────────────────
+# 전부 '테스트가 비어 있던 자리' 였다. 코드가 틀린 것보다, 틀렸는지 물어보지
+# 않았던 것이 문제였다.
+
+def walled(monkeypatch, cut_after, cut_status, **params):
+    """정상으로 답하다가 cut_after 번째부터 벽을 세우는 서버.
+
+    WAF·속도 제한·탈출 검사가 도중에 켜지는 상황이다.
+    """
+    pages = {"/srv/app": 500, "/srv/app/conf": 500,
+             "/srv/app/conf/server.xml": 200, "/srv/app/webapps": 500,
+             "/srv/app/webapps/ROOT": 500}
+    calls = []
+
+    def fetch(url, **_kw):
+        payload = parse_qs(urlsplit(url).query).get("file", [""])[0]
+        path = "/" + unquote(unquote(payload)).replace("../", "").lstrip("/")
+        calls.append(path)
+        if len(calls) > cut_after:
+            return Response(url=url, status=cut_status, headers=[], body="")
+        up = path.endswith("/..")
+        base = path[:-3] if up else path
+        at = pages.get(base, GATES.get(base))
+        if at is None:
+            return Response(url=url, status=404, headers=[], body="")
+        if up:
+            return Response(url=url, status=404 if at == 200 else 500, headers=[], body="")
+        return Response(url=url, status=at, headers=[], body="x" * (10 if at == 200 else 0))
+
+    fetch.calls = calls
+    monkeypatch.setattr(mod, "fetch", fetch)
+    turn = {"n": 0}
+
+    def load(*_a, **_k):
+        turn["n"] += 1
+        return (["srv/app"] if turn["n"] == 1
+                else ["conf", "webapps", "ROOT", "server.xml"]), False
+
+    monkeypatch.setattr(mod.wordlists, "load", load)
+    body = dict({"mode": "pipeline", "wordlist": "s", "names": "n", "limit": "999",
+                 "kinds": "yes", "depth": "9", "scheme": "double-full",
+                 "lecture": "123", "hints": "", "rounds": "2", "budget": "400"}, **params)
+    return mod.run(T, body), fetch
+
+
+@pytest.mark.parametrize("wall", [403, 404, 429])
+def test_a_wall_mid_run_is_not_reported_as_a_complete_map(monkeypatch, wall):
+    """시작 교정 한 번이 수천 요청을 보증하지는 못한다.
+
+    검수 재현: 400요청 중 18건만 쓰고 3노드만 그렸는데 결과는 "교정 4/4 통과 ·
+    새로 찾은 것이 없어 스스로 멈췄습니다" 였다. 잘린 지도가 완전한 지도로 보고됐다.
+    """
+    r, _ = walled(monkeypatch, cut_after=12, cut_status=wall)
+    assert "검증되지 않았습니다" in r.note, r.note
+    assert "'없다'로 읽지 마세요" in r.note
+    assert "스스로 멈췄습니다" not in r.note
+
+
+def test_without_a_wall_the_end_calibration_is_reported_as_a_pass(monkeypatch):
+    r, _ = walled(monkeypatch, cut_after=10**6, cut_status=403)
+    assert "끝에서 교정을 한 번 더" in r.note
+    assert "검증되지 않았습니다" not in r.note
+
+
+def test_unknown_response_classes_are_counted_not_dropped(monkeypatch):
+    """403·429 는 '없음' 이 아니라 **막혔다**는 신호다."""
+    r, _ = walled(monkeypatch, cut_after=12, cut_status=403)
+    assert "뜻을 모르는 응답" in r.note
+    assert "판정 못 함" in r.note
+
+
+def test_end_calibration_stays_inside_the_budget(monkeypatch):
+    """상한은 지켜야 한다 — 앱 한도도 같은 수를 센다."""
+    _, fetch = walled(monkeypatch, cut_after=10**6, cut_status=403, budget="60")
+    assert len(fetch.calls) <= 60
+
+
+def test_the_report_does_not_claim_contents_were_not_fetched(monkeypatch):
+    """수확하려면 본문을 받는다. '가져오지 않았다' 는 거짓이었다."""
+    r, _ = bodies(monkeypatch, CHAIN, seeds=["etc/systemd/system/sesacedu-api.service"])
+    assert "파일 내용은 가져오지 않았습니다" not in r.note
+    assert "내용을 받습니다" in r.note              # 받는다고 적는다
+    assert "어디에도 남지 않습니다" in r.note        # 어디까지 남는지도 적는다
+    assert "파일 내용은 가져오지 않습니다" not in mod.META["description"]
+
+
+def test_response_bodies_are_blanked_on_the_way_out(monkeypatch):
+    """`_r` 에 매달린 Response 의 본문까지 비운다.
+
+    화면은 거기서 요청기록 번호만 읽지만, '어디에도 안 남는다' 를 사실로 둔다.
+    """
+    r, _ = bodies(monkeypatch, CHAIN, seeds=["etc/systemd/system/sesacedu-api.service"])
+    for f in r.findings:
+        assert not getattr(f.response, "body", "")
+
+
+def test_calibrate_returns_only_what_it_could_check(monkeypatch):
+    """예산이 모자라면 관문을 다 못 본 채 돌아온다."""
+    fetch = seeded({"/etc/passwd": 200})
+    monkeypatch.setattr(mod, "fetch", fetch)
+    w = mod._Walker(T, "123", 9, "double-full", 2)
+    got = mod.calibrate(w)
+    assert len(got) == 2 < len(mod.CALIBRATION)
+
+
+def test_a_short_calibration_is_not_a_pass(monkeypatch):
+    """관문을 **다 보지 못한** 것도 통과가 아니다 — 전에는 조용히 넘어갔다."""
+    fetch = seeded({"/etc/passwd": 200})
+    monkeypatch.setattr(mod, "fetch", fetch)
+    monkeypatch.setattr(mod.wordlists, "load", lambda *_a, **_k: (list(WORDS), False))
+    # 관문 넷 중 둘만 보고 돌아오는 상황을 그대로 만든다(둘 다 '맞음')
+    monkeypatch.setattr(mod, "calibrate",
+                        lambda w: [{"path": "etc/passwd", "want": mod.READABLE,
+                                    "got": mod.READABLE, "why": "", "ok": True},
+                                   {"path": "etc", "want": mod.EXISTS,
+                                    "got": mod.EXISTS, "why": "", "ok": True}])
+    r = mod.run(T, {"mode": "seed", "wordlist": "s", "names": "", "limit": "10",
+                    "kinds": "no", "depth": "9", "scheme": "double-full",
+                    "lecture": "123", "hints": "", "budget": "200"})
+    assert "교정 실패" in r.summary
+    assert "못 봄" in str(r.rows)
+
+
+def test_a_failed_depth_measurement_is_not_called_a_measurement(monkeypatch):
+    """자리값 9 를 '재서 9 를 썼다' 고 적으면 측정하지 않은 값이 측정값이 된다."""
+    def fetch(url, **_kw):
+        return Response(url=url, status=404, headers=[], body="")
+
+    monkeypatch.setattr(mod, "fetch", fetch)
+    monkeypatch.setattr(mod.wordlists, "load", lambda *_a, **_k: (list(WORDS), False))
+    r = mod.run(T, {"mode": "seed", "wordlist": "s", "names": "", "limit": "10",
+                    "kinds": "no", "depth": "auto", "scheme": "double-full",
+                    "lecture": "123", "hints": "", "budget": "200"})
+    assert "직접 재서" not in r.note
+    assert "교정 실패" in r.summary          # 못 쟀으면 교정도 실패한다
+
+
+def test_a_hint_does_not_launder_into_the_modules_own_work(monkeypatch):
+    """단서 본문에서 캔 경로는 퍼징의 성과가 아니다 — 수확이 출처를 세탁하지 않는다."""
+    pages = {"/etc/hintfile": "EnvironmentFile=/srv/laundered/api.env\n",
+             "/srv/laundered": 500, "/srv/laundered/api.env": 200}
+    r, _ = bodies(monkeypatch, pages, seeds=["etc/nothing-here"],
+                  hints="etc/hintfile", rounds="3")
+    by = {row[0]: row[5] for row in r.rows}
+    assert by.get("/etc/hintfile") == "단서(밖에서)"
+    # 단서를 읽어 캐낸 것이 '수확' 으로 올라가면 안 된다
+    assert "/srv/laundered" not in by
+
+
+def test_skipped_wordlist_lines_are_not_double_counted(monkeypatch):
+    """묶음을 둘로 갈라 돌리므로 같은 사전을 두 번 본다. 그때마다 더하면 부풀어 보인다."""
+    pages = {"/srv/a": 500, "/srv/a/..": 500}
+    r, _ = pipeline(monkeypatch, pages, seeds=["srv/a"],
+                    names=["ok", "x/y", "..", "z/w"], budget="400")
+    assert "3줄을 건너뛰었습니다" in r.note, r.note
+
+
+def test_round_ceiling_is_reported_even_when_the_last_round_found_something(monkeypatch):
+    """`pending` 만 보면 progress 쪽을 놓친다 — 어느 쪽이든 상한에 걸린 것은 상한이다."""
+    monkeypatch.setattr(mod, "MAX_ROUNDS", 2)
+    pages = {"/etc/systemd/system/x.service": "Environment=CATALINA_BASE=/srv/d\n",
+             "/srv/d": 500, "/srv/d/a": 500, "/srv/d/a/b": 500,
+             "/srv/d/a/b/c": 500, "/srv/d/a/b/c/d": 500}
+    r, _ = bodies(monkeypatch, pages, seeds=["etc/systemd/system/x.service"],
+                  words=["a", "b", "c", "d"], budget="900", rounds="3")
+    assert "바퀴 상한" in r.note
+    assert "스스로 멈췄습니다" not in r.note
+
+
+def test_the_wordlist_counts_in_the_docs_match_the_files():
+    """'159줄' 이 네 군데 적혀 있었는데 파일은 209줄이 됐다(11-06 검수)."""
+    import pathlib
+    root = pathlib.Path(mod.__file__).parents[3]
+
+    def lines(name):
+        text = (root / "wordlists" / name).read_text(encoding="utf-8")
+        return [l.strip() for l in text.splitlines()
+                if l.strip() and not l.strip().startswith("#")]
+
+    docs = (root / "wordlists" / "README.md").read_text(encoding="utf-8")
+    assert "%d개" % len(lines("fs-dirnames.txt")) in docs, len(lines("fs-dirnames.txt"))
+    assert "%d개" % len(lines("fs-seeds-sesacedu.txt")) in docs
+    assert "159" not in docs
