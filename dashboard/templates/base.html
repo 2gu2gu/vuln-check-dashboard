@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+{# 서랍의 '멈춤' 은 폼이 아니라 fetch 로 보낸다. before_request 가 모든 POST 에서
+   _csrf 를 보므로 여기서 토큰을 내준다. 127.0.0.1 전용이고 세션에 묶인 값이다. #}
+<meta name="csrf" content="{{ csrf_token() }}">
   <title>{% block title %}결과{% endblock %} · 딸깍이</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
