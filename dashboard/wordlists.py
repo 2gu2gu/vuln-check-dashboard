@@ -46,6 +46,12 @@ BY_FOLDER = {
     "ai": "other",
 }
 
+# 폴더보다 **먼저** 보는 이름. SecLists 의 `Fuzzing/LFI/` 에는 두 가지가 섞여 있다.
+#   LFI-gracefulsecurity-linux.txt  →  `/etc/ssh/ssh_host_rsa_key` 처럼 **절대경로 목록**
+#   LFI-Jhaddix.txt                 →  `../` 와 `%00` 이 든 **페이로드**
+# 폴더(`fuzzing` → 입력값)만 보면 앞쪽이 틀리게 갈려 경로 찾기 모듈의 '이 모듈용' 에서 밀려난다.
+PATH_NAMES = ("gracefulsecurity", "etc-files", "pathtotest")
+
 # 폴더로 못 가리면 파일 이름을 본다. 위에서부터 먼저 맞는 것.
 BY_NAME = [
     ("payload", ("payload", "fuzz", "xss", "sqli", "sql-", "lfi", "rfi", "traversal", "xxe", "ssti", "injection")),
@@ -61,6 +67,8 @@ def classify(rel: str) -> str:
     """상대 경로 하나를 용도로 가른다."""
     low = rel.replace("\\", "/").lower()
     parts = low.split("/")
+    if any(w in parts[-1] for w in PATH_NAMES):  # 폴더보다 이름이 확실한 것 먼저
+        return "path"
     for depth in (2, 1):                         # discovery/web-content → discovery 순으로
         if len(parts) > depth:
             hit = BY_FOLDER.get("/".join(parts[:depth]))
