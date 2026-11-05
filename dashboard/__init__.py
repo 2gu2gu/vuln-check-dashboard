@@ -52,7 +52,9 @@ def create_app(test_config=None):
         SCOPE_HOSTS=[h.strip().lower() for h in env("DASH_SCOPE", DEFAULT_SCOPE).split(",") if h.strip()],
         SELF_PORT=int(env("DASH_PORT", "5050")),           # 이 주소는 점검 대상에서 뺀다
         DELAY_MS=int(env("DASH_DELAY_MS", "100")),         # 요청 사이 간격
-        MAX_REQUESTS=int(env("DASH_MAX_REQUESTS", "2000")),  # 실행 하나당 요청 수 한도
+        # 실행 하나당 요청 수 한도. 경로 조작 퍼징이 서버 구조 전체를 한 번에 그리는 데
+        # 3,000 쯤 쓴다(11-04 실측 1,342 + JSP 앱 안쪽). 그보다 작으면 트리가 반쪽이 된다.
+        MAX_REQUESTS=int(env("DASH_MAX_REQUESTS", "6000")),
         CSRF=True,
         MODULES_PKG="modules",
         PROJECTS_PKG="projects",
