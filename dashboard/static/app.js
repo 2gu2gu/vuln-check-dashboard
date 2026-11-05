@@ -200,29 +200,86 @@
     draw();
   })();
 
-  // ── 실행하면 아이콘이 '도는 중' 으로 날아간다 ────────────
+  // ── 실행하면 그 모듈이 뭉쳐서 '도는 중' 으로 날아간다 ──────
   // 눌렀는데 화면이 그대로면 아무 일도 안 일어난 줄 안다. 뒤로 갔다는 신호다.
+  // 전에는 두 가지 때문에 보이지 않았다(사용자 지적 11-05 "눈에 안 띄어").
+  //  (1) 출발점이 카드 맨 위였다. 카드를 펴면 실행 버튼은 한참 아래라, 스크롤을 내린 채
+  //      누르면 46px 짜리가 화면 위 안 보이는 곳에서 출발했다.
+  //  (2) 실행은 뒤에서 돌고 화면은 곧바로 결과/표면 탭으로 넘어간다. 1.1초짜리가
+  //      0.2초 만에 잘렸다.
+  // 이제 화면에 보이는 카드 만한 덩어리가 그 자리에서 떠오르고, 다 날아간 뒤에 넘긴다.
   (function () {
+    var FLY = 750, WAIT = 820;   // 날아가는 시간 / 화면을 넘기기까지. WAIT > FLY 여야 한다
+    var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
     document.addEventListener("submit", function (e) {
       var form = e.target;
-      if (!form.action || form.action.indexOf("/run") === -1) return;
-      var card = form.closest(".mod, .tool-form, .probe-bar") || form;
+      if (e.defaultPrevented || !form.action || form.action.indexOf("/run") === -1) return;
+      // 넘기기를 미루는 동안 또 누르면 같은 실행이 두 번 들어간다. 전에는 바로 넘어가서
+      // 이 구멍이 없었다 — 미루기로 한 이상 여기서 막아야 한다.
+      if (form.dataset.sending) { e.preventDefault(); return; }
       var dest = document.getElementById("jobs-open");
-      if (!dest || !card.getBoundingClientRect) return;
-      var a = card.getBoundingClientRect(), b = dest.getBoundingClientRect();
-      var fly = document.createElement("div");
-      fly.className = "flyer";
-      fly.textContent = "\u25b6";
-      fly.style.left = (a.left + a.width / 2 - 23) + "px";
-      fly.style.top = (a.top + 24) + "px";
-      document.body.appendChild(fly);
-      requestAnimationFrame(function () {
-        fly.style.transform = "translate(" + (b.left + b.width / 2 - a.left - a.width / 2) + "px,"
-                            + (b.top + b.height / 2 - a.top - 24 - 23) + "px) scale(.45) rotate(18deg)";
-        fly.style.opacity = "0";
-      });
-      setTimeout(function () { fly.remove(); dest.classList.add("bump"); }, 1150);
-      setTimeout(function () { dest.classList.remove("bump"); }, 1700);
+      var card = form.closest(".mod, .tool-form, .probe-bar") || form;
+      if (!dest || !card.getBoundingClientRect || typeof form.submit !== "function") return;
+
+      if (still) {                       // 움직임을 줄이는 설정이면 테두리만 잠깐 남긴다
+        card.classList.add("sent-still");
+        setTimeout(function () { card.classList.remove("sent-still"); }, 1200);
+        return;
+      }
+
+      // 화면에 보이는 부분에서 출발한다 — 카드가 길어 위아래로 벗어나 있어도
+      var r = card.getBoundingClientRect();
+      var head = document.querySelector("header.top");
+      var top = Math.max(r.top, head ? head.getBoundingClientRect().bottom + 8 : 8);
+      var box = {left: r.left, width: r.width, top: top,
+                 height: Math.min(r.bottom, window.innerHeight - 8) - top};
+      if (box.height < 60 || box.width < 60) {   // 카드가 거의 안 보이면 누른 버튼 자리에서
+        var hit = e.submitter || form.querySelector("button[type=submit]") || form;
+        var hr = hit.getBoundingClientRect();
+        box = {left: hr.left, top: hr.top, width: hr.width, height: hr.height};
+      }
+      box.height = Math.min(box.height, 320);    // 너무 길면 윗동강만 떠오른다
+
+      var ghost = document.createElement("div");
+      ghost.className = "flyer";
+      ghost.style.left = box.left + "px";
+      ghost.style.top = box.top + "px";
+      ghost.style.width = box.width + "px";
+      ghost.style.height = box.height + "px";
+      ghost.style.transitionDuration = FLY + "ms";
+      ghost.innerHTML = '<span class="flyer-go">\u25b6</span><span class="flyer-name"></span>';
+      var title = card.querySelector("h3") || card.querySelector("h2");
+      ghost.querySelector(".flyer-name").textContent = title ? title.textContent.trim() : "실행";
+      document.body.appendChild(ghost);
+
+      // 붙인 자세를 한 번 굳히고(강제 리플로우) 바로 목표 자세를 준다.
+      // requestAnimationFrame 한 번만으로는 두 자세가 같은 프레임에 묶일 수 있다.
+      void ghost.offsetWidth;
+      var b = dest.getBoundingClientRect();
+      var s = Math.min(1, 60 / Math.max(box.width, 1));
+      ghost.style.transform =
+        "translate(" + (b.left + b.width / 2 - box.width * s / 2 - box.left) + "px,"
+                     + (b.top + b.height / 2 - box.height * s / 2 - box.top) + "px)" +
+        " scale(" + s + ") rotate(10deg)";
+      ghost.style.opacity = "0";
+      card.classList.add("sent");
+      setTimeout(function () { dest.classList.add("bump"); }, FLY - 140);
+      setTimeout(function () { ghost.remove(); }, WAIT + 1500);   // 화면이 안 넘어가도 치운다
+
+      // 다 날아간 다음에 넘긴다 — 바로 넘기면 눈에 띄기 전에 잘린다
+      e.preventDefault();
+      form.dataset.sending = "1";
+      var go = form.querySelector("button[type=submit]");
+      if (go) { go.disabled = true; }
+      setTimeout(function () {
+        try {
+          form.submit();
+        } catch (err) {                      // 못 보내면 묶어 두지 않는다
+          delete form.dataset.sending;
+          if (go) { go.disabled = false; }
+        }
+      }, WAIT);
     }, true);
   })();
 
