@@ -444,6 +444,23 @@ mark { background: var(--mark); color: var(--mark-ink); border-radius: 2px; padd
                        to   { box-shadow: 0 0 0 16px rgba(127, 127, 127, 0); } }
 .sent-still { outline: 3px solid var(--accent); outline-offset: 2px; }
 
+/* 도구는 그 자리에서 기다린다 — 13초·67초 걸리는 것이 있어 표시가 없으면 멈춘 줄 안다.
+   버튼은 CSS 로만 막는다. JS 로 disabled 하면 그 버튼의 값이 전송에서 빠진다(_drill). */
+.waiting button[type=submit] { opacity: .5; pointer-events: none; }
+.wait-note { display: flex; align-items: center; gap: 8px; margin: 10px 0 0;
+             font-size: 14px; color: var(--sub);
+             /* .run-row 가 flex 라 이게 없으면 버튼 오른쪽에 끼어들어 모듈 경로를 민다 */
+             flex-basis: 100%; width: 100%; }
+.wait-note.again { color: var(--hit); font-weight: 600; }
+.wait-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+            flex: none; animation: wait-pulse 1s ease-in-out infinite; }
+@keyframes wait-pulse { 0%, 100% { transform: scale(.55); opacity: .4; }
+                        50%      { transform: scale(1);   opacity: 1; } }
+
+/* 브라우저가 제출을 막았을 때 — 기본 말풍선은 금방 사라지고 놓치기 쉽다 */
+.need-note { display: block; margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--hit); }
+.need { outline: 2px solid var(--hit); outline-offset: 3px; border-radius: 6px; }
+
 /* 카드를 누르면 그 자리에서 커진다 */
 .mod.zoom, .tool-pick.zoom { animation: zoom-in .2s ease-out; }
 @keyframes zoom-in { from { transform: scale(.97); opacity: .6; } }
@@ -452,7 +469,7 @@ mark { background: var(--mark); color: var(--mark-ink); border-radius: 2px; padd
 
 @media (prefers-reduced-motion: reduce) {
   .toast, .toast.leaving, .flyer, .mod.zoom, #jobs-open.bump,
-  .mod.sent, .tool-form.sent, .probe-bar.sent { animation: none; transition: none; }
+  .mod.sent, .tool-form.sent, .probe-bar.sent, .wait-dot { animation: none; transition: none; }
 }
 
 /* 묶는 기준 탭 */
