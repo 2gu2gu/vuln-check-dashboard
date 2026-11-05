@@ -208,19 +208,41 @@
   //  (2) 실행은 뒤에서 돌고 화면은 곧바로 결과/표면 탭으로 넘어간다. 1.1초짜리가
   //      0.2초 만에 잘렸다.
   // 이제 화면에 보이는 카드 만한 덩어리가 그 자리에서 떠오르고, 다 날아간 뒤에 넘긴다.
+  // 날아가는 것은 뒤에서 도는 실행뿐이다 — 모듈 탭과 표면 탭. 아래 BG 를 본다.
   (function () {
     var FLY = 750, WAIT = 820;   // 날아가는 시간 / 화면을 넘기기까지. WAIT > FLY 여야 한다
     var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+    // 어떻게 끝나는 실행인지를 주소로 가린다. 주소에 '/run' 이 들었는지로 보면 틀린다 —
+    // 표면 점검은 뒤에서 도는데도 빠지고(사용자 지적 11-05 "왜 표면 탭에서는 그렇게 안
+    // 날아가"), 도구는 그 자리에서 기다리는데도 들어왔다.
+    var BG = /\/modules\/[^\/]+\/run$|\/surface\/probe$/;   // 뒤에서 돈다 → '도는 중' 으로 날아간다
+    var SYNC = /\/tools\/run$/;                            // 기다려서 그 자리에 띄운다 → 테두리만
+
     document.addEventListener("submit", function (e) {
       var form = e.target;
-      if (e.defaultPrevented || !form.action || form.action.indexOf("/run") === -1) return;
+      if (e.defaultPrevented || !form.action) return;
+      var path = form.action.replace(/^[a-z][a-z0-9+.\-]*:\/\/[^\/]*/i, "").split(/[?#]/)[0];
+      var bg = BG.test(path);
+      if (!bg && !SYNC.test(path)) return;   // 지우기·헤더 넣기 같은 건 건드리지 않는다
+      // 표면 탭은 폼이 지점 표까지 다 감싼다 — 폼을 카드로 쓰면 화면만 한 덩어리가 된다.
+      // 누르는 자리인 안쪽 막대(.probe-bar, sticky 라 늘 보인다)를 집는다.
+      var card = form.closest(".mod, .tool-form, .probe-bar")
+                 || form.querySelector(".probe-bar") || form;
+      if (!card.getBoundingClientRect) return;
+
+      if (!bg) {
+        // 도구는 가로채지 않는다. form.submit() 은 누른 버튼의 name/value 를 안 보내서
+        // 가로채면 '이어서 보기'(_drill) 가 죽는다. 테두리만 켜고 브라우저에 맡긴다.
+        card.classList.add(still ? "sent-still" : "sent");
+        return;
+      }
+
       // 넘기기를 미루는 동안 또 누르면 같은 실행이 두 번 들어간다. 전에는 바로 넘어가서
       // 이 구멍이 없었다 — 미루기로 한 이상 여기서 막아야 한다.
       if (form.dataset.sending) { e.preventDefault(); return; }
       var dest = document.getElementById("jobs-open");
-      var card = form.closest(".mod, .tool-form, .probe-bar") || form;
-      if (!dest || !card.getBoundingClientRect || typeof form.submit !== "function") return;
+      if (!dest || typeof form.submit !== "function") return;
 
       if (still) {                       // 움직임을 줄이는 설정이면 테두리만 잠깐 남긴다
         card.classList.add("sent-still");
@@ -240,6 +262,11 @@
         box = {left: hr.left, top: hr.top, width: hr.width, height: hr.height};
       }
       box.height = Math.min(box.height, 320);    // 너무 길면 윗동강만 떠오른다
+      // 어느 쪽으로든 화면을 벗어났으면 끌어온다. 밖에서 출발하면 안 보이고,
+      // 안 보이면 아무 일도 안 일어난 것과 같다 — 이번 건의 출발점이 바로 그거였다.
+      var lo = head ? head.getBoundingClientRect().bottom + 8 : 8;
+      box.top = Math.min(Math.max(box.top, lo), window.innerHeight - 8 - box.height);
+      box.left = Math.min(Math.max(box.left, 8), window.innerWidth - 8 - Math.min(box.width, window.innerWidth - 16));
 
       var ghost = document.createElement("div");
       ghost.className = "flyer";
