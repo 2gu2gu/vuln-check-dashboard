@@ -146,3 +146,32 @@ def test_csrf_and_host(tmp_path):
     token = re.search(r'name="_csrf" value="([0-9a-f]+)"', c.get("/targets").get_data(as_text=True)).group(1)
     assert c.post("/targets", data={**data, "_csrf": token}).status_code == 302
     assert c.get("/", headers={"Host": "evil.example"}).status_code == 400
+
+
+def _app(tmp_path, **cfg):
+    return create_app({"TESTING": True, "SECRET_KEY": "t", "DATABASE": str(tmp_path / "h.sqlite3"),
+                       "CSRF": False, "DELAY_MS": 0, **cfg})
+
+
+def test_allowed_hosts_opens_one_name(tmp_path):
+    """서버에 올려 밖에서 열 때는 들어올 이름을 적어 준다. 적은 것만 들어온다."""
+    c = _app(tmp_path, ALLOWED_HOSTS=["dast.example"]).test_client()
+    assert c.get("/", headers={"Host": "dast.example"}).status_code == 200
+    assert c.get("/", headers={"Host": "dast.example:80"}).status_code == 200   # 포트는 떼고 본다
+    assert c.get("/", headers={"Host": "DAST.EXAMPLE"}).status_code == 200      # 대소문자 무시
+    assert c.get("/", headers={"Host": "evil.example"}).status_code == 400
+    assert c.get("/", headers={"Host": "127.0.0.1"}).status_code == 200         # 로컬은 늘 된다
+
+
+def test_allowed_hosts_star_takes_any(tmp_path):
+    """공인 IP 가 중지·시작마다 바뀌는 자리용. 이름 검사를 통째로 끄는 것과 같다."""
+    c = _app(tmp_path, ALLOWED_HOSTS=["*"]).test_client()
+    assert c.get("/", headers={"Host": "13.125.1.2"}).status_code == 200
+    assert c.get("/", headers={"Host": "evil.example"}).status_code == 200
+
+
+def test_default_is_local_only(tmp_path):
+    """기본값은 그대로다 — 적지 않으면 내 PC 뿐."""
+    c = _app(tmp_path).test_client()
+    assert c.get("/", headers={"Host": "localhost"}).status_code == 200
+    assert c.get("/", headers={"Host": "dast.example"}).status_code == 400

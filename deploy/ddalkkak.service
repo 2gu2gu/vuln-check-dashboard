@@ -1,0 +1,26 @@
+[Unit]
+Description=ddalkkak (DAST dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ddalkkak
+Group=ddalkkak
+WorkingDirectory=/opt/ddalkkak
+# 들어와도 되는 Host 이름. 공인 IP 로만 들어올 것이고 그 IP 가 바뀔 수 있으면 `*`,
+# 이름을 붙였으면 그 이름을 적는다(예: DASH_ALLOWED_HOSTS=dast.example.com)
+Environment=DASH_ALLOWED_HOSTS=*
+Environment=DASH_PORT=5050
+# 앞에 nginx 를 두므로 앱은 루프백에만 연다. nginx 없이 바로 열려면 DASH_BIND=0.0.0.0
+Environment=DASH_BIND=127.0.0.1
+ExecStart=/opt/ddalkkak/.venv/bin/python run.py
+Restart=on-failure
+RestartSec=3
+# instance/ (sqlite3·secret.key) 말고는 쓸 일이 없다
+ReadWritePaths=/opt/ddalkkak/instance
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
