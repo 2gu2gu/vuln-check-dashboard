@@ -299,7 +299,8 @@
     // 끝내 화면이 안 넘어가는 일이 있어도 영영 못 누르게 두지는 않는다
     var bail = setTimeout(function () {
       release();
-      say.textContent = "오래 걸립니다 — 다시 눌러 볼 수 있습니다";
+      // 다시 누르라고 하면 안 된다 — 그 실행은 서랍에서 그대로 돌고 있다.
+      say.textContent = "오래 걸립니다 — 진행과 멈춤은 오른쪽 위 '도는 중' 에서 봅니다";
     }, 300000);
 
     held = {
@@ -332,8 +333,11 @@
   //      누르면 46px 짜리가 화면 위 안 보이는 곳에서 출발했다.
   //  (2) 실행은 뒤에서 돌고 화면은 곧바로 결과/표면 탭으로 넘어간다. 1.1초짜리가
   //      0.2초 만에 잘렸다.
-  // 이제 화면에 보이는 카드 만한 덩어리가 그 자리에서 떠오르고, 다 날아간 뒤에 넘긴다.
-  // 날아가는 것은 뒤에서 도는 실행뿐이다 — 모듈 탭과 표면 탭. 아래 BG 를 본다.
+  // 이제 화면에 보이는 카드 만한 덩어리가 그 자리에서 떠오른다. 서랍에 올라가는
+  // 실행이면 다 날아간다 — 모듈·표면(뒤에서 돈다)도, 도구(요청 안에서 돈다)도.
+  // 가는 곳이 같으면 가는 모습도 같아야 한다. 다른 것은 **그 다음**뿐이다:
+  // 뒤에서 도는 쪽은 화면이 곧바로 넘어가므로 다 날아갈 때까지 넘기기를 미루고,
+  // 도구는 응답이 올 때까지 화면이 그대로라 미룰 것이 없다.
   (function () {
     var FLY = 750, WAIT = 820;   // 날아가는 시간 / 화면을 넘기기까지. WAIT > FLY 여야 한다
     var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -354,17 +358,15 @@
                  || form.querySelector(".probe-bar") || form;
 
       if (mode === "sync") {
-        // 도구는 가로채지 않는다. form.submit() 은 누른 버튼의 name/value 를 안 보내서
-        // 가로채면 '이어서 보기'(_drill) 가 죽는다. 브라우저에 맡기고 표시만 남긴다.
         // 기다리는 동안 또 누르면 말없이 삼키지 않는다 — 삼키면 그게 또 '안 눌린다' 다.
         if (held) { e.preventDefault(); held.again(); return; }
-        hold(e.submitter, card);
+        hold(e.submitter, card);          // 그 자리에 남는 표시. 아래로 이어서 날린다
+      } else if (form.dataset.sending) {
+        // 넘기기를 미루는 동안 또 누르면 같은 실행이 두 번 들어간다. 전에는 바로
+        // 넘어가서 이 구멍이 없었다 — 미루기로 한 이상 여기서 막아야 한다.
+        e.preventDefault();
         return;
       }
-
-      // 넘기기를 미루는 동안 또 누르면 같은 실행이 두 번 들어간다. 전에는 바로 넘어가서
-      // 이 구멍이 없었다 — 미루기로 한 이상 여기서 막아야 한다.
-      if (form.dataset.sending) { e.preventDefault(); return; }
       var dest = document.getElementById("jobs-open");
       if (!dest || typeof form.submit !== "function") return;
 
@@ -417,6 +419,10 @@
       card.classList.add("sent");
       setTimeout(function () { dest.classList.add("bump"); }, FLY - 140);
       setTimeout(function () { ghost.remove(); }, WAIT + 1500);   // 화면이 안 넘어가도 치운다
+
+      // 도구는 여기서 끝이다. 가로채면 누른 버튼의 name/value 가 빠져
+      // '이어서 보기'(_drill) 가 죽으므로, 보내기는 브라우저에 맡긴다.
+      if (mode === "sync") { return; }
 
       // 다 날아간 다음에 넘긴다 — 바로 넘기면 눈에 띄기 전에 잘린다
       e.preventDefault();

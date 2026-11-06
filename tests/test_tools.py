@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 import pytest
 
-from dashboard import payloads
+from dashboard import jobs, payloads
 from dashboard.blind import Oracle, _to_char
 from dashboard.core import Response, Target, ToolResult
 from dashboard.db import get_db
@@ -534,3 +534,72 @@ def test_wrapping_depth_matches_the_dots():
     two = payloads.traversal("a+b", 0, "double-full")
     assert one == "a%2bb"
     assert two == "a%25%32%62b"
+
+
+# ── 도구 실행도 '도는 중' 에 올라간다 ──────────────────────────
+# 전에는 도는 중이 브라우저 안에만 적혀 있어서 탭을 옮기면 사라졌고, 서랍은
+# 백그라운드 실행만 알았다(사용자 지적 11-06). 이제 요청 안에서 도는 것도 같은
+# 자리에 올린다 — 그 덕에 멈춤·요청 흐름·동시 실행 상한이 공짜로 따라온다.
+
+RUN_FORM = {"target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "tables",
+            "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
+
+
+def test_tool_run_is_live_in_the_drawer_while_it_runs(app, tool_client, monkeypatch):
+    """도는 동안 서랍에 보이고, 다른 탭에서 연 도구 화면도 그렇다고 적는다."""
+    seen = {}
+
+    def peek(target, params):
+        seen["live"] = jobs.live_count()
+        seen["rows"] = jobs.listing()
+        seen["json"] = app.test_client().get("/jobs?target=1").get_json()
+        # 다른 탭에서 도구 화면을 다시 연 것과 같다 — 결과 자리는 비어 있다
+        seen["page"] = app.test_client().get("/tools?target=1").get_data(as_text=True)
+        return ToolResult(summary="들여다봤다")
+
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run", peek)
+    tool_client.post("/tools/run", data=RUN_FORM)
+
+    assert seen["live"] == 1
+    assert seen["rows"][0]["module_id"] == "sesacedu_lecture_sqli" and seen["rows"][0]["live"]
+    assert seen["json"]["live"] == 1
+    assert "아직 돌고 있습니다" in seen["page"]
+
+
+def test_tool_run_leaves_the_drawer_when_it_ends(app, tool_client, monkeypatch):
+    """끝나면 도는 수는 0 으로 돌아가고 기록과 결과 문구는 남는다."""
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run",
+                        lambda t_, p_: ToolResult(summary="표 2개"))
+    tool_client.post("/tools/run", data=RUN_FORM)
+
+    rows = jobs.listing()
+    assert jobs.live_count() == 0
+    assert rows[0]["status"] == "done" and rows[0]["message"].startswith("표 2개")
+
+
+def test_tool_run_can_be_stopped_from_the_drawer(app, tool_client, monkeypatch):
+    """멈춤을 누르면 다음 요청을 보내기 직전에 걸린다. 전에는 stop_check 가 없어 못 멈췄다."""
+    from flask import g
+
+    def long(target, params):
+        run_id = jobs.listing()[0]["run_id"]
+        assert app.test_client().post(f"/jobs/{run_id}/cancel").get_json()["ok"]
+        g.run_ctx.before_send()        # core.fetch 가 보내기 직전에 부르는 바로 그 자리
+        raise AssertionError("여기까지 오면 안 멈춘 것이다")
+
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run", long)
+    page = tool_client.post("/tools/run", data=RUN_FORM).get_data(as_text=True)
+
+    assert "멈췄습니다" in page
+    assert jobs.listing()[0]["status"] == "cancelled" and jobs.live_count() == 0
+
+
+def test_tool_run_waits_its_turn_when_the_limit_is_full(app, tool_client, monkeypatch):
+    """동시 실행 상한은 도구에도 같이 건다 — 요청 간격을 지켜도 동시에 때리면 합쳐진 양이 는다."""
+    monkeypatch.setattr(jobs, "MAX_LIVE", 0)
+    ran = []
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run",
+                        lambda t_, p_: ran.append(1) or ToolResult(summary="돌았다"))
+    page = tool_client.post("/tools/run", data=RUN_FORM).get_data(as_text=True)
+
+    assert ran == [] and "하나가 끝나면" in page
