@@ -106,7 +106,8 @@ def test_reads_table_list(sqlite_oracle):
 
 def fake_lectures_fetch(record=None):
     """keyword 를 SQL 에 그대로 이어 붙이는 서버. 연습용 대상과 같은 동작."""
-    db = sqlite3.connect(":memory:")
+    # 도구는 작업자 스레드에서 돈다 — 만든 스레드 밖에서도 쓰게 둔다
+    db = sqlite3.connect(":memory:", check_same_thread=False)
     db.executescript("CREATE TABLE lectures (id INTEGER, title TEXT, is_open INTEGER);"
                      "CREATE TABLE members (id INTEGER, mail TEXT);"
                      "INSERT INTO members VALUES (1, 'demo@example.test');")
@@ -228,12 +229,12 @@ def test_tools_page_lists_tools(tool_client):
 def test_tool_run_and_drill(app, tool_client):
     form = {"target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "tables",
             "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
-    page = tool_client.post("/tools/run", data=form).get_data(as_text=True)
+    page = tool_client.post("/tools/run", data=form, follow_redirects=True).get_data(as_text=True)
     assert "members" in page and "컬럼 보기" in page
 
     # 표의 '컬럼 보기'를 누른 것과 같은 요청
     drill = json.dumps({"mode": "columns", "table": "members", "offset": "0"})
-    page = tool_client.post("/tools/run", data={**form, "_drill": drill}).get_data(as_text=True)
+    page = tool_client.post("/tools/run", data={**form, "_drill": drill}, follow_redirects=True).get_data(as_text=True)
     assert "mail" in page and "members — 컬럼" in page
 
 
@@ -247,7 +248,8 @@ def test_tool_needs_confirm(app, tool_client):
 def test_tool_rejects_bad_select_option(app, tool_client):
     page = tool_client.post("/tools/run", data={
         "target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "nope",
-        "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}).get_data(as_text=True)
+        "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""},
+        follow_redirects=True).get_data(as_text=True)
     assert "목록에 있는 값" in page
 
 
@@ -258,13 +260,32 @@ def test_tool_cache_persists_between_runs(app, tool_client):
     with app.app_context():
         saved = get_db().execute("SELECT COUNT(*) c FROM tool_cache").fetchone()["c"]
     assert saved > 0
-    page = tool_client.post("/tools/run", data=form).get_data(as_text=True)
+    page = tool_client.post("/tools/run", data=form, follow_redirects=True).get_data(as_text=True)
     assert "기억해 둔 값" in page
 
 
-def test_tool_module_not_runnable_from_modules_tab(app, tool_client):
-    r = tool_client.post("/modules/sesacedu_lecture_sqli/run", data={"target_id": 1, "confirm": "yes"})
-    assert r.status_code == 302 and "/tools" in r.headers["Location"]
+def test_tool_module_runs_from_modules_tab(app, tool_client):
+    """모듈 탭에서 누르면 그 자리에서 뒤로 돈다 — 도구 탭으로 넘기지 않는다(11-07 안 1)."""
+    form = {k: v for k, v in RUN_FORM.items() if k != "module_id"}
+    r = tool_client.post("/modules/sesacedu_lecture_sqli/run", data=form)
+    assert r.status_code == 302 and "/modules" in r.headers["Location"]
+    with app.app_context():
+        run = get_db().execute("SELECT * FROM runs WHERE module_id = 'sesacedu_lecture_sqli'").fetchone()
+    assert run["status"] == "done" and "members" in run["result"]
+    # 끝난 도구에는 결과 표로 가는 주소가 붙는다
+    row = tool_client.get("/jobs?target=1").get_json()["jobs"][0]
+    assert row["result_url"].endswith(f"run={run['id']}")
+    page = tool_client.get(row["result_url"]).get_data(as_text=True)
+    assert "members" in page and "컬럼 보기" in page
+
+
+def test_tool_module_from_modules_tab_still_needs_confirm(app, tool_client):
+    form = {k: v for k, v in RUN_FORM.items() if k not in ("module_id", "confirm")}
+    page = tool_client.post("/modules/sesacedu_lecture_sqli/run", data=form,
+                            follow_redirects=True).get_data(as_text=True)
+    assert "체크해야" in page
+    with app.app_context():
+        assert get_db().execute("SELECT COUNT(*) c FROM runs").fetchone()["c"] == 0
 
 
 def test_tool_result_type_checked(app, tool_client, monkeypatch):
@@ -272,7 +293,8 @@ def test_tool_result_type_checked(app, tool_client, monkeypatch):
     monkeypatch.setattr(mod, "run", lambda *a, **k: "틀린 반환값")
     page = tool_client.post("/tools/run", data={
         "target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "probe",
-        "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}).get_data(as_text=True)
+        "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""},
+        follow_redirects=True).get_data(as_text=True)
     assert "ToolResult" in page
     assert isinstance(ToolResult(), ToolResult)
 
@@ -412,7 +434,7 @@ def test_port_check_uses_host_scope_not_role_port(app, client, monkeypatch):
         tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
     page = client.post("/tools/run", data={
         "target_id": tid, "module_id": "port_check", "confirm": "yes",
-        "ports": "22,443,8080", "expected": "443", "timeout": "1"}).get_data(as_text=True)
+        "ports": "22,443,8080", "expected": "443", "timeout": "1"}, follow_redirects=True).get_data(as_text=True)
     assert tried == [("localhost", 22), ("localhost", 443), ("localhost", 8080)]
     assert "예상 밖 2개" in page
 
@@ -454,11 +476,13 @@ def test_port_check_rejects_bad_input(app, client):
     with app.app_context():
         tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
     page = client.post("/tools/run", data={"target_id": tid, "module_id": "port_check", "confirm": "yes",
-                                           "ports": "22,abc", "expected": "", "timeout": "1"}).get_data(as_text=True)
+                                           "ports": "22,abc", "expected": "", "timeout": "1"},
+                       follow_redirects=True).get_data(as_text=True)
     assert "포트가 아닌 값" in page
     page = client.post("/tools/run", data={
         "target_id": tid, "module_id": "port_check", "confirm": "yes",
-        "ports": ",".join(str(p) for p in range(1, 40)), "expected": "", "timeout": "1"}).get_data(as_text=True)
+        "ports": ",".join(str(p) for p in range(1, 40)), "expected": "", "timeout": "1"},
+        follow_redirects=True).get_data(as_text=True)
     assert "30개까지" in page
 
 
@@ -475,7 +499,7 @@ def _drill_values(html):
 def test_drill_button_value_is_valid_json(app, tool_client):
     form = {"target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "tables",
             "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
-    html = tool_client.post("/tools/run", data=form).get_data(as_text=True)
+    html = tool_client.post("/tools/run", data=form, follow_redirects=True).get_data(as_text=True)
     values = _drill_values(html)
     assert values, "이어서 보기 버튼이 없다"
     for raw in values:
@@ -489,10 +513,10 @@ def test_clicking_drill_button_works_end_to_end(app, tool_client):
     import html as _h
     form = {"target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "tables",
             "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
-    html = tool_client.post("/tools/run", data=form).get_data(as_text=True)
+    html = tool_client.post("/tools/run", data=form, follow_redirects=True).get_data(as_text=True)
     raw = _drill_values(html)[0]
-    r = tool_client.post("/tools/run", data={**form, "_drill": _h.unescape(raw)})
-    assert r.status_code == 200
+    r = tool_client.post("/tools/run", data={**form, "_drill": _h.unescape(raw)}, follow_redirects=True)
+    assert r.status_code == 200 and "lectures — 컬럼" in r.get_data(as_text=True)
 
 
 # ── 쿼리스트링에서 뜻이 달라지는 글자 ────────────────────────────
@@ -537,9 +561,8 @@ def test_wrapping_depth_matches_the_dots():
 
 
 # ── 도구 실행도 '도는 중' 에 올라간다 ──────────────────────────
-# 전에는 도는 중이 브라우저 안에만 적혀 있어서 탭을 옮기면 사라졌고, 서랍은
-# 백그라운드 실행만 알았다(사용자 지적 11-06). 이제 요청 안에서 도는 것도 같은
-# 자리에 올린다 — 그 덕에 멈춤·요청 흐름·동시 실행 상한이 공짜로 따라온다.
+# 도구도 다른 모듈처럼 뒤에서 돈다(11-07 안 1). 멈춤·요청 흐름·동시 실행 상한이
+# 같이 따라오고, 결과 표는 끝난 뒤 도구 탭(?run=)에서 다시 연다.
 
 RUN_FORM = {"target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "tables",
             "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
@@ -563,7 +586,7 @@ def test_tool_run_is_live_in_the_drawer_while_it_runs(app, tool_client, monkeypa
     assert seen["live"] == 1
     assert seen["rows"][0]["module_id"] == "sesacedu_lecture_sqli" and seen["rows"][0]["live"]
     assert seen["json"]["live"] == 1
-    assert "아직 돌고 있습니다" in seen["page"]
+    assert "이 돌고 있습니다" in seen["page"]
 
 
 def test_tool_run_leaves_the_drawer_when_it_ends(app, tool_client, monkeypatch):
@@ -588,7 +611,7 @@ def test_tool_run_can_be_stopped_from_the_drawer(app, tool_client, monkeypatch):
         raise AssertionError("여기까지 오면 안 멈춘 것이다")
 
     monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run", long)
-    page = tool_client.post("/tools/run", data=RUN_FORM).get_data(as_text=True)
+    page = tool_client.post("/tools/run", data=RUN_FORM, follow_redirects=True).get_data(as_text=True)
 
     assert "멈췄습니다" in page
     assert jobs.listing()[0]["status"] == "cancelled" and jobs.live_count() == 0
@@ -600,6 +623,6 @@ def test_tool_run_waits_its_turn_when_the_limit_is_full(app, tool_client, monkey
     ran = []
     monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run",
                         lambda t_, p_: ran.append(1) or ToolResult(summary="돌았다"))
-    page = tool_client.post("/tools/run", data=RUN_FORM).get_data(as_text=True)
+    page = tool_client.post("/tools/run", data=RUN_FORM, follow_redirects=True).get_data(as_text=True)
 
     assert ran == [] and "하나가 끝나면" in page
