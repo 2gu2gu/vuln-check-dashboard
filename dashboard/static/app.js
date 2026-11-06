@@ -456,8 +456,32 @@
           list.appendChild(li);
         }
         d.jobs.forEach(function (j) { list.appendChild(row(j)); });
+        d.jobs.forEach(freshenRunRow);
         return d;
       }).catch(function () {});
+    }
+
+    // 모듈 탭 '최근 실행' 표는 페이지를 그릴 때 한 번 찍힌다. 도는 동안 요청 수가
+    // 1 에 멈춰 있어 안 도는 것처럼 보였다(사용자 지적) — 드로어가 받아 오는 같은 값으로
+    // 그 줄의 '요청'·'상태' 칸만 갈아 끼운다. **요청 기록 목록은 건드리지 않는다**:
+    // 목록이 저절로 바뀌면 누르려던 줄이 달아난다.
+    function freshenRunRow(j) {
+      var tr = document.querySelector('tr[data-run="' + j.run_id + '"]');
+      if (!tr) { return; }
+      var reqs = tr.querySelector(".run-reqs");
+      if (reqs) {
+        var want = j.sent ? '<a href="' + reqs.dataset.href + '">' + j.sent + "개 보기</a>"
+                          : '<span class="sub">0</span>';
+        if (reqs.innerHTML !== want) { reqs.innerHTML = want; }
+      }
+      var st = tr.querySelector(".run-status");
+      if (st) {
+        var cls = j.status === "error" ? "status st-error" : j.status === "done" ? "status st-fixed" : "status";
+        var txt = j.status === "error" ? "실패" : j.status === "done" ? "완료" : j.status;
+        var want2 = '<span class="' + cls + '">' + txt + "</span>"
+                  + (j.error ? '<div class="sub small">' + j.error + "</div>" : "");
+        if (st.innerHTML !== want2) { st.innerHTML = want2; }
+      }
     }
 
     // 한 줄 = 보낸 요청 하나. 누르면 그 자리에서 패킷 원문이 펴진다.

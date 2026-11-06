@@ -304,3 +304,24 @@ def test_missing_exchange_is_404(client):
 def test_terminal_pane_is_in_the_drawer(client):
     html = client.get("/").get_data(as_text=True)
     assert 'id="job-term"' in html and 'role="log"' in html
+
+# ── 어디는 실시간, 어디는 누를 때만 ───────────────────────────
+
+
+def test_recent_runs_row_is_marked_for_live_update(app, client, real_http):
+    """'최근 실행' 줄에 표시가 있어야 드로어 폴링이 요청 수·상태를 갈아 끼운다."""
+    add_target(client)
+    tid = only_target(app)
+    client.post("/modules/http_security_headers/run", data={"target_id": tid, "path": "/"})
+    run_id = jobs.listing()[0]["run_id"]
+    page = client.get(f"/modules?target={tid}").get_data(as_text=True)
+    assert f'data-run="{run_id}"' in page
+    assert 'class="run-reqs"' in page and 'class="run-status"' in page
+
+
+def test_history_updates_only_when_asked(app, client):
+    """요청 기록 목록은 저절로 바뀌지 않는다 — 줄이 밀려 올라가면 누르려던 기록을 놓친다."""
+    add_target(client)
+    tid = only_target(app)
+    page = client.get(f"/history?target={tid}").get_data(as_text=True)
+    assert "새로고침" in page and "저절로 바뀌지 않습니다" in page
