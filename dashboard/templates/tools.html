@@ -43,6 +43,19 @@
   </form>
 </div>
 
+{% if live_tools %}
+<div class="panel">
+  {% for j in live_tools %}
+  <p class="wait-note sub" role="status">
+    <span class="spin" aria-hidden="true"></span>
+    <span><b>{{ j.module }}</b> 이 아직 돌고 있습니다 — 요청 {{ j.sent }}개 · {{ j.seconds }}초.
+      이 화면에는 결과가 뜨지 않지만 찾은 것은 <a href="{{ url_for('dash.results', target=target.id) }}">결과 탭</a>에 남습니다.
+      진행과 멈춤은 오른쪽 위 <b>도는 중</b> 에서 봅니다.</span>
+  </p>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if result %}
 <div class="panel tool-result">
   <h2>{{ result.summary }}</h2>

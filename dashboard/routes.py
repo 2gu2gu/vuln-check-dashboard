@@ -468,18 +468,36 @@ def _new_run(mod, t, params):
 
 
 def _execute(mod, t, params, call):
-    """요청 안에서 끝까지 돌린다. 도구 탭처럼 결과를 그 자리에서 봐야 하는 것에 쓴다."""
+    """요청 안에서 끝까지 돌린다. 도구 탭처럼 결과를 그 자리에서 봐야 하는 것에 쓴다.
+
+    끝까지 기다리지만 **'도는 중' 은 화면이 아니라 서랍에 적는다.** 화면에만
+    적으면 탭을 옮기는 순간 지워져 아무것도 안 도는 것처럼 보인다(사용자 지적
+    11-06). 서랍에 올려 두면 어느 화면에서 봐도 같고, 멈춤이 걸리고, 보낸 요청도
+    한 줄씩 흐른다. 동시 실행 상한도 _execute_bg 와 같은 이유로 똑같이 받는다 —
+    요청 간격을 지켜도 동시에 때리면 공유 서버가 받는 양은 그만큼 늘어난다.
+    """
+    if jobs.live_count() >= jobs.MAX_LIVE:
+        flash(f"지금 {jobs.MAX_LIVE}개가 돌고 있습니다. 하나가 끝나면 다시 눌러 주세요", "error")
+        return
     run_id = _new_run(mod, t, params)
-    _setup_run(mod, t, run_id)
+    job = jobs.adopt(run_id, t, mod)
+    job.ctx = _setup_run(mod, t, run_id, stop_check=job.should_stop)
     try:
         scope.ensure_in_scope(t["url"])
         msg = call(Target(t["id"], t["name"], t["url"]))
         flash(f"{mod.name}: {msg} · 요청 {g.run_ctx.count}개", "ok")
         _finish_run(mod, t, run_id, "done", msg)
+        jobs.close(job, "done", message=msg)
+    except jobs.Cancelled as e:
+        get_db().rollback()
+        flash(f"{mod.name} 을 멈췄습니다 — 그때까지 찾은 것은 결과 탭에 남아 있습니다", "ok")
+        _finish_run(mod, t, run_id, "cancelled", err=str(e))
+        jobs.close(job, "cancelled", error=str(e))
     except Exception as e:  # noqa: BLE001 — 실패도 실행 기록에 남긴다
         get_db().rollback()
         flash(f"{mod.name} 실패: {e}", "error")
         _finish_run(mod, t, run_id, "error", err=str(e))
+        jobs.close(job, "error", error=str(e))
 
 
 def _execute_bg(mod, t, params, call):
@@ -704,8 +722,11 @@ def _tool_modules(target):
 
 def _tool_page(target, targets, mod, values, result=None):
     tools = _tool_modules(target)
+    # 이 탭에서 돌린 것이 아직 돌고 있으면 화면에도 적는다. 새로고침하거나 탭을
+    # 옮겼다 돌아오면 결과 자리가 비는데, 그것만 보면 아무 일도 없던 것 같다.
+    live = [j for j in jobs.listing(target["id"]) if j["live"] and j["module_id"] in tools] if target else []
     return render_template("tools.html", tools=tools, mod=mod, values=values, result=result,
-                           target=target, targets=targets)
+                           target=target, targets=targets, live_tools=live)
 
 
 @bp.get("/tools")
