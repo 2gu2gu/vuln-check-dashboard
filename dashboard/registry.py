@@ -79,15 +79,17 @@ def _norm_roles(roles):
     """역할은 이름만 주어도 되고, 범위까지 주어도 된다.
 
     practice 는 '점검 대상이 아니라 우리가 띄운 연습용 서버' 라는 표시다.
-    여기서 안 받아 두면 조용히 버려져 화면이 실제 대상과 똑같이 그린다.
+    login 은 그 역할만 로그인 모양이 다를 때 쓴다(관리자 API 는 사용자 API 와 다른 앱이다).
+    **여기 안 적은 열쇠는 조용히 버려진다** — 팩에 써 놓고도 안 먹는다.
     """
     out = {}
     for rid, value in (roles or {}).items():
         if isinstance(value, str):
-            out[rid] = {"name": value, "scope": None, "practice": False}
+            out[rid] = {"name": value, "scope": None, "practice": False, "login": None}
         elif isinstance(value, dict) and value.get("name"):
             out[rid] = {"name": value["name"], "scope": value.get("scope"),
-                        "practice": bool(value.get("practice"))}
+                        "practice": bool(value.get("practice")),
+                        "login": value.get("login") or None}
         else:
             raise ValueError(f"역할 {rid} 은 이름 문자열이거나 name 을 가진 dict 여야 합니다")
     return out

@@ -56,8 +56,47 @@ def test_only_for_the_roles_that_have_a_login(app):
     with app.app_context():
         pj = app.config["PROJECTS"]["sesacedu"]
         assert login.config_for(pj, "user_web")
-        assert login.config_for(pj, "admin_web") is None     # 관리자 웹은 로그인 모양이 다르다
         assert login.config_for(app.config["PROJECTS"]["general"], "") is None
+
+
+# ── 역할마다 로그인 모양이 다를 때 ────────────────────────────────
+# 새싹에듀는 사용자 API(EC2 ①, SesacEdu_Server)와 관리자 API(EC2 ②, SesacEdu_Admin_Server)가
+# **다른 앱**이다. 경로·본문 키·토큰이 오는 자리가 전부 다르다(11-06 저장소 대조).
+
+def test_admin_role_brings_its_own_login_shape(app):
+    """관리자 역할은 자기 설정을 들고 있다. roles 목록에 또 적지 않아도 켜진다."""
+    with app.app_context():
+        cfg = login.config_for(app.config["PROJECTS"]["sesacedu"], "admin_web")
+    assert cfg
+    # 바깥에서 칠 주소는 Next.js 가 /api/* 를 ②:8080 으로 넘겨 주는 길이다.
+    # Spring 핸들러 자체(POST /admin/login)는 ② 안에서만 유효하다.
+    assert cfg["path"] == "/api/admin/login"
+    assert cfg["json"] == {"id": "{id}", "pw": "{secret}"}      # 사용자 쪽은 email, 관리자는 id
+    assert cfg["token_header"] == ""                            # 관리자는 본문으로 준다
+    assert "token" in cfg["token_keys"]
+
+
+def test_admin_login_inherits_what_it_does_not_override(app):
+    """적은 것만 덮는다 — 같은 값을 두 번 쓰지 않게."""
+    with app.app_context():
+        cfg = login.config_for(app.config["PROJECTS"]["sesacedu"], "admin_web")
+    assert cfg["header"] == "Authorization" and cfg["prefix"] == "Bearer "
+    assert cfg["id_label"] == "관리자 이메일"                     # 이건 덮었다
+
+
+def test_user_role_still_reads_the_token_from_the_response_header(app):
+    """사용자 API 는 토큰을 응답 헤더로 준다 — 11-06 실서버 실측."""
+    with app.app_context():
+        cfg = login.config_for(app.config["PROJECTS"]["sesacedu"], "user_web")
+    assert cfg["token_header"] == "Authorization" and cfg["path"] == "/backend/login"
+
+
+def test_role_login_survives_the_registry(app):
+    """_norm_roles 가 역할에서 모르는 열쇠를 버린다 — login 이 거기서 조용히 사라지면 안 된다."""
+    with app.app_context():
+        roles = app.config["PROJECTS"]["sesacedu"].roles
+    assert roles["admin_web"]["login"]["path"] == "/api/admin/login"
+    assert roles["user_web"]["login"] is None               # 역할 설정이 없으면 프로젝트 기본값을 쓴다
 
 
 # ── 실제로 받아서 넣기 ────────────────────────────────────────────
@@ -177,3 +216,45 @@ def test_the_form_shows_up_for_the_right_target(app, client):
     page = client.get(f"/targets?target={tid}").get_data(as_text=True)
     assert "로그인해서 토큰 받기" in page
     assert "POST /backend/login" in page
+
+
+# ── 토큰을 어디서 읽는가 ──────────────────────────────────────────
+
+def _login_with(monkeypatch, headers, body):
+    def fetch(url, **_kw):
+        return Response(url=url, status=200, headers=headers, body=body)
+    monkeypatch.setattr(login.core, "fetch", fetch)
+
+
+ADMIN_CFG = {"path": "/api/admin/login", "json": {"id": "{id}", "pw": "{secret}"},
+             "token_keys": ["token", "authorizationHeader"], "token_header": "",
+             "header": "Authorization", "prefix": "Bearer "}
+
+
+def test_empty_token_header_means_read_the_body(monkeypatch):
+    """관리자 API 는 본문으로 준다. 응답에 Authorization 이 섞여 있어도 본문을 봐야 한다."""
+    _login_with(monkeypatch, [("Authorization", "Bearer 엉뚱한값")], '{"token": "admin.tok.en"}')
+    assert login.fetch_token("https://admin.sesacedu.store", ADMIN_CFG, "a@b.test", "pw") == "admin.tok.en"
+
+
+def test_token_header_is_read_when_the_pack_says_so(monkeypatch):
+    """사용자 API 는 헤더로 준다 — 본문에는 토큰이 없다."""
+    cfg = {**CFG, "token_header": "Authorization"}
+    _login_with(monkeypatch, [("Authorization", "Bearer user.tok.en")], '{"result": {"member": {}}}')
+    assert login.fetch_token("https://sesacedu.store", cfg, "a@b.test", "pw") == "user.tok.en"
+
+
+def test_admin_token_can_come_from_authorization_header_field(monkeypatch):
+    """관리자 응답은 token 과 authorizationHeader 를 같이 준다. 'Bearer ' 는 떼고 넣는다."""
+    _login_with(monkeypatch, [], '{"authorizationHeader": "Bearer only.here"}')
+    assert login.fetch_token("https://admin.sesacedu.store", ADMIN_CFG, "a", "b") == "only.here"
+
+
+def test_the_admin_form_shows_the_admin_address(app, client):
+    """관리자 대상에도 칸이 뜨고, 어디로 보내는지 적힌다."""
+    add_target(client, url="https://admin.sesacedu.store", role="admin_web")
+    tid = only_target(app)
+    page = client.get(f"/targets?target={tid}").get_data(as_text=True)
+    assert "로그인해서 토큰 받기" in page
+    assert "POST /api/admin/login" in page
+    assert "관리자 이메일" in page
