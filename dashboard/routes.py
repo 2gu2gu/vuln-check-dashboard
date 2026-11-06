@@ -235,7 +235,7 @@ def targets():
             role = request.form.get("role", "").strip()
             project = _projects()[pid]
             if project.roles and role not in project.roles:
-                raise ValueError(f"역할을 골라 주세요 ({', '.join(project.roles)})")
+                raise ValueError(f"점검 대상을 골라 주세요 ({', '.join(project.roles)})")
             # 역할을 고르면 그 서버의 범위(포트까지)로 검사한다
             scope.ensure_in_scope(url, project.role_scope(role))
             db.execute("INSERT INTO targets (project, role, name, url, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",

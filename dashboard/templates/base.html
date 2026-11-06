@@ -77,7 +77,7 @@
       {% if target %}
       {% set pj = PROJECTS[target.project] if target.project in PROJECTS else none %}
       {% if pj and pj.is_practice(target.role) %}
-      <span class="practice-badge" title="우리가 띄운 가짜 서버입니다. 점검 대상이 아닙니다.">연습용 — 점검 대상 아님</span>
+      <span class="practice-badge" title="연습용으로 띄운 가짜 서버입니다. 실제 서비스가 아닙니다.">연습용 — 실서버 아님</span>
       {% else %}
       <span class="proj-badge">{{ pj.name if pj else target.project }}</span>
       {% endif %}
