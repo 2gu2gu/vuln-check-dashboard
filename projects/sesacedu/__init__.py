@@ -20,6 +20,9 @@ PROJECT = {
                        "authorizationHeader", "data.token", "data.accessToken"],
         "header": "Authorization",
         "prefix": "Bearer ",
+        # 사용자 API 는 토큰을 응답 **헤더**로 준다(11-06 실서버 실측: 200 + Authorization: Bearer eyJ…,
+        # 본문에는 result.member 뿐). 관리자 API 는 반대라 역할 쪽에서 빈 값으로 덮는다.
+        "token_header": "Authorization",
         # 연습용 대상(demo_target.py)도 같은 주소·같은 봉투로 토큰을 준다.
         "roles": ["user_web", "practice"],
         # 연습용 서버의 계정은 화면에 그대로 띄운다 — 가짜고, 안 보이면 돌려 볼 수가 없다.
@@ -41,6 +44,26 @@ PROJECT = {
             # 터널(localhost:3000)도 아직 살아 있어 둘 다 둔다.
             "name": "관리자 웹 (EC2 ②, admin.sesacedu.store)",
             "scope": ["=admin.sesacedu.store", "localhost:3000", "127.0.0.1:3000"],
+            # 관리자는 **다른 서버로 로그인한다.** 관리자 API 는 ② 안쪽 127.0.0.1:8080 에 따로
+            # 떠 있는 별개 Spring 앱(SesacEdu_Admin_Server)이고, 바깥에서는 관리자 웹(Next.js)이
+            # /api/* 를 그쪽으로 넘겨 주는 길로만 닿는다(SesacEdu_Admin_Web/next.config.mjs:
+            # rewrites /api/:path* → ${ADMIN_API_URL}/:path*). 그래서 칠 주소는 /api/admin/login 이다.
+            # Spring 핸들러 자체는 POST /admin/login 이지만 그건 ② 안에서만 유효하다.
+            "login": {
+                "path": "/api/admin/login",
+                # 사용자 API 는 email, 관리자 API 는 id 다(AdminLoginController 의 LoginRequest{id, pw}).
+                # 값은 둘 다 users.mail 이다.
+                "json": {"id": "{id}", "pw": "{secret}"},
+                # 관리자 API 는 토큰을 **본문**으로 준다 — LoginResponse{userId, role, token,
+                # authorizationHeader}. 응답 헤더로는 안 준다. 그래서 token_header 를 비운다.
+                "token_keys": ["token", "authorizationHeader"],
+                "token_header": "",
+                "id_label": "관리자 이메일",
+                "note": "**관리자 API 는 사용자 웹과 다른 서버입니다**(EC2 ② 안쪽 8080). "
+                        "그래서 사용자 웹에서 받은 토큰은 여기서 안 통합니다 — 서명키가 다릅니다. "
+                        "관리자 계정(auth=3)이어야 관리자 화면 API 가 열립니다. "
+                        "**테스트 계정만 쓰세요.** 비밀번호는 저장하지 않습니다 — 한 번 보내고 버립니다.",
+            },
         },
         "practice": {
             "name": "연습용 대상 (demo_target.py, 5051)",

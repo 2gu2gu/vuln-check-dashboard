@@ -18,7 +18,15 @@
         "json": {"email": "{id}", "pw": "{secret}"},   # {id}·{secret} 이 입력값으로 바뀐다
         "token_keys": ["token", "data.token"],          # 응답에서 토큰을 찾을 자리
         "header": "Authorization", "prefix": "Bearer ",
+        "token_header": "Authorization",                # 토큰이 응답 헤더로 올 때. 빈 값이면 본문만 본다
         "roles": ["user_web"],                          # 이 역할의 대상에만 보인다
+    }
+
+역할마다 서버가 다르면 역할 쪽에 적는다. 적은 것만 위 기본값을 덮는다.
+
+    PROJECT["roles"]["admin_web"]["login"] = {
+        "path": "/api/admin/login", "json": {"id": "{id}", "pw": "{secret}"},
+        "token_keys": ["token"], "token_header": "",    # 이쪽은 본문으로 준다
     }
 """
 import json
@@ -32,12 +40,21 @@ class LoginFailed(Exception):
 
 
 def config_for(project, role: str = ""):
-    """이 대상에 쓸 로그인 설정. 없으면 None."""
-    cfg = getattr(project, "login", None) if project else None
-    if not cfg:
+    """이 대상에 쓸 로그인 설정. 없으면 None.
+
+    **한 프로젝트 안에서 서버가 하나라는 보장이 없다.** 새싹에듀는 사용자 API(EC2 ①)와
+    관리자 API(EC2 ②)가 서로 다른 앱이라 경로도, 본문 키도, 토큰이 오는 자리도 다르다
+    (11-06 저장소 대조: SesacEdu_Server vs SesacEdu_Admin_Server). 그래서 역할이 자기
+    로그인 설정을 들고 있으면 프로젝트 기본값 **위에 덮는다** — 다른 것만 적으면 된다.
+    """
+    base = getattr(project, "login", None) if project else None
+    own = ((project.roles.get(role) or {}).get("login") if (project and role) else None) or {}
+    if not base and not own:
         return None
+    cfg = {**(base or {}), **own}
+    # 역할이 자기 설정을 들고 있으면 그 자체가 '이 역할에 쓴다' 는 뜻이다 — roles 에 또 적지 않는다
     roles = cfg.get("roles") or []
-    if roles and role and role not in roles:
+    if not own and roles and role and role not in roles:
         return None
     demo = (cfg.get("demo_accounts") or {}).get(role)
     if not demo:
@@ -106,10 +123,14 @@ def fetch_token(target_url: str, cfg: dict, ident: str, secret: str, hosts=None)
                    record_body=False)             # 응답에 토큰이 들어 있다
     if r.status >= 400:
         raise LoginFailed(f"로그인이 거절됐습니다 (응답 {r.status}) — 계정이 맞는지 확인하세요")
-    # 본문이 아니라 응답 헤더(Authorization: Bearer …)로 토큰을 주는 서버가 있다(새싹에듀 /backend/login)
-    got = r.header(cfg.get("header") or "Authorization")
-    if got and got.strip():
-        return re.sub(r"^\s*Bearer\s+", "", got.strip())
+    # 토큰을 본문이 아니라 **응답 헤더**로 주는 서버가 있다(새싹에듀 사용자 API /backend/login).
+    # 같은 프로젝트의 관리자 API 는 본문으로만 준다. 어느 쪽인지는 팩이 token_header 로 적는다 —
+    # 빈 값이면 헤더를 안 본다. 안 적었으면 예전처럼 '넣을 헤더' 이름으로 본다.
+    want = cfg.get("token_header", cfg.get("header") or "Authorization")
+    if want:
+        got = r.header(want)
+        if got and got.strip():
+            return re.sub(r"^\s*Bearer\s+", "", got.strip())
     return find_token(r.body, cfg.get("token_keys"))
 
 
