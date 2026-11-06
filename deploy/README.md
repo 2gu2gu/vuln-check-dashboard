@@ -10,8 +10,10 @@
 
 ```bash
 sudo apt update && sudo apt install -y python3-venv nginx git
-sudo useradd -r -m -d /opt/ddalkkak -s /usr/sbin/nologin ddalkkak
-sudo -u ddalkkak git clone <저장소 주소> /opt/ddalkkak
+# -m 을 주지 않는다 — 홈 디렉터리는 아래 clone 이 만든다(먼저 만들면 skel 파일 때문에 clone 이 거절된다)
+sudo useradd -r -d /opt/ddalkkak -s /usr/sbin/nologin ddalkkak
+sudo git clone <저장소 주소> /opt/ddalkkak
+sudo chown -R ddalkkak:ddalkkak /opt/ddalkkak
 cd /opt/ddalkkak
 sudo -u ddalkkak python3 -m venv .venv
 sudo -u ddalkkak .venv/bin/pip install -r requirements.txt
