@@ -284,8 +284,8 @@ def test_raw_packet_for_one_request(app, client, real_http):
     assert "200" in d["response"]
 
 
-def test_raw_packet_hides_secrets(app, client, real_http):
-    """요청 기록과 같은 기준 — 인증 값은 *** 로."""
+def test_raw_packet_shows_everything(app, client, real_http):
+    """요청 기록과 같은 기준 — 가리지 않는다."""
     add_target(client)
     tid = only_target(app)
     client.post(f"/targets/{tid}/headers", data={"headers": "Authorization: Bearer 비밀토큰"},
@@ -294,7 +294,7 @@ def test_raw_packet_hides_secrets(app, client, real_http):
     run_id = jobs.listing()[0]["run_id"]
     xid = client.get(f"/jobs/{run_id}/exchanges").get_json()["exchanges"][0]["id"]
     raw = client.get(f"/jobs/exchange/{xid}").get_json()["request"]
-    assert "비밀토큰" not in raw and "***" in raw
+    assert "비밀토큰" in raw and "***" not in raw
 
 
 def test_missing_exchange_is_404(client):

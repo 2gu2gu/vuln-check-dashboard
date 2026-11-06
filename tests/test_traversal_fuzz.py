@@ -168,8 +168,8 @@ def test_stops_on_401_and_says_the_map_is_false(monkeypatch):
     assert "거짓 지도" in r.note
 
 
-def test_does_not_record_file_contents(monkeypatch):
-    """구조만 본다 — record_body=False 로 보내고 근거에도 내용을 넣지 않는다."""
+def test_file_contents_stay_out_of_the_findings(monkeypatch):
+    """구조만 올린다 — 근거에 파일 내용을 넣지 않는다(요청 기록에는 그대로 남는다)."""
     seen = {}
 
     def fetch(url, **kw):
@@ -180,7 +180,7 @@ def test_does_not_record_file_contents(monkeypatch):
     monkeypatch.setattr(mod.wordlists, "load", lambda *_a, **_k: (["etc/passwd"], False))
     r = mod.run(T, {"mode": "seed", "wordlist": "", "limit": "5", "kinds": "no",
                     "depth": "9", "scheme": "double-full", "lecture": "123"})
-    assert seen.get("record_body") is False
+    assert "record_body" not in seen
     for f in r.findings:
         assert "root:x:" not in f.evidence
 
@@ -1318,7 +1318,7 @@ def test_the_report_does_not_claim_contents_were_not_fetched(monkeypatch):
     r, _ = bodies(monkeypatch, CHAIN, seeds=["etc/systemd/system/sesacedu-api.service"])
     assert "파일 내용은 가져오지 않았습니다" not in r.note
     assert "내용을 받습니다" in r.note              # 받는다고 적는다
-    assert "어디에도 남지 않습니다" in r.note        # 어디까지 남는지도 적는다
+    assert "가리지 않습니다" in r.note              # 어디까지 남는지도 적는다
     assert "파일 내용은 가져오지 않습니다" not in mod.META["description"]
 
 

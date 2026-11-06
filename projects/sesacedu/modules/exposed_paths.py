@@ -1,7 +1,7 @@
 """새싹에듀 구성(Tomcat·Spring·Git 배포)에서 열려 있으면 안 되는 경로를 확인한다."""
 import uuid
 
-from dashboard.core import Finding, fetch
+from dashboard.core import Finding, excerpt as _excerpt, fetch
 
 META = {
     "id": "sesacedu_exposed_paths",
@@ -51,12 +51,12 @@ def run(target, params):
     baseline = fetch(f"{target.url}/__dashboard_{uuid.uuid4().hex[:8]}")
     out = []
     for path, sev, title, tech, hit, rec in PATHS:
-        r = fetch(target.url + path, record_body=path != "/.env")  # .env 본문은 요청 기록에도 남기지 않는다
+        r = fetch(target.url + path)
         if r.status == 200 and baseline.status == 200 and r.body == baseline.body:
             continue
         if hit(r):
-            # 본문은 비밀값이 섞일 수 있어 남기지 않는다
             out.append(Finding(
                 title=title, severity=sev, location=r.url, technique=tech, recommendation=rec, response=r,
-                evidence=f"GET {r.url} → {r.status}\nContent-Type: {r.header('Content-Type') or '-'}\n본문 {len(r.body)}자(내용 미저장)"))
+                evidence=f"GET {r.url} → {r.status}\nContent-Type: {r.header('Content-Type') or '-'}\n"
+                         f"본문 {len(r.body)}자\n{_excerpt(r.body)}"))
     return out

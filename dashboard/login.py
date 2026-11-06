@@ -3,12 +3,13 @@
 경로 조작·SQL 주입 같은 모듈은 로그인한 사용자여야 돌아간다. 지금까지는
 터미널에서 로그인 요청을 보내고 응답에서 토큰을 꺼내 대상 탭에 붙여 넣어야 했다.
 
-**비밀번호는 저장하지 않는다.** 받아서 한 번 보내고 버린다. DB 에도, 요청 기록에도
-남기지 않는다(`record_request=False`).
+**비밀번호는 저장하지 않는다.** 받아서 한 번 보내고 버린다 — DB 에 남지 않는다.
+다만 **요청 기록에는 보낸 그대로 남는다**(2026-11-07부터). 자체 실습 환경이고, 무엇을
+보냈는지 못 보는 기록은 증거로 쓸 수 없다.
 
-**토큰은 가리지 않는다.** 자체 실습 환경이고 받자마자 curl 에 붙여 쓰는 일이 많은데,
-가려 두면 맞게 들어갔는지 볼 수도, 복사해 쓸 수도 없다. 요청 기록에서만 `***` 로 가린다 —
-거기는 나중에 발표 자료로 통째로 나가는 화면이라서다.
+**토큰도 가리지 않는다.** 받은 줄이 통째로 찍히고 인증 헤더 칸에도 들어가며, 요청 기록에도
+그대로 남는다. 받자마자 curl 에 붙여 쓰는 일이 많은데 가려 두면 맞게 들어갔는지 볼 수도,
+복사해 쓸 수도 없다.
 
 프로젝트 팩이 `PROJECT["login"]` 으로 어디에 무엇을 보낼지 적어 둔다. 앱 본체는
 특정 서비스의 로그인 모양을 모른다.
@@ -106,7 +107,7 @@ def find_token(body: str, keys):
 
 
 def fetch_token(target_url: str, cfg: dict, ident: str, secret: str, hosts=None) -> str:
-    """로그인 요청을 한 번 보내고 토큰만 돌려준다. 비밀번호는 어디에도 남기지 않는다."""
+    """로그인 요청을 한 번 보내고 토큰만 돌려준다. 비밀번호는 DB 에 저장하지 않는다."""
     if not ident or not secret:
         raise LoginFailed("아이디와 비밀번호를 모두 넣어 주세요")
     url = core.join(target_url, cfg.get("path") or "/login")
@@ -118,9 +119,7 @@ def fetch_token(target_url: str, cfg: dict, ident: str, secret: str, hosts=None)
             for k, v in shape.items()}
     r = core.fetch(url, method="POST",
                    raw_body=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-                   content_type="application/json",
-                   record_request=False,          # 비밀번호가 실린 본문은 안 남긴다
-                   record_body=False)             # 응답에 토큰이 들어 있다
+                   content_type="application/json")
     if r.status >= 400:
         raise LoginFailed(f"로그인이 거절됐습니다 (응답 {r.status}) — 계정이 맞는지 확인하세요")
     # 토큰을 본문이 아니라 **응답 헤더**로 주는 서버가 있다(새싹에듀 사용자 API /backend/login).

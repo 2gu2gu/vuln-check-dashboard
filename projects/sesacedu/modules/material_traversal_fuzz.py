@@ -105,8 +105,8 @@
 `jdk-11.0.24+8` 처럼 버전이 박힌 이름이나 난수 접두사가 붙은 저장 파일명은 **어떤 사전에도
 없고 이 길로만 나온다.** 실측에서 사람이 눈으로 하던 일이다.
 
-**파일 내용은 저장하지 않는다.** 경로를 뽑는 동안만 메모리에 두고 버린다. 요청 기록에도
-본문이 남지 않는다(`record_body=False`) — 설정 파일에는 자격증명이 섞여 있다.
+**결과에는 경로만 올린다.** 읽은 내용은 경로를 뽑는 동안만 메모리에 두고 버린다.
+다만 **요청 기록에는 받은 그대로 남는다**(2026-11-07부터) — 무엇이 읽혔는지가 증거다.
 
 수확으로 찾은 것은 출처 `수확` 으로 적는다. 모듈이 스스로 한 일이므로 퍼징의 성과에 들어가되,
 씨앗·확장과는 찾은 방식이 다르다.
@@ -144,7 +144,7 @@ import re
 
 from flask import current_app, has_app_context
 
-from dashboard.core import Finding, ToolResult, fetch
+from dashboard.core import Finding, ToolResult, excerpt as _excerpt, fetch
 from dashboard.payloads import ENCODINGS, traversal
 from dashboard import wordlists
 from projects.sesacedu.fs_knowledge import describe
@@ -173,8 +173,8 @@ META = {
     ],
     "description": "씨앗(패키지 기본 경로)이나 사전으로 경로를 때려 응답 코드로 "
                    "디렉터리 구조를 그립니다. 읽히는 설정 파일은 **거기 적힌 경로를 "
-                   "캐내려고 내용을 받지만**, 받은 내용은 메모리에서만 쓰고 결과·요청 "
-                   "기록 어디에도 남기지 않습니다.",
+                   "캐내려고 내용을 받지만**, 결과에는 경로만 올립니다. 받은 내용은 "
+                   "요청 기록에서 그대로 볼 수 있습니다.",
     "needs": [
         {"kind": "auth_header", "name": "Authorization",
          "why": "강의 자료는 로그인한 사용자만 내려받을 수 있어, 토큰이 없으면 전부 401 로 "
@@ -282,12 +282,12 @@ def _send(target, lecture, depth, scheme, path):
     """경로 하나를 때린다. 파일 내용은 기록하지 않는다(구조만 본다)."""
     payload = traversal(path, depth, scheme)
     url = target.url + PATH.format(lecture=lecture, payload=payload)
-    # record_body=False 라 요청 기록에 본문이 남지 않는다. 아래 r.body 는 메모리에만 있고
-    # 수확이 끝나면 버린다 — 설정 파일에는 자격증명이 섞여 있다.
+    # 아래 r.body 는 경로를 수확하는 동안만 쓰고 버린다(결과에는 경로만 올린다).
+    # 요청 기록에는 받은 그대로 남는다.
     #
     # max_bytes 를 수확 상한에 맞춘다. 기본값은 1MB 라 쓰지도 않을 본문을 그만큼 받아
     # 왔다(11-06 검수). 구조 판정에는 코드와 길이만 쓰므로 더 받을 이유가 없다.
-    r = fetch(url, record_body=False, max_bytes=MAX_BODY)
+    r = fetch(url, max_bytes=MAX_BODY)
     klass = BY_STATUS.get(r.status, "other")
     return klass, r
 
@@ -1184,19 +1184,18 @@ def run(target, params):
             title="민감 파일 노출: %s" % n["path"],
             severity=n["severity"],
             location=target.url + PATH.format(lecture=lecture, payload="<" + scheme + ">"),
-            evidence="%s · %s · 응답 %s · 출처 %s\n%s"
+            evidence="%s · %s · 응답 %s · 출처 %s\n%s\n\n%s"
                      % (n["path"], _size(n["size"]), n["status"], SOURCE_LABEL[n["source"]],
-                        n["note"] or "표에 없는 경로입니다 — 무엇인지는 사람이 확인하세요."),
+                        n["note"] or "표에 없는 경로입니다 — 무엇인지는 사람이 확인하세요.",
+                        _excerpt(n["_r"].body)),
             recommendation="이 파일이 밖에서 읽힌다면 안에 든 값(자격증명·키·내부 주소)은 "
                            "전부 노출된 것으로 보고 교체해야 합니다. 경로 조작 자체를 막는 것이 먼저입니다.",
             response=n["_r"]))
 
-    # 전에는 "파일 내용은 가져오지 않았습니다" 라고 적었다. **거짓이었다** —
-    # 수확하려면 본문을 받아야 한다(11-06 검수). 무엇을 받고 어디까지 남기는지 적는다.
     note = ["구조 판정에는 응답 코드와 길이만 씁니다. 다만 **읽히는 파일은 거기 적힌 "
-            "경로를 캐내려고 내용을 받습니다**(한 파일 %s까지) — 받은 내용은 경로를 뽑는 "
-            "동안만 메모리에 두고 버리며, 결과·요청 기록 어디에도 남지 않습니다. "
-            "내용을 보려면 읽힌 행의 '내용 보기' 로 넘어갑니다." % _size(MAX_BODY)]
+            "경로를 캐내려고 내용을 받습니다**(한 파일 %s까지). 받은 내용은 가리지 않습니다 — "
+            "민감 파일 결과의 근거에 앞부분이 들어가고, 전문은 요청 기록에 그대로 남습니다."
+            % _size(MAX_BODY)]
     if outside:
         note.append("**출처가 섞여 있습니다.** 표의 '출처' 열을 보세요 — "
                     "`씨앗`·`확장` 은 이 모듈이 자기 페이로드로 찾은 것이고, "

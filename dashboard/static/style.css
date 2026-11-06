@@ -52,10 +52,10 @@ code { background: var(--surface-2); border: 1px solid var(--line); border-radiu
 .sub { color: var(--sub); }
 .small { font-size: 12px; }
 .right { text-align: right; }
-h1 { font-size: 20px; margin: 0 0 4px; }
+h1 { font-size: 20px; margin: 0 0 4px; overflow-wrap: anywhere; }  /* 긴 주소 한 덩어리가 화면을 옆으로 늘리지 않게 */
 h2 { font-size: 15px; margin: 0; }
 h3 { font-size: 14px; margin: 0; }
-.lead { color: var(--sub); margin: 0 0 20px; }
+.lead { color: var(--sub); margin: 0 0 20px; overflow-wrap: anywhere; }
 
 /* 뼈대 — 왼쪽 메뉴는 드로어다. 닫으면 그 폭을 본문에 돌려준다
    (ATT&CK 표·수사보드처럼 가로로 긴 화면이 있어 200px 이 아쉽다).
