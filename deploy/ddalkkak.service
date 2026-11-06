@@ -17,8 +17,10 @@ Environment=DASH_BIND=127.0.0.1
 ExecStart=/opt/ddalkkak/.venv/bin/python run.py
 Restart=on-failure
 RestartSec=3
-# instance/ (sqlite3·secret.key) 말고는 쓸 일이 없다
-ReadWritePaths=/opt/ddalkkak/instance
+# instance/ (sqlite3·secret.key) 말고는 쓸 일이 없다.
+# 앞의 `-` 는 "없으면 넘어간다" — 이 폴더는 앱이 처음 뜰 때 만들기 때문에 clone 직후에는 없고,
+# `-` 없이 적으면 systemd 가 네임스페이스를 못 만들어 start 자체가 실패한다(226/NAMESPACE)
+ReadWritePaths=-/opt/ddalkkak/instance
 NoNewPrivileges=yes
 PrivateTmp=yes
 
