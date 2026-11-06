@@ -28,6 +28,8 @@ python -m venv .venv
 ```
 
 데이터는 `instance/dashboard.sqlite3` 에 저장된다. 지우면 처음 상태로 돌아간다(`instance/secret.key` 는 세션 키).
+**실행 결과 본문(경로 조작 퍼징의 트리 등)은 DB 가 아니라 `instance/runs/<대상>/<모듈>/<실행번호>.txt` 파일로 남는다** —
+그대로 읽고 보고서에 붙이는 산출물이라, 받아 쓰는 사람이 sqlite 를 열어야 꺼낼 수 있으면 안 된다.
 
 | 환경변수 | 기본 | 뜻 |
 |---|---|---|
@@ -36,6 +38,7 @@ python -m venv .venv
 | `DASH_DELAY_MS` | 100 | 실행 하나에서 요청 사이 간격 |
 | `DASH_MAX_REQUESTS` | 6000 | 실행 하나의 요청 수 한도(넘으면 멈춤). 경로 조작 퍼징이 구조 전체를 그릴 때 3,000 쯤 쓴다 |
 | `DASH_WORDLISTS` | — | 사전을 더 둘 폴더. `;` 로 여러 개 (예: SecLists 의 `Discovery/Web-Content`) |
+| `DASH_RUNS_DIR` | instance/runs | 실행 결과 본문(퍼징 트리 등)을 적어 두는 폴더. `대상/모듈/실행번호.txt` — DB 가 아니라 파일이라 그대로 보고서에 붙이고 팀에 넘긴다 |
 | `DASH_ALLOWED_HOSTS` | — | 들어와도 되는 `Host` 이름. 쉼표로 여러 개, `*` 는 전부. 로컬 이름은 늘 통과. **서버에 올려 밖에서 열 때만** — [deploy/README.md](deploy/README.md) |
 | `DASH_BIND` | 127.0.0.1 | 앱이 열 주소. 앞에 nginx 를 두면 그대로 두고, 없이 바로 열면 `0.0.0.0` |
 

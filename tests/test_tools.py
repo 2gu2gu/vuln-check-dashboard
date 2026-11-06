@@ -12,6 +12,7 @@ from dashboard.db import get_db
 from projects.sesacedu.modules import lecture_sqli, material_traversal
 
 T = Target(1, "t", "https://sesacedu.store")
+TREE = "srv\n└ sesacedu\n  └ api.env"
 
 
 # ── 인코딩 ────────────────────────────────────────────────────
@@ -626,3 +627,49 @@ def test_tool_run_waits_its_turn_when_the_limit_is_full(app, tool_client, monkey
     page = tool_client.post("/tools/run", data=RUN_FORM, follow_redirects=True).get_data(as_text=True)
 
     assert ran == [] and "하나가 끝나면" in page
+
+
+def test_tool_text_is_written_to_a_file(app, tool_client, monkeypatch, tmp_path):
+    """퍼징 트리는 파일로도 남는다 — 보고서에 붙이고 팀에 넘기는 산출물이다.
+
+    화면 복원은 `runs.result` 로 된다(#71). 그것과 별개로 **받아 쓰는 사람이 sqlite 를
+    열지 않고 꺼낼 수 있어야** 한다(사용자 지적 11-07). 파일만 떼어 가도 뜻이 통하게
+    모듈·대상·시각을 머리말로 적는다.
+    """
+    app.config["RUNS_DIR"] = str(tmp_path / "runs")
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run",
+                        lambda t_, p_: ToolResult(summary="표 2개", text=TREE))
+
+    tool_client.post("/tools/run", data=RUN_FORM)
+
+    files = list((tmp_path / "runs").glob("*/*/[0-9]*.txt"))
+    assert len(files) == 1
+    body = files[0].read_text(encoding="utf-8")
+    assert "api.env" in body and "https://sesacedu.store" in body and "실행 #" in body
+    # 어디에 적혔는지 화면에도 알려 준다 — 모르면 가져다 쓰지 못한다
+    page = tool_client.get("/tools?target=1&tool=sesacedu_lecture_sqli").get_data(as_text=True)
+    assert "파일로도 남겼습니다" in page and files[0].name in page
+
+
+def test_each_run_gets_its_own_file(app, tool_client, monkeypatch, tmp_path):
+    """실행마다 따로 남아야 지난 지도와 비교할 수 있다. 덮어쓰면 비교가 없어진다."""
+    app.config["RUNS_DIR"] = str(tmp_path / "runs")
+    texts = iter(["첫 번째 지도", "두 번째 지도"])
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run",
+                        lambda t_, p_: ToolResult(summary="표", text=next(texts)))
+    tool_client.post("/tools/run", data=RUN_FORM)
+    tool_client.post("/tools/run", data=RUN_FORM)
+
+    files = sorted((tmp_path / "runs").glob("*/*/[0-9]*.txt"))
+    assert [f.stem for f in files] == ["0001", "0002"]
+    assert "첫 번째 지도" in files[0].read_text(encoding="utf-8")
+    assert "두 번째 지도" in files[1].read_text(encoding="utf-8")
+
+
+def test_text_file_is_not_written_when_there_is_nothing_to_write(app, tool_client, monkeypatch, tmp_path):
+    """본문 없는 도구까지 빈 파일을 쌓으면 폴더가 색인 구실을 못 한다."""
+    app.config["RUNS_DIR"] = str(tmp_path / "runs")
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run",
+                        lambda t_, p_: ToolResult(summary="표만 있다"))
+    tool_client.post("/tools/run", data=RUN_FORM)
+    assert list((tmp_path / "runs").rglob("*.txt")) == []

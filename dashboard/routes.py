@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
                    render_template, request, url_for)
 
-from . import board, cvss, grouping, jobs, login as login_mod, needs, scope, wordlists
+from . import board, cvss, grouping, jobs, login as login_mod, needs, runfiles, scope, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -743,6 +743,10 @@ def _tool_call(mod, t, params):
             if skipped:
                 msg += f", 범위 밖 {skipped}개 제외"
         db.execute("UPDATE runs SET result = ? WHERE id = ?", [_result_to_json(result), g.run_id])
+        # 본문(퍼징 트리 등)은 파일로도 떨군다. 화면 복원은 위의 result 로 되지만, 트리는
+        # 보고서에 붙이고 팀에 넘기는 산출물이다 — 받아 쓰는 사람이 sqlite 를 열게 할 수 없다
+        if result.text:
+            runfiles.save(current_app, g.run_id, t, mod, result.text, result.summary)
         return msg
     return call
 
@@ -764,8 +768,11 @@ def _tool_page(target, targets, mod, values, run=None):
     # 도는 중인 도구는 화면에도 적는다. 결과 자리가 비어 있으면 아무 일도 없던 것 같다.
     live = [j for j in jobs.listing(target["id"]) if j["live"] and j["module_id"] in tools] if target else []
     result = json.loads(run["result"]) if run is not None and run["result"] else None
+    # 본문이 있으면 파일로도 남아 있다 — 어디에 적혔는지 화면에 알려 줘야 가져다 쓴다
+    text_file = runfiles.find(current_app, target, mod.id, run["id"]) if (result and result.get("text")) else None
     return render_template("tools.html", tools=tools, mod=mod, values=values, result=result, run=run,
-                           target=target, targets=targets, live_tools=live)
+                           target=target, targets=targets, live_tools=live,
+                           text_file=str(text_file) if text_file else "")
 
 
 @bp.get("/tools")
