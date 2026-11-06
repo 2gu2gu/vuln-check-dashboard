@@ -54,7 +54,8 @@ def test_join():
     assert core.join("http://a:1/", "/x") == "http://a:1/x"
 
 
-def test_exchange_recorded_and_secrets_masked(app, client, opener):
+def test_exchange_recorded_whole(app, client, opener):
+    """보낸 것·받은 것을 가리지 않고 남긴다(2026-11-07 사용자 지시)."""
     sent, reply = opener
     add_target(client)
     client.post("/targets/1/headers", data={"headers": "Cookie: SID=abc123\nAuthorization: Bearer tok999"})
@@ -69,8 +70,8 @@ def test_exchange_recorded_and_secrets_masked(app, client, opener):
         x = get_db().execute("SELECT * FROM exchanges").fetchone()
         f = get_db().execute("SELECT exchange_id FROM findings LIMIT 1").fetchone()
     stored = x["req_headers"] + x["resp_headers"]
-    assert "abc123" not in stored and "tok999" not in stored and "SERVERSECRET" not in stored
-    assert "***(대상 인증 헤더)" in stored and "JSESSIONID=***" in stored
+    assert "abc123" in stored and "tok999" in stored and "SERVERSECRET" in stored
+    assert "***" not in stored
     assert f["exchange_id"] == x["id"]
 
     detail = client.get(f"/history/{x['id']}").get_data(as_text=True)
@@ -116,14 +117,15 @@ def test_connection_error_is_recorded(app, client, opener):
     assert x["status"] == 0 and "refused" in x["error"] and run["status"] == "error"
 
 
-def test_sensitive_body_not_recorded(app, client, opener):
+def test_every_response_body_is_recorded(app, client, opener):
+    """.env 본문도 그대로 남는다 — 무엇이 읽혔는지가 증거다."""
     _, reply = opener
     add_target(client)
     reply["resp"] = FakeResp(body=b"DB_PASSWORD=supersecret\n")
     client.post("/modules/sesacedu_exposed_paths/run", data={"target_id": 1, "confirm": "yes"})
     with app.app_context():
         bodies = " ".join(r["resp_body"] for r in get_db().execute("SELECT resp_body FROM exchanges WHERE url LIKE '%/.env'"))
-    assert "supersecret" not in bodies and "남기지 않음" in bodies
+    assert "supersecret" in bodies and "남기지 않음" not in bodies
 
 
 def test_self_scan_blocked(client):

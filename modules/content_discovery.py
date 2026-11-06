@@ -67,7 +67,7 @@ def run(target, params):
     points = []
     for word in words:
         path = (base.strip("/") + "/" + word.strip().lstrip("/")).strip("/")
-        r = fetch(join(target.url, path), record_body=False)
+        r = fetch(join(target.url, path))
         if r.status in SKIP_STATUS or _looks_missing(r.status, len(r.body), baseline):
             continue
         points.append(Point("GET", join(target.url, path), place="path", source="wordlist"))

@@ -67,7 +67,7 @@
             {{ csrf_field() }}
             <textarea name="headers" rows="3" class="mono" placeholder="Cookie: JSESSIONID=...&#10;Authorization: Bearer ...">{{ header_text[t.id] }}</textarea>
             <small class="sub">한 줄에 '이름: 값'. 저장하면 기존 값을 모두 바꿉니다. 이 대상 주소로 가는 요청에만 붙습니다.
-              값은 여기서 그대로 보이니 복사해 쓰셔도 됩니다 — 요청 기록에서만 *** 로 가립니다.</small>
+              값은 여기서 그대로 보이고 요청 기록에도 가리지 않고 남습니다.</small>
             <div class="row-btns">
               <button class="btn" type="submit">저장</button>
               {% if header_names[t.id] %}<button class="btn ghost danger" type="submit" name="clear" value="yes">지우기</button>{% endif %}

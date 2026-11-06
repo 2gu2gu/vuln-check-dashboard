@@ -126,15 +126,15 @@ def test_token_goes_into_the_auth_header(app, client, monkeypatch):
     assert sent["url"].endswith("/backend/login")
 
 
-def test_the_password_is_not_recorded(app, client, monkeypatch):
-    """요청 기록에 비밀번호가 남으면 안 된다."""
+def test_the_login_request_is_recorded_whole(app, client, monkeypatch):
+    """로그인 요청도 가리지 않는다 — 무엇을 보냈는지 못 보면 기록이 증거가 못 된다."""
     add_target(client)
     tid = only_target(app)
     sent = _fake_login(monkeypatch)
     client.post(f"/targets/{tid}/login", data={"ident": "a@b.test", "secret": "hunter2"},
                 follow_redirects=True)
-    assert sent["record_request"] is False       # 보낸 본문을 안 남긴다
-    assert sent["record_body"] is False          # 응답에 토큰이 들어 있다
+    assert b"hunter2" in sent["raw_body"]        # 보낸 그대로 나간다
+    assert "record_request" not in sent and "record_body" not in sent   # 가리는 손잡이 자체가 없다
 
 
 def test_the_password_is_not_stored(app, client, monkeypatch):

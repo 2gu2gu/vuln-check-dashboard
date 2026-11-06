@@ -132,7 +132,6 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _opener = urllib.request.build_opener(_NoRedirect)
 
 USER_AGENT = "ddalkkak-dast/0.2"      # 점검 로그에서 우리 요청을 가려내려고 이름을 밝힌다
-SECRET_HEADERS = {"cookie", "authorization", "proxy-authorization", "x-api-key", "x-auth-token"}
 BODY_LIMIT = 200_000  # 요청 기록에 남기는 응답 본문 최대 글자 수
 
 
@@ -176,19 +175,12 @@ def run_cache():
     return ctx.cache if ctx else {}
 
 
-def redact(headers, injected=()):
-    """기록용 헤더. 인증 값은 가리고 이름만 남긴다."""
-    out = []
-    for k, v in headers:
-        low = k.lower()
-        if low in injected:
-            v = "***(대상 인증 헤더)"
-        elif low in SECRET_HEADERS:
-            v = "***"
-        elif low == "set-cookie":
-            v = v.split("=", 1)[0] + "=***" + ("; " + v.split(";", 1)[1].strip() if ";" in v else "")
-        out.append((k, v))
-    return out
+def excerpt(body: str, limit: int = 1000) -> str:
+    """근거에 넣을 본문 조각. 가리지 않는다 — 자르면 잘랐다고 적는다."""
+    body = (body or "").strip()
+    if len(body) <= limit:
+        return body
+    return body[:limit] + "\n…(앞 %d자, 전문은 요청 기록에서)" % limit
 
 
 def join(base: str, path: str) -> str:
@@ -197,13 +189,16 @@ def join(base: str, path: str) -> str:
 
 
 def fetch(url: str, *, method: str = "GET", headers=None, data=None, timeout: float = 10,
-          max_bytes: int = 1_000_000, record_body: bool = True, record_request: bool = True,
-          raw_body: bytes = None, content_type: str = "") -> Response:
+          max_bytes: int = 1_000_000, raw_body: bytes = None, content_type: str = "") -> Response:
     """범위 검사를 거친 뒤 요청한다. 모든 모듈은 이 함수로만 요청한다.
 
     data(dict)는 폼 본문, raw_body 는 그대로 보낼 바이트(JSON 등).
-    record_body=False 면 요청 기록에 응답 본문을 남기지 않는다(.env 처럼 비밀이 섞일 응답).
-    record_request=False 면 **보낸 본문**을 남기지 않는다 — 로그인처럼 비밀번호가 실리는 요청.
+
+    **보낸 것과 받은 것을 그대로 남긴다 — 가리는 값이 없다.** 예전에는 Cookie·Authorization 을
+    `***` 로 덮고 비밀이 섞일 본문은 통째로 버렸는데, 자체 실습 환경에서 그건 증거를 지우는
+    짓이다(2026-11-07 사용자 지시). 토큰이 제대로 붙어 나갔는지, 무엇이 읽혔는지를 요청
+    기록에서 그대로 본다. 본문은 BODY_LIMIT 까지만 남는데 그건 가리는 게 아니라 길이 제한이다.
+
     실행 중이면 요청 간격·요청 수 한도를 지키고, 대상 인증 헤더를 그 대상 주소에만 붙이고, 요청·응답을 기록한다.
     """
     scope.ensure_in_scope(url)
@@ -211,10 +206,8 @@ def fetch(url: str, *, method: str = "GET", headers=None, data=None, timeout: fl
     if ctx:
         ctx.before_send()
     hdrs = {"User-Agent": USER_AGENT}
-    injected = set()
     if ctx and urlsplit(url).netloc == ctx.netloc:
         hdrs.update(ctx.auth_headers)
-        injected = {k.lower() for k in ctx.auth_headers}
     hdrs.update(headers or {})
     body = None
     if raw_body is not None:
@@ -224,9 +217,8 @@ def fetch(url: str, *, method: str = "GET", headers=None, data=None, timeout: fl
         body = urlencode(data).encode()
         hdrs.setdefault("Content-Type", "application/x-www-form-urlencoded")
     req = urllib.request.Request(url, data=body, method=method, headers=hdrs)
-    record = {"method": method, "url": url, "req_headers": redact(list(hdrs.items()), injected),
-              "req_body": (body.decode(errors="replace") if body else "") if record_request
-                          else "(비밀번호가 실린 요청이라 본문을 남기지 않음)"}
+    record = {"method": method, "url": url, "req_headers": list(hdrs.items()),
+              "req_body": body.decode(errors="replace") if body else ""}
     start = time.monotonic()
     try:
         try:
@@ -244,8 +236,8 @@ def fetch(url: str, *, method: str = "GET", headers=None, data=None, timeout: fl
         raise
     if ctx and ctx.recorder:
         r.exchange_id = ctx.recorder({
-            **record, "status": r.status, "resp_headers": redact(r.headers), "size": len(r.body),
-            "resp_body": r.body[:BODY_LIMIT] if record_body else "(모듈이 민감 응답으로 표시해 본문을 남기지 않음)",
+            **record, "status": r.status, "resp_headers": r.headers, "size": len(r.body),
+            "resp_body": r.body[:BODY_LIMIT],
             "ms": int((time.monotonic() - start) * 1000)})
     return r
 
