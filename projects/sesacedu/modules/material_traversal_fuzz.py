@@ -1133,7 +1133,9 @@ def run(target, params):
     outside = [n for n in nodes if n["source"] not in MINE]
 
     rows, drills = [], []
-    for n in sorted(nodes, key=lambda x: x["path"]):
+    # 때린 순서 그대로 적는다 — `walker.nodes` 가 그 차례로 쌓인다. 경로순으로 정렬하면
+    # 씨앗 → 확장 → 수확으로 찾아 들어간 과정이 사라진다. 구조는 위 트리가 보여 준다.
+    for n in nodes:
         kind = {DIR: "디렉터리", OPAQUE: "못 들어감"}.get(n["kind"], "미판별")
         if n["class"] == READABLE:
             kind = "파일"
