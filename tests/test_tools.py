@@ -603,3 +603,46 @@ def test_tool_run_waits_its_turn_when_the_limit_is_full(app, tool_client, monkey
     page = tool_client.post("/tools/run", data=RUN_FORM).get_data(as_text=True)
 
     assert ran == [] and "하나가 끝나면" in page
+
+
+def test_tool_text_is_kept_as_a_file_not_in_the_db(app, tool_client, monkeypatch, tmp_path):
+    """몇 분짜리 실행의 본문(트리)이 탭을 옮겼다고 사라지면 안 된다 — 그리고 DB 가 아니라 파일이다.
+
+    전에는 `ToolResult.text` 를 그 자리 화면에만 그려서, 모듈 탭에서 돌리거나 결과를 보러
+    갔다 오면 2,949요청짜리 실행의 트리가 통째로 날아갔다. 파일로 두면 대시보드를 받아 쓰는
+    사람도 sqlite 를 열지 않고 그대로 꺼내 쓴다.
+    """
+    app.config["RUNS_DIR"] = str(tmp_path / "runs")
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run",
+                        lambda t_, p_: ToolResult(summary="표 2개", text="srv\n└ sesacedu\n  └ api.env"))
+
+    tool_client.post("/tools/run", data=RUN_FORM)
+
+    # 화면을 '새로 열었을 때' — 방금 돌린 결과가 아니라 파일에서 읽어 보여 준다
+    page = tool_client.get("/tools?target=1&tool=sesacedu_lecture_sqli").get_data(as_text=True)
+    assert "지난 실행" in page and "api.env" in page
+
+    files = list((tmp_path / "runs").glob("*/*/[0-9]*.txt"))
+    assert len(files) == 1
+    body = files[0].read_text(encoding="utf-8")
+    # 파일만 떼어 가도 무엇을 어디에 대고 돌린 것인지 알 수 있어야 한다
+    assert "api.env" in body and "https://sesacedu.store" in body and "실행 #" in body
+    with app.app_context():
+        cols = {r["name"] for r in get_db().execute("PRAGMA table_info(runs)")}
+    assert "text" not in cols        # 본문은 DB 에 두지 않는다
+
+
+def test_tool_text_of_an_older_run_opens_by_number(app, tool_client, monkeypatch, tmp_path):
+    """모듈 탭의 '내용 보기' 가 그 실행의 파일을 연다 — 마지막 것만 볼 수 있으면 비교를 못 한다."""
+    app.config["RUNS_DIR"] = str(tmp_path / "runs")
+    texts = iter(["첫 번째 지도", "두 번째 지도"])
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run",
+                        lambda t_, p_: ToolResult(summary="표", text=next(texts)))
+    tool_client.post("/tools/run", data=RUN_FORM)
+    tool_client.post("/tools/run", data=RUN_FORM)
+
+    last = tool_client.get("/tools?target=1&tool=sesacedu_lecture_sqli").get_data(as_text=True)
+    first = tool_client.get("/tools?target=1&tool=sesacedu_lecture_sqli&run=1").get_data(as_text=True)
+
+    assert "두 번째 지도" in last and "첫 번째 지도" not in last
+    assert "첫 번째 지도" in first

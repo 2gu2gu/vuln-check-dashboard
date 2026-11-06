@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
                    render_template, request, url_for)
 
-from . import board, cvss, grouping, jobs, login as login_mod, needs, scope, wordlists
+from . import board, cvss, grouping, jobs, login as login_mod, needs, runfiles, scope, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -351,6 +351,7 @@ def modules():
     return render_template("modules.html", rows=rows, all_modules=_modules(), project=project,
                            hidden=len(_modules()) - len(available), errors=current_app.config["MODULE_ERRORS"],
                            target=target, targets=targets, runs=runs, tactic_name=TACTIC_NAME,
+                           saved_runs=runfiles.run_ids(current_app),
                            ways=grouping.WAYS, way=way if way in grouping.KEYS else grouping.DEFAULT_WAY,
                            missing=grouping.empty_groups(way, rows), total=len(available))
 
@@ -720,13 +721,28 @@ def _tool_modules(target):
     return {k: m for k, m in _modules_for(target).items() if m.stage == "tool"}
 
 
-def _tool_page(target, targets, mod, values, result=None):
+def _past_run(target, mod, run_id=None):
+    """지난 실행의 본문 파일. 몇 분짜리 실행의 트리를 탭 한 번 옮겼다고 잃지 않게 한다.
+
+    `run_id` 를 주면 그 실행, 없으면 이 대상·이 모듈의 마지막 실행이다.
+    """
+    if not (target and mod):
+        return None
+    path = runfiles.find(current_app, target, mod.id, run_id)
+    text = runfiles.read(path) if path else None
+    if text is None:
+        return None
+    return {"run_id": int(path.stem), "text": text, "path": str(path)}
+
+
+def _tool_page(target, targets, mod, values, result=None, run_id=None):
     tools = _tool_modules(target)
     # 이 탭에서 돌린 것이 아직 돌고 있으면 화면에도 적는다. 새로고침하거나 탭을
     # 옮겼다 돌아오면 결과 자리가 비는데, 그것만 보면 아무 일도 없던 것 같다.
     live = [j for j in jobs.listing(target["id"]) if j["live"] and j["module_id"] in tools] if target else []
     return render_template("tools.html", tools=tools, mod=mod, values=values, result=result,
-                           target=target, targets=targets, live_tools=live)
+                           target=target, targets=targets, live_tools=live,
+                           past=None if result else _past_run(target, mod, run_id))
 
 
 @bp.get("/tools")
@@ -735,7 +751,7 @@ def tools():
     tools_ = _tool_modules(target)
     mod = tools_.get(request.args.get("tool") or "") or (next(iter(tools_.values())) if tools_ else None)
     values = {p["name"]: p.get("default", "") for p in mod.params} if mod else {}
-    return _tool_page(target, targets, mod, values)
+    return _tool_page(target, targets, mod, values, run_id=request.args.get("run", type=int))
 
 
 @bp.post("/tools/run")
@@ -774,6 +790,10 @@ def tool_run():
         if not isinstance(result, ToolResult):
             raise TypeError("도구 모듈의 run() 은 ToolResult 를 돌려줘야 합니다")
         box["result"] = result
+        # 본문(트리 등)은 파일로 남긴다 — 화면에만 그리면 탭을 옮기는 순간 사라지고,
+        # DB 에 넣으면 받아 쓰는 사람이 sqlite 를 열어야 꺼낼 수 있다
+        if result.text:
+            box["file"] = runfiles.save(current_app, g.run_id, t, mod, result.text, result.summary)
         new = sum(_save_finding(mod, t["id"], f) for f in result.findings)
         msg = result.summary + (f" · 결과 {len(result.findings)}건(새로 {new})" if result.findings else "")
         if result.points:

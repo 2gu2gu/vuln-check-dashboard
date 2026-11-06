@@ -51,6 +51,9 @@ def create_app(test_config=None):
     app.config.from_mapping(
         SECRET_KEY=env("DASH_SECRET") or _secret_key(instance),
         DATABASE=str(instance / "dashboard.sqlite3"),
+        # 실행 결과 본문(퍼징 트리 등)을 적어 두는 폴더. DB 가 아니라 파일로 두는 이유는
+        # dashboard/runfiles.py 에 적었다 — 그대로 보고서에 붙이고 팀에 넘기는 산출물이다
+        RUNS_DIR=env("DASH_RUNS_DIR") or str(instance / "runs"),
         SCOPE_HOSTS=[h.strip().lower() for h in env("DASH_SCOPE", DEFAULT_SCOPE).split(",") if h.strip()],
         SELF_PORT=int(env("DASH_PORT", "5050")),           # 이 주소는 점검 대상에서 뺀다
         # 들어와도 되는 Host 이름. 기본은 내 PC 뿐이고, 서버에 올려 밖에서 열 때만 적는다.
