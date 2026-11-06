@@ -11,20 +11,20 @@
 ```bash
 sudo apt update && sudo apt install -y python3-venv nginx git
 # -m 을 주지 않는다 — 홈 디렉터리는 아래 clone 이 만든다(먼저 만들면 skel 파일 때문에 clone 이 거절된다)
-sudo useradd -r -d /opt/ddalkkak -s /usr/sbin/nologin ddalkkak
-sudo git clone <저장소 주소> /opt/ddalkkak
-sudo chown -R ddalkkak:ddalkkak /opt/ddalkkak
-cd /opt/ddalkkak
-sudo -u ddalkkak python3 -m venv .venv
-sudo -u ddalkkak .venv/bin/pip install -r requirements.txt
+sudo useradd -r -d /opt/ttalkkak -s /usr/sbin/nologin ttalkkak
+sudo git clone <저장소 주소> /opt/ttalkkak
+sudo chown -R ttalkkak:ttalkkak /opt/ttalkkak
+cd /opt/ttalkkak
+sudo -u ttalkkak python3 -m venv .venv
+sudo -u ttalkkak .venv/bin/pip install -r requirements.txt
 ```
 
 ## 2. 서비스로 띄우기
 
 ```bash
-sudo cp deploy/ddalkkak.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now ddalkkak
-systemctl status ddalkkak --no-pager
+sudo cp deploy/ttalkkak.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now ttalkkak
+systemctl status ttalkkak --no-pager
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5050/      # 200
 ```
 
@@ -34,8 +34,8 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5050/      # 200
 ## 3. 앞에 nginx
 
 ```bash
-sudo cp deploy/nginx-ddalkkak.conf /etc/nginx/sites-available/ddalkkak
-sudo ln -sf /etc/nginx/sites-available/ddalkkak /etc/nginx/sites-enabled/ddalkkak
+sudo cp deploy/nginx-ttalkkak.conf /etc/nginx/sites-available/ttalkkak
+sudo ln -sf /etc/nginx/sites-available/ttalkkak /etc/nginx/sites-enabled/ttalkkak
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 ```
