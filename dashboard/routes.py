@@ -165,6 +165,14 @@ def cvss_score():
         return {"error": str(e)}, 400
 
 
+def _with_result_links(rows):
+    """끝난 도구 실행에는 결과 표를 다시 여는 주소를 붙인다(토스트·드로어)."""
+    for j in rows:
+        if j.get("stage") == "tool" and j["status"] == "done":
+            j["result_url"] = url_for("dash.tools", target=j["target_id"], tool=j["module_id"], run=j["run_id"])
+    return rows
+
+
 @bp.app_context_processor
 def _jobs_for_page():
     """모든 화면이 '도는 중'과 '막 끝난 것'을 볼 수 있게.
@@ -176,7 +184,7 @@ def _jobs_for_page():
         tid = request.args.get("target", type=int)
     except RuntimeError:          # 요청 밖에서 렌더할 때
         tid = None
-    return {"job_toasts": jobs.take_announcements(tid),
+    return {"job_toasts": _with_result_links(jobs.take_announcements(tid)),
             "job_live": jobs.live_count(),
             "job_max": jobs.MAX_LIVE}
 
@@ -185,7 +193,7 @@ def _jobs_for_page():
 def jobs_list():
     """우측 드로어가 물어보는 자리. 도는 것이 위, 그 아래 최근 끝난 것."""
     target = request.args.get("target", type=int)
-    return {"jobs": jobs.listing(target), "live": jobs.live_count(), "max": jobs.MAX_LIVE}
+    return {"jobs": _with_result_links(jobs.listing(target)), "live": jobs.live_count(), "max": jobs.MAX_LIVE}
 
 
 @bp.post("/jobs/<int:run_id>/cancel")
@@ -351,7 +359,6 @@ def modules():
     return render_template("modules.html", rows=rows, all_modules=_modules(), project=project,
                            hidden=len(_modules()) - len(available), errors=current_app.config["MODULE_ERRORS"],
                            target=target, targets=targets, runs=runs, tactic_name=TACTIC_NAME,
-                           saved_runs=runfiles.run_ids(current_app),
                            ways=grouping.WAYS, way=way if way in grouping.KEYS else grouping.DEFAULT_WAY,
                            missing=grouping.empty_groups(way, rows), total=len(available))
 
@@ -468,39 +475,6 @@ def _new_run(mod, t, params):
     return cur.lastrowid
 
 
-def _execute(mod, t, params, call):
-    """요청 안에서 끝까지 돌린다. 도구 탭처럼 결과를 그 자리에서 봐야 하는 것에 쓴다.
-
-    끝까지 기다리지만 **'도는 중' 은 화면이 아니라 서랍에 적는다.** 화면에만
-    적으면 탭을 옮기는 순간 지워져 아무것도 안 도는 것처럼 보인다(사용자 지적
-    11-06). 서랍에 올려 두면 어느 화면에서 봐도 같고, 멈춤이 걸리고, 보낸 요청도
-    한 줄씩 흐른다. 동시 실행 상한도 _execute_bg 와 같은 이유로 똑같이 받는다 —
-    요청 간격을 지켜도 동시에 때리면 공유 서버가 받는 양은 그만큼 늘어난다.
-    """
-    if jobs.live_count() >= jobs.MAX_LIVE:
-        flash(f"지금 {jobs.MAX_LIVE}개가 돌고 있습니다. 하나가 끝나면 다시 눌러 주세요", "error")
-        return
-    run_id = _new_run(mod, t, params)
-    job = jobs.adopt(run_id, t, mod)
-    job.ctx = _setup_run(mod, t, run_id, stop_check=job.should_stop)
-    try:
-        scope.ensure_in_scope(t["url"])
-        msg = call(Target(t["id"], t["name"], t["url"]))
-        flash(f"{mod.name}: {msg} · 요청 {g.run_ctx.count}개", "ok")
-        _finish_run(mod, t, run_id, "done", msg)
-        jobs.close(job, "done", message=msg)
-    except jobs.Cancelled as e:
-        get_db().rollback()
-        flash(f"{mod.name} 을 멈췄습니다 — 그때까지 찾은 것은 결과 탭에 남아 있습니다", "ok")
-        _finish_run(mod, t, run_id, "cancelled", err=str(e))
-        jobs.close(job, "cancelled", error=str(e))
-    except Exception as e:  # noqa: BLE001 — 실패도 실행 기록에 남긴다
-        get_db().rollback()
-        flash(f"{mod.name} 실패: {e}", "error")
-        _finish_run(mod, t, run_id, "error", err=str(e))
-        jobs.close(job, "error", error=str(e))
-
-
 def _execute_bg(mod, t, params, call):
     """뒤에서 돌린다. 바로 돌아오고, 진행은 우측 드로어에서 본다.
 
@@ -509,7 +483,7 @@ def _execute_bg(mod, t, params, call):
     """
     if jobs.live_count() >= jobs.MAX_LIVE:
         flash(f"지금 {jobs.MAX_LIVE}개가 돌고 있습니다. 하나가 끝나면 다시 눌러 주세요", "error")
-        return
+        return None
     run_id = _new_run(mod, t, params)
     app = current_app._get_current_object()
 
@@ -531,6 +505,7 @@ def _execute_bg(mod, t, params, call):
 
     jobs.start(app, run_id, t, mod, work)
     flash(f"{mod.name} 을 뒤에서 돌리고 있습니다 — 오른쪽 '도는 중' 에서 진행을 봅니다", "ok")
+    return run_id
 
 
 def _save_finding(mod, tid, f):
@@ -584,7 +559,20 @@ def module_run(mid):
         flash(f"{mod.name} 은 지점 점검 모듈입니다. 표면 탭에서 지점을 골라 실행하세요", "error")
         return redirect(url_for("dash.surface", target=t["id"]))
     if mod.stage == "tool":
-        return redirect(url_for("dash.tools", target=t["id"], tool=mid))
+        # 도구도 다른 모듈처럼 이 화면에서 바로 뒤로 보낸다. 결과 표는 끝난 뒤
+        # 도구 탭에서 연다(드로어·토스트에서 이어지는 링크).
+        back = url_for("dash.modules", target=t["id"])
+        stop = _guard(mod, t, back)
+        if stop:
+            return stop
+        values = {p["name"]: request.form.get(p["name"], p.get("default", "")) for p in mod.params}
+        try:
+            params = _check_types(mod, values)
+        except ValueError as e:
+            flash(str(e), "error")
+            return redirect(back)
+        _execute_bg(mod, t, params, _tool_call(mod, t, params))
+        return redirect(back)
     stop = _guard(mod, t, url_for("dash.modules", target=t["id"]))
     if stop:
         return stop
@@ -715,34 +703,76 @@ def surface_clear():
     return redirect(url_for("dash.surface", target=tid))
 
 
-# ── 도구(값을 넣고 바로 결과를 보는 모듈) ────────────────────
+# ── 도구(값을 넣고 결과 표를 보는 모듈) ──────────────────────
+#
+# 전에는 도구만 요청 안에서 끝까지 돌았다(그 자리에서 결과를 그리려고). 모듈 탭에서
+# 누르면 돌지도 않고 도구 탭으로 넘어갔고, 도구 탭에서는 끝날 때까지 화면이 멈췄다.
+# 이제 도구도 다른 모듈처럼 뒤에서 돌고 '도는 중' 으로 간다(사용자 결정 11-07, 안 1).
+# 그 대신 화면에 그릴 결과(표·내용)를 runs.result 에 남기고, 도구 탭은 그것을 다시 연다.
 
 def _tool_modules(target):
     return {k: m for k, m in _modules_for(target).items() if m.stage == "tool"}
 
 
-def _past_run(target, mod, run_id=None):
-    """지난 실행의 본문 파일. 몇 분짜리 실행의 트리를 탭 한 번 옮겼다고 잃지 않게 한다.
+def _result_to_json(result):
+    """ToolResult → 화면에 다시 그릴 만큼만. 찾은 것은 결과 탭에 따로 저장된다."""
+    return json.dumps({
+        "summary": result.summary,
+        "columns": [str(c) for c in result.columns],
+        "rows": [[str(v) for v in row] for row in result.rows],
+        "drills": result.drills,
+        "text": result.text,
+        "note": result.note,
+        "more": result.more,
+        "findings": [{"severity": f.severity, "title": f.title} for f in result.findings],
+    }, ensure_ascii=False)
 
-    `run_id` 를 주면 그 실행, 없으면 이 대상·이 모듈의 마지막 실행이다.
-    """
+
+def _tool_call(mod, t, params):
+    """작업자 스레드에서 도구를 돌리고, 결과 표를 그 실행 기록에 남긴다."""
+    def call(target_):
+        result = mod.run(target_, params)
+        if not isinstance(result, ToolResult):
+            raise TypeError("도구 모듈의 run() 은 ToolResult 를 돌려줘야 합니다")
+        db = get_db()
+        new = sum(_save_finding(mod, t["id"], f) for f in result.findings)
+        msg = result.summary + (f" · 결과 {len(result.findings)}건(새로 {new})" if result.findings else "")
+        if result.points:
+            kept, skipped = _save_points(mod, t["id"], result.points)
+            msg += f" · 표면에 {len(result.points) - skipped}개(새로 {kept})"
+            if skipped:
+                msg += f", 범위 밖 {skipped}개 제외"
+        db.execute("UPDATE runs SET result = ? WHERE id = ?", [_result_to_json(result), g.run_id])
+        # 본문(퍼징 트리 등)은 파일로도 떨군다. 화면 복원은 위의 result 로 되지만, 트리는
+        # 보고서에 붙이고 팀에 넘기는 산출물이다 — 받아 쓰는 사람이 sqlite 를 열게 할 수 없다
+        if result.text:
+            runfiles.save(current_app, g.run_id, t, mod, result.text, result.summary)
+        return msg
+    return call
+
+
+def _tool_run_row(target, mod, run_id=None):
+    """보여 줄 실행. 번호를 주면 그것, 없으면 이 대상·도구의 가장 최근 실행."""
     if not (target and mod):
         return None
-    path = runfiles.find(current_app, target, mod.id, run_id)
-    text = runfiles.read(path) if path else None
-    if text is None:
-        return None
-    return {"run_id": int(path.stem), "text": text, "path": str(path)}
+    db = get_db()
+    if run_id:
+        return db.execute("SELECT * FROM runs WHERE id = ? AND target_id = ? AND module_id = ?",
+                          [run_id, target["id"], mod.id]).fetchone()
+    return db.execute("SELECT * FROM runs WHERE target_id = ? AND module_id = ? ORDER BY id DESC LIMIT 1",
+                      [target["id"], mod.id]).fetchone()
 
 
-def _tool_page(target, targets, mod, values, result=None, run_id=None):
+def _tool_page(target, targets, mod, values, run=None):
     tools = _tool_modules(target)
-    # 이 탭에서 돌린 것이 아직 돌고 있으면 화면에도 적는다. 새로고침하거나 탭을
-    # 옮겼다 돌아오면 결과 자리가 비는데, 그것만 보면 아무 일도 없던 것 같다.
+    # 도는 중인 도구는 화면에도 적는다. 결과 자리가 비어 있으면 아무 일도 없던 것 같다.
     live = [j for j in jobs.listing(target["id"]) if j["live"] and j["module_id"] in tools] if target else []
-    return render_template("tools.html", tools=tools, mod=mod, values=values, result=result,
+    result = json.loads(run["result"]) if run is not None and run["result"] else None
+    # 본문이 있으면 파일로도 남아 있다 — 어디에 적혔는지 화면에 알려 줘야 가져다 쓴다
+    text_file = runfiles.find(current_app, target, mod.id, run["id"]) if (result and result.get("text")) else None
+    return render_template("tools.html", tools=tools, mod=mod, values=values, result=result, run=run,
                            target=target, targets=targets, live_tools=live,
-                           past=None if result else _past_run(target, mod, run_id))
+                           text_file=str(text_file) if text_file else "")
 
 
 @bp.get("/tools")
@@ -751,18 +781,26 @@ def tools():
     tools_ = _tool_modules(target)
     mod = tools_.get(request.args.get("tool") or "") or (next(iter(tools_.values())) if tools_ else None)
     values = {p["name"]: p.get("default", "") for p in mod.params} if mod else {}
-    return _tool_page(target, targets, mod, values, run_id=request.args.get("run", type=int))
+    run = _tool_run_row(target, mod, request.args.get("run", type=int))
+    if run is not None:
+        # 그 실행에 넣었던 값으로 칸을 채운다 — '이어서 보기' 가 같은 값에서 출발한다
+        try:
+            saved = json.loads(run["params"] or "{}")
+        except ValueError:
+            saved = {}
+        values.update({k: str(v) for k, v in saved.items() if k in values})
+    return _tool_page(target, targets, mod, values, run)
 
 
 @bp.post("/tools/run")
 def tool_run():
-    target, targets = _current_target()
     db = get_db()
     t = db.execute("SELECT * FROM targets WHERE id = ?", [request.form.get("target_id", type=int)]).fetchone()
     if not t:
         flash("대상을 먼저 고르세요", "error")
         return redirect(url_for("dash.tools"))
     mod = _tool_modules(t).get(request.form.get("module_id", "")) or abort(404)
+    back = url_for("dash.tools", target=t["id"], tool=mod.id)
     values = {p["name"]: request.form.get(p["name"], p.get("default", "")) for p in mod.params}
     if request.form.get("_drill"):
         # 표에서 '이어서 보기'를 누른 경우 — 그 행이 들고 있던 값으로 덮어쓴다
@@ -773,38 +811,17 @@ def tool_run():
         if not isinstance(drill, dict):
             abort(400)
         values.update({k: str(v) for k, v in drill.items() if k in values})
-    request.tool_values = values
-    stop = _guard(mod, t, url_for("dash.tools", target=t["id"], tool=mod.id))
+    stop = _guard(mod, t, back)
     if stop:
         return stop
     try:
         params = _check_types(mod, values)
     except ValueError as e:
         flash(str(e), "error")
-        return _tool_page(t, targets, mod, values)
+        return redirect(back)
 
-    box = {}
-
-    def call(target_):
-        result = mod.run(target_, params)
-        if not isinstance(result, ToolResult):
-            raise TypeError("도구 모듈의 run() 은 ToolResult 를 돌려줘야 합니다")
-        box["result"] = result
-        # 본문(트리 등)은 파일로 남긴다 — 화면에만 그리면 탭을 옮기는 순간 사라지고,
-        # DB 에 넣으면 받아 쓰는 사람이 sqlite 를 열어야 꺼낼 수 있다
-        if result.text:
-            box["file"] = runfiles.save(current_app, g.run_id, t, mod, result.text, result.summary)
-        new = sum(_save_finding(mod, t["id"], f) for f in result.findings)
-        msg = result.summary + (f" · 결과 {len(result.findings)}건(새로 {new})" if result.findings else "")
-        if result.points:
-            kept, skipped = _save_points(mod, t["id"], result.points)
-            msg += f" · 표면에 {len(result.points) - skipped}개(새로 {kept})"
-            if skipped:
-                msg += f", 범위 밖 {skipped}개 제외"
-        return msg
-
-    _execute(mod, t, params, call)
-    return _tool_page(t, targets, mod, values, box.get("result"))
+    run_id = _execute_bg(mod, t, params, _tool_call(mod, t, params))
+    return redirect(url_for("dash.tools", target=t["id"], tool=mod.id, run=run_id) if run_id else back)
 
 
 # ── 요청 기록(보낸 요청·받은 응답) ───────────────────────────

@@ -205,7 +205,7 @@ def test_imported_points_land_on_surface(app, client):
         tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
     page = client.post("/tools/run", data={
         "target_id": tid, "module_id": "import_tool_output",
-        "output": "https://sesacedu.store/admin\nhttps://evil.example/x"}).get_data(as_text=True)
+        "output": "https://sesacedu.store/admin\nhttps://evil.example/x"}, follow_redirects=True).get_data(as_text=True)
     assert "표면에 1개" in page and "범위 밖 1개 제외" in page
     assert "/admin" in client.get(f"/surface?target={tid}").get_data(as_text=True)
 

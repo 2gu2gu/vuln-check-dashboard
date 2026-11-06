@@ -84,10 +84,8 @@
     {% if target and m.stage == "probe" %}
     <div class="run"><a class="btn ghost" href="{{ url_for('dash.surface', target=target.id) }}">표면 탭에서 지점을 골라 실행 →</a></div>
     {% elif target %}
-    {# stage="tool" 은 눌러도 돌지 않는다 — 서버가 도구 탭으로 넘길 뿐이다.
-       그래서 data-run 을 안 준다. 주면 도는 것도 없이 '도는 중' 으로 날아간다. #}
-    <form method="post" action="{{ url_for('dash.module_run', mid=m.id) }}" class="run"
-          {%- if m.stage != "tool" %} data-run="bg"{% endif %}>
+    {# 도구도 이 자리에서 뒤로 보낸다 — 결과 표는 끝난 뒤 도구 탭에서 연다 #}
+    <form method="post" action="{{ url_for('dash.module_run', mid=m.id) }}" class="run" data-run="bg">
       {{ csrf_field() }}
       <input type="hidden" name="target_id" value="{{ target.id }}">
       {% for p in m.params %}{{ param_input(p) }}{% endfor %}
@@ -119,7 +117,7 @@
       <td>{{ r.target_name }}{% if rp and rp.is_practice(r.target_role) %} <span class="practice-tag">연습용</span>{% endif %}</td>
       <td>{{ all_modules[r.module_id].name if r.module_id in all_modules else r.module_id }}</td>
       <td>{{ r.n }}건
-        {% if r.id in saved_runs %}<a class="sub small" href="{{ url_for('dash.tools', target=r.target_id, tool=r.module_id, run=r.id) }}">내용 보기</a>{% endif %}</td>
+        {% if r.result %}<a class="sub small" href="{{ url_for('dash.tools', target=r.target_id, tool=r.module_id, run=r.id) }}">내용 보기</a>{% endif %}</td>
       <td>{% if r.reqs %}<a href="{{ url_for('dash.history', target=r.target_id, run=r.id) }}">{{ r.reqs }}개 보기</a>{% else %}<span class="sub">0</span>{% endif %}</td>
       <td>{% if r.status == "error" %}<span class="status st-error">실패</span>
           {% elif r.status == "done" %}<span class="status st-fixed">완료</span>
