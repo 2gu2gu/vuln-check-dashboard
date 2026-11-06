@@ -68,6 +68,11 @@
   <p class="sub small">{{ run.started_at | kst }} 실행 결과 · 요청 {{ run.sent }}개</p>
   <h2>{{ result.summary }}</h2>
 
+  {% if result.text %}<h3>내용</h3>
+  {% if text_file %}<p class="sub small">파일로도 남겼습니다 — 보고서에 붙이거나 그대로 가져가세요.
+    <span class="mono">{{ text_file }}</span></p>{% endif %}
+  <pre class="tool-text">{{ result.text }}</pre>{% endif %}
+
   {% if result.rows %}
   <div class="table-wrap">
   <table class="grid">
@@ -95,10 +100,6 @@
   <button class="btn ghost" type="submit" form="tool-form" name="_drill" value="{{ result.more | tojson | forceescape }}">다음 것 더 보기 →</button>
   {% endif %}
 
-  {% if result.text %}<h3>내용</h3>
-  {% if text_file %}<p class="sub small">파일로도 남겼습니다 — 보고서에 붙이거나 그대로 가져가세요.
-    <span class="mono">{{ text_file }}</span></p>{% endif %}
-  <pre class="tool-text">{{ result.text }}</pre>{% endif %}
 
   {% if result.findings %}
   <h3>결과 탭에 남긴 것</h3>
