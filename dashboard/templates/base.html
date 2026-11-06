@@ -116,6 +116,7 @@
       <b>{{ j.module }}</b>
       {%- if j.status == 'done' %} <span class="sub">요청 {{ j.sent }}개 · {{ j.seconds }}초</span>
         <div>{{ j.message }}</div>
+        {%- if j.result_url %}<div><a href="{{ j.result_url }}">결과 표 보기 →</a></div>{% endif %}
       {%- elif j.status == 'cancelled' %} <span class="sub">멈춤</span>
         <div>요청 {{ j.sent }}개까지 보냈습니다. 그때까지 찾은 것은 남아 있습니다.</div>
       {%- else %} <span class="sub">실패</span><div>{{ j.error }}</div>{% endif %}

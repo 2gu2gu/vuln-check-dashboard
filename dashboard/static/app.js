@@ -245,87 +245,6 @@
   // 있어서 숨은 input 에서 주워 읽을 수가 없다 — meta 가 유일한 출처다.
   var CSRF = (document.querySelector('meta[name=csrf]') || {}).content || "";
 
-  // ── 기다리는 동안 남기는 표시 ────────────────────────────
-  // 도구 실행(/tools/run)은 요청 안에서 끝까지 돈다(_execute). 실측 11-06:
-  // port_check 13초, 경로 퍼징 67초. 그동안 화면이 통째로 멈춰 있어서 안 눌린 줄
-  // 알고 또 누른다 — 1분 안에 6번 눌린 기록이 있다.
-  //
-  // 버튼을 JS 로 disabled 하지 않는다. 제출 이벤트 중에 끄면 그 버튼의 name/value 가
-  // 전송 목록에서 빠져 '이어서 보기'(_drill) 가 죽는다. 막는 건 CSS 가 한다.
-  //
-  // 도구 폼은 페이지에 하나뿐이라(tools.html id=tool-form) 기다리는 표시도 하나다.
-  // 그 하나를 여기 들고 있는다 — 폼의 dataset 과 DOM 조회로 나눠 적으면 '기다리는 중'
-  // 이라는 같은 사실이 세 군데 적히고, 5분 해제 경로에서 서로 어긋난다.
-  var held = null;
-
-  function hold(submitter, card) {
-    var note = document.createElement("p");
-    note.className = "wait-note sub";
-    note.setAttribute("role", "status");
-    // 초는 화면에만 보인다. role=status 안에서 1초마다 바뀌면 읽어 주는 기계가
-    // 문장을 통째로 다시 읽는다 — 그래서 바뀌는 쪽은 접근성 트리에서 숨긴다.
-    note.innerHTML = '<span class="spin" aria-hidden="true"></span>'
-                   + '<span class="wait-say"></span>'
-                   + '<span class="wait-sec" aria-hidden="true"></span>';
-    // '이어서 보기' 버튼은 폼 바깥에 있다(form= 속성으로 묶인다). closest("form") 으로
-    // 가리면 null 이라 엉뚱한 자리에 붙는다 — 누른 자리 바로 뒤에 넣는다.
-    if (submitter && submitter.insertAdjacentElement) {
-      submitter.insertAdjacentElement("afterend", note);
-    } else {
-      card.appendChild(note);
-    }
-    var say = note.querySelector(".wait-say");
-    var sec = note.querySelector(".wait-sec");
-    var going = "돌고 있습니다 — 끝나면 결과가 이 자리에 뜹니다";
-    // live 영역은 '먼저 자리를 잡고 나서' 글이 들어와야 읽힌다
-    setTimeout(function () { say.textContent = going; }, 60);
-    var t0 = Date.now();
-    var timer = setInterval(function () {
-      sec.textContent = " · " + Math.round((Date.now() - t0) / 1000) + "초";
-    }, 1000);
-
-    // 결과 표의 '이어서 보기' 는 다른 패널에 있다. 거기도 같이 흐려야 보이는 상태와
-    // 실제 상태가 맞는다 — 안 그러면 눌리는 것처럼 보이고 실제로는 막힌다.
-    var out = document.querySelector(".tool-result");
-    card.classList.add("waiting");
-    if (out) { out.classList.add("waiting"); }
-
-    function release() {                     // 다시 누를 수 있게. 남길 글은 부르는 쪽이 정한다
-      held = null;
-      clearInterval(timer);
-      card.classList.remove("waiting");
-      if (out) { out.classList.remove("waiting"); }
-    }
-    // 끝내 화면이 안 넘어가는 일이 있어도 영영 못 누르게 두지는 않는다
-    var bail = setTimeout(function () {
-      release();
-      // 다시 누르라고 하면 안 된다 — 그 실행은 서랍에서 그대로 돌고 있다.
-      say.textContent = "오래 걸립니다 — 진행과 멈춤은 오른쪽 위 '도는 중' 에서 봅니다";
-    }, 300000);
-
-    held = {
-      again: function () {                   // 기다리는 중에 또 눌렀을 때
-        say.textContent = "이미 보냈습니다 — 끝날 때까지 기다려 주세요";
-        note.classList.add("warn-text");
-        setTimeout(function () {
-          note.classList.remove("warn-text");
-          say.textContent = going;
-        }, 1800);
-      },
-      drop: function () {                    // 뒤로가기로 돌아왔을 때
-        clearTimeout(bail);
-        release();
-        if (note.parentNode) { note.parentNode.removeChild(note); }
-      }
-    };
-  }
-
-  // 뒤로가기(bfcache)로 돌아오면 화면이 그대로 복원된다 — 표시를 걷어낸다.
-  // 리스너는 하나만 단다. 제출할 때마다 달면 돌아올 때마다 하나씩 쌓인다.
-  window.addEventListener("pageshow", function (ev) {
-    if (ev.persisted && held) { held.drop(); }
-  });
-
   // ── 실행하면 그 모듈이 뭉쳐서 '도는 중' 으로 날아간다 ──────
   // 눌렀는데 화면이 그대로면 아무 일도 안 일어난 줄 안다. 뒤로 갔다는 신호다.
   // 전에는 두 가지 때문에 보이지 않았다(사용자 지적 11-05 "눈에 안 띄어").
@@ -350,18 +269,13 @@
     document.addEventListener("submit", function (e) {
       var form = e.target;
       if (e.defaultPrevented) return;
-      var mode = form.dataset.run;           // "bg" | "sync" | 없음(건드리지 않는다)
-      if (mode !== "bg" && mode !== "sync") return;
+      if (form.dataset.run !== "bg") return;   // 없으면 건드리지 않는다
       // 표면 탭은 폼이 지점 표까지 다 감싼다 — 폼을 카드로 쓰면 화면만 한 덩어리가 된다.
       // 누르는 자리인 안쪽 막대(.probe-bar, sticky 라 늘 보인다)를 집는다.
       var card = form.closest(".mod, .tool-form, .probe-bar")
                  || form.querySelector(".probe-bar") || form;
 
-      if (mode === "sync") {
-        // 기다리는 동안 또 누르면 말없이 삼키지 않는다 — 삼키면 그게 또 '안 눌린다' 다.
-        if (held) { e.preventDefault(); held.again(); return; }
-        hold(e.submitter, card);          // 그 자리에 남는 표시. 아래로 이어서 날린다
-      } else if (form.dataset.sending) {
+      if (form.dataset.sending) {
         // 넘기기를 미루는 동안 또 누르면 같은 실행이 두 번 들어간다. 전에는 바로
         // 넘어가서 이 구멍이 없었다 — 미루기로 한 이상 여기서 막아야 한다.
         e.preventDefault();
@@ -420,12 +334,18 @@
       setTimeout(function () { dest.classList.add("bump"); }, FLY - 140);
       setTimeout(function () { ghost.remove(); }, WAIT + 1500);   // 화면이 안 넘어가도 치운다
 
-      // 도구는 여기서 끝이다. 가로채면 누른 버튼의 name/value 가 빠져
-      // '이어서 보기'(_drill) 가 죽으므로, 보내기는 브라우저에 맡긴다.
-      if (mode === "sync") { return; }
-
-      // 다 날아간 다음에 넘긴다 — 바로 넘기면 눈에 띄기 전에 잘린다
+      // 다 날아간 다음에 넘긴다 — 바로 넘기면 눈에 띄기 전에 잘린다.
+      // form.submit() 은 누른 버튼의 name/value 를 싣지 않는다. 도구 표의
+      // '이어서 보기'(_drill) 가 그 값으로 움직이므로 숨은 칸으로 옮겨 싣는다.
       e.preventDefault();
+      var sub = e.submitter;
+      if (sub && sub.name) {
+        var carry = document.createElement("input");
+        carry.type = "hidden";
+        carry.name = sub.name;
+        carry.value = sub.value;
+        form.appendChild(carry);
+      }
       form.dataset.sending = "1";
       var go = form.querySelector("button[type=submit]");
       if (go) { go.disabled = true; }
@@ -438,6 +358,25 @@
         }
       }, WAIT);
     }, true);
+  })();
+
+  // ── 도구 탭: 보던 도구가 끝나면 결과가 뜨게 새로 고친다 ─────
+  (function () {
+    var wait = document.querySelector("[data-wait-run]");
+    if (!wait) return;
+    var run = wait.getAttribute("data-wait-run");
+    var m = location.search.match(/[?&]target=(\d+)/);
+    var arg = m ? "?target=" + m[1] : "";
+    var t = setInterval(function () {
+      fetch("/jobs" + arg).then(function (r) { return r.json(); }).then(function (d) {
+        var j = (d.jobs || []).filter(function (x) { return String(x.run_id) === run; })[0];
+        if (j && j.live) return;
+        clearInterval(t);
+        var u = new URL(location.href);
+        u.searchParams.set("run", run);
+        location.replace(u.toString());
+      }).catch(function () {});
+    }, 2000);
   })();
 
   // ── 모듈 실행 드로어 ─────────────────────────────────────
@@ -470,6 +409,14 @@
       li.querySelector("b").textContent = j.module;
       li.querySelector(".state").textContent = state + " · 요청 " + j.sent + " · " + j.seconds + "초";
       li.querySelector(".why").textContent = j.error || j.message || j.target;
+      if (j.result_url) {                    // 도구는 결과 표를 도구 탭에서 다시 연다
+        var go = document.createElement("a");
+        go.href = j.result_url;
+        go.className = "small";
+        go.textContent = "결과 표 보기 →";
+        go.addEventListener("click", function (e) { e.stopPropagation(); });
+        li.appendChild(go);
+      }
       if (j.live) {
         var stop = document.createElement("button");
         stop.type = "button";

@@ -41,6 +41,7 @@ class Job:
         self.run_id = run_id
         self.target_id, self.target_name = target["id"], target["name"]
         self.module_id, self.module_name = module.id, module.name
+        self.stage = getattr(module, "stage", "")   # 도구면 끝난 뒤 결과 표로 가는 링크를 단다
         self.status = "running"          # running · done · error · cancelled
         self.message = ""
         self.error = ""
@@ -65,7 +66,7 @@ class Job:
 
     def as_dict(self):
         return {"run_id": self.run_id, "target_id": self.target_id, "target": self.target_name,
-                "module_id": self.module_id, "module": self.module_name, "status": self.status,
+                "module_id": self.module_id, "module": self.module_name, "stage": self.stage, "status": self.status,
                 "sent": self.sent, "seconds": self.seconds, "message": self.message,
                 "error": self.error, "live": self.live}
 
@@ -137,29 +138,6 @@ def _remember(job):
                     break
             else:
                 break
-
-
-def adopt(run_id, target, module):
-    """요청 스레드가 직접 도는 실행도 같은 자리에 올린다.
-
-    도구 탭은 요청 하나 안에서 끝까지 돈다(routes._execute). 그래도 '지금 돌고
-    있다' 는 사실은 **화면이 아니라 여기** 적혀 있어야 한다. 화면에 적으면 탭을
-    옮기는 순간 지워져 아무 일도 없는 것처럼 보이지만, 여기 적힌 것은 어느
-    화면에서 봐도 같고 멈춤도 이걸로 걸린다.
-
-    끝난 뒤 토스트는 띄우지 않는다(announced). 결과가 그 자리에 뜨고 실행한
-    사람에게는 flash 도 간다 — 토스트까지 띄우면 같은 말을 세 번 한다.
-    """
-    job = Job(run_id, target, module)
-    job.announced = True
-    _remember(job)
-    return job
-
-
-def close(job, status, message="", error=""):
-    """adopt() 로 올린 작업을 닫는다. start() 의 finally 에 해당한다."""
-    job.status, job.message, job.error = status, message, error
-    job.finished = time.time()
 
 
 def start(app, run_id, target, module, work):
