@@ -22,7 +22,7 @@ STAGES = ("collect", "check", "probe", "tool")
 STAGE_LABEL = {"collect": "표면 수집", "check": "대상 점검", "probe": "지점 점검", "tool": "도구"}
 GENERAL = "general"  # 어느 프로젝트에도 속하지 않는 대상
 # 연습용 묶음 이름. 프로젝트 이름을 쓰지 않는 것이 요점이다 — 점검 범위가 아니다.
-PRACTICE_LABEL = "연습용 — 점검 대상 아님"
+PRACTICE_LABEL = "연습용 — 실서버 아님"
 
 
 @dataclass
@@ -61,6 +61,7 @@ class ProjectInfo:
     description: str = ""
     source: str = ""
     roles: dict = field(default_factory=dict)  # {역할 id: {"name": 보일 이름, "scope": [허용 범위]}}
+    # 화면에서는 이것을 '점검 대상' 이라고 부른다(2026-11-06). 코드·DB 이름은 role 로 둔다.
     login: dict = field(default_factory=dict)  # 로그인해서 토큰 받는 법(서비스마다 다르다)
 
     def role_name(self, role: str) -> str:

@@ -285,8 +285,8 @@ def add_target(client, name, url, role, project="sesacedu"):
 
 
 def test_role_required_when_project_has_roles(client):
-    assert "역할을 골라" in add_target(client, "웹", "https://sesacedu.store", "")
-    assert "역할을 골라" in add_target(client, "웹", "https://sesacedu.store", "없는역할")
+    assert "점검 대상을 골라" in add_target(client, "웹", "https://sesacedu.store", "")
+    assert "점검 대상을 골라" in add_target(client, "웹", "https://sesacedu.store", "없는역할")
     assert "등록했습니다" in add_target(client, "웹", "https://sesacedu.store", "user_web")
 
 
