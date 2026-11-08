@@ -254,6 +254,8 @@ META = {
 }
 
 PATH = "/backend/lectures/{lecture}/material/download?file={payload}"
+# 이 강의에 자료가 등록돼 있는지 묻는 자리. 전제 확인에만 쓴다.
+MATERIAL_PATH = "/backend/lectures/{lecture}/material"
 DIR = "dir"
 OPAQUE = "opaque"
 
@@ -276,6 +278,30 @@ LABEL = {
     DENIED: "탈출 검사 차단",
     AUTH: "토큰 필요",
 }
+
+
+def check_material(walker):
+    """이 강의에 자료가 등록돼 있는가. (있나, 설명) 를 돌려준다.
+
+    **전제가 꺼져 있으면 모든 탐색이 404 가 된다.** 자료가 없는 강의에서는 서버가
+    파일을 건드리기도 전에 404 를 주기 때문이다. 그 404 를 '그 경로가 없다' 로 읽으면
+    서버 전체가 비어 보이고, 실제로 11-07·11-08 에 두 번 그렇게 잘못 읽었다
+    (`WEB-INF/web.xml` 을 '없다' 고 적었는데 자료 복구 후 200 으로 읽혔다).
+
+    요청 한 번이면 추측을 사실로 바꿀 수 있어서 교정 앞에 둔다.
+    """
+    walker.left -= 1
+    walker.sent += 1
+    try:
+        # 요청 기록은 받은 그대로 남긴다 — 팀이 가리기를 뺀 결정(PR #73)에 맞춘다.
+        r = fetch(walker.t.url + MATERIAL_PATH.format(lecture=walker.lecture))
+    except Exception as exc:                      # 범위 밖·연결 실패 등
+        return None, "자료 등록 여부를 묻지 못했습니다 (%s)" % type(exc).__name__
+    if r.status == 200:
+        return True, "자료 등록됨"
+    if r.status in (401, 403):
+        return None, "자료 목록이 %d 로 막혀 확인하지 못했습니다" % r.status
+    return False, "이 강의에 **등록된 자료가 없습니다**(자료 목록 %d)" % r.status
 
 
 def _send(target, lecture, depth, scheme, path):
@@ -794,10 +820,19 @@ def _gate_table(gates):
 GATE_COLUMNS = ["교정 경로", "이래야 한다", "실제", "판정", "확인하는 성질"]
 
 
-def _calibration_failed(target, lecture, scheme, depth, depth_auto, tried, gates, walker):
+def _calibration_failed(target, lecture, scheme, depth, depth_auto, tried, gates,
+                        walker, has_material=None, material_note=""):
     """오라클이 깨졌다. 지도를 그리지 않고 왜 멈췄는지만 돌려준다."""
     wrong = [g for g in gates if not g["ok"]]
     why = []
+    # 전제부터 짚는다 — 이게 원인이면 인코딩·단계를 아무리 바꿔도 안 된다.
+    if has_material is False:
+        why.append("**원인은 취약점이 아니라 전제입니다.** %s — 자료가 없는 강의에서는 "
+                   "서버가 파일을 건드리기도 전에 404 를 줍니다. 인코딩이나 단계를 "
+                   "바꿔도 소용없습니다. **자료가 등록된 강의 번호로 바꾸거나** 그 강의에 "
+                   "자료를 하나 올린 뒤 다시 돌리세요." % material_note)
+    elif has_material is None and material_note:
+        why.append(material_note + " — 전제가 꺼져 있으면 모든 탐색이 404 가 됩니다.")
     if all(g["got"] == UNSTAT for g in gates):
         why.append("네 경로가 **전부 404** 입니다 — 올라갈 단계가 모자라거나 "
                    "취약점이 막혔습니다. 경로 조작이 더 안 통하는 것일 수 있습니다.")
@@ -875,7 +910,8 @@ def run(target, params):
     depth = 9 if depth_given is None else depth_given
     # 끝 교정 몫을 미리 떼어 둔다. 예산 밖으로 더 쓰면 상한(앱 한도 포함)을 넘기고,
     # 안 떼어 두면 끝 교정이 '예산이 없어' 못 돌아 **가장 중요한 확인이 생략된다.**
-    walker = _Walker(target, lecture, depth, scheme, max(8, budget - len(CALIBRATION)))
+    walker = _Walker(target, lecture, depth, scheme,
+                     max(8, budget - len(CALIBRATION) - 1))
     bad = 0
     stages = []          # [(이름, 때린 경로 수)] — 어느 단계가 얼마나 썼는지 보여 준다
 
@@ -888,6 +924,11 @@ def run(target, params):
         if depth_measured:
             depth = depth_measured
             walker.depth = depth_measured
+
+    # ── 0단계: 전제 확인 ──
+    # 자료가 없는 강의면 그 아래 무엇을 때려도 404 다. 교정도 당연히 깨지는데,
+    # 그때 '취약점이 막혔나' 를 먼저 의심하면 엉뚱한 곳을 파게 된다.
+    has_material, material_note = check_material(walker)
 
     # ── 0단계: 오라클 교정 ──
     # 응답 코드가 뜻을 갖는지 확인한다. 틀리면 지도를 그리지 않는다 —
@@ -907,7 +948,8 @@ def run(target, params):
         bad_gates = bad_gates + [missing]
     if bad_gates:
         return _calibration_failed(target, lecture, scheme, depth, depth_auto,
-                                   depth_tried, gates, walker)
+                                   depth_tried, gates, walker,
+                                   has_material, material_note)
 
     # ── 단서 먼저. 사람이 일부러 넣은 것이라 예산을 못 받는 일이 없게 한다 ──
     if hints:

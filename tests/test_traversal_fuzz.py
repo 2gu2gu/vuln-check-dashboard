@@ -24,8 +24,9 @@ T = Target(1, "t", "https://sesacedu.store")
 # 일부러 깨뜨린다.
 GATES = {"/etc/passwd": 200, "/etc": 500, "/etc/..": 500}
 # 교정·깊이 측정에 들어가는 요청 수. 요청 수를 세는 테스트가 이만큼을 빼고 본다.
-#   깊이 측정 1건(가짜 서버는 ../ 를 전부 지우므로 1단에서 바로 읽힌다) + 교정 4건
-SETUP_REQUESTS = 5
+#   전제 확인 1건 + 깊이 측정 1건(가짜 서버는 ../ 를 전부 지우므로 1단에서 바로
+#   읽힌다) + 교정 4건
+SETUP_REQUESTS = 6
 
 
 def seeded(pages, default=404):
@@ -680,6 +681,8 @@ def test_depth_is_measured_not_guessed(monkeypatch):
                     "lecture": "123", "hints": ""})
     assert "교정 실패" not in r.summary          # 재서 맞췄으니 교정도 통과한다
     assert "직접 재서 3 를 썼습니다" in r.note
+    # 첫 요청은 전제 확인(자료 등록 여부)이라 올라가기가 없다 — 빼고 센다
+    seen = [x for x in seen if x[1] != "/"]
     # 1·2 단을 시험한 뒤 3 을 골랐고, 그 뒤 요청은 전부 3 단이다
     tried = [up for up, _ in seen[:3]]
     assert tried == [1, 2, 3]
@@ -1419,3 +1422,61 @@ def test_the_wordlist_counts_in_the_docs_match_the_files():
     assert "%d개" % len(lines("fs-dirnames.txt")) in docs, len(lines("fs-dirnames.txt"))
     assert "%d개" % len(lines("fs-seeds-sesacedu.txt")) in docs
     assert "159" not in docs
+
+
+# ── 전제 확인 — 자료가 없는 강의면 전부 404 다 ────────────────
+# 11-07·11-08 에 이 함정에 두 번 빠졌다. 자료가 없으면 서버가 파일을 건드리기도 전에
+# 404 를 주는데, 그 404 를 '그 경로가 없다' 로 읽어 web 앱 소스를 '없다' 고 적었다.
+# 자료 복구 후 같은 경로가 200(3,092바이트)으로 읽혔다. 요청 한 번이면 가릴 수 있다.
+def no_material(monkeypatch, status=404):
+    """자료 목록이 비어 있고, 그래서 모든 탐색이 404 인 서버."""
+    calls = []
+
+    def fetch(url, **_kw):
+        calls.append(url)
+        if url.endswith("/material"):
+            return Response(url=url, status=status, headers=[], body="")
+        return Response(url=url, status=404, headers=[], body="")
+
+    fetch.calls = calls
+    monkeypatch.setattr(mod, "fetch", fetch)
+    monkeypatch.setattr(mod.wordlists, "load", lambda *_a, **_k: (list(WORDS), False))
+    r = mod.run(T, {"mode": "pipeline", "wordlist": "s", "names": "n", "limit": "50",
+                    "kinds": "yes", "depth": "9", "scheme": "double-full",
+                    "lecture": "123", "hints": "", "budget": "300"})
+    return r, fetch
+
+
+def test_missing_material_is_named_as_the_cause(monkeypatch):
+    """'취약점이 막혔나' 를 의심하기 전에 전제를 짚어야 한다."""
+    r, _ = no_material(monkeypatch)
+    assert "교정 실패" in r.summary
+    assert "원인은 취약점이 아니라 전제입니다" in r.note
+    assert "등록된 자료가 없습니다" in r.note
+    assert "인코딩이나 단계를 바꿔도 소용없습니다" in r.note
+
+
+def test_the_precondition_is_checked_before_calibration(monkeypatch):
+    """교정보다 먼저 물어야 한다 — 교정이 깨진 뒤면 이미 엉뚱한 곳을 의심한 뒤다."""
+    _, fetch = no_material(monkeypatch)
+    assert fetch.calls[0].endswith("/backend/lectures/123/material"), fetch.calls[:2]
+
+
+def test_the_precondition_costs_one_request_from_the_budget(monkeypatch):
+    """상한은 앱 한도와 같은 수를 세야 한다 — 전제 확인도 예산에서 뺀다."""
+    _, fetch = no_material(monkeypatch)
+    assert len(fetch.calls) <= 300
+
+
+def test_material_present_does_not_add_the_warning(monkeypatch):
+    """자료가 있으면 그 얘기는 꺼내지 않는다."""
+    r, _ = no_material(monkeypatch, status=200)
+    assert "원인은 취약점이 아니라 전제입니다" not in r.note
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_an_unanswerable_precondition_is_said_so(monkeypatch, status):
+    """못 물어본 것을 '자료 없음' 으로 단정하지 않는다."""
+    r, _ = no_material(monkeypatch, status=status)
+    assert "확인하지 못했습니다" in r.note
+    assert "등록된 자료가 없습니다" not in r.note
