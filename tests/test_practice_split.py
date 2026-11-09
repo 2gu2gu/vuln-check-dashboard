@@ -58,7 +58,7 @@ def test_the_practice_group_is_not_named_after_the_project(app):
     """같은 이름 아래 있으면 떼어 놓은 뜻이 없다."""
     groups = group_targets([FAKE], app.config["PROJECTS"])
     assert groups[0]["label"] == PRACTICE_LABEL
-    assert "새싹에듀" not in groups[0]["label"] and "점검 대상 아님" in groups[0]["label"]
+    assert "새싹에듀" not in groups[0]["label"] and "실서버 아님" in groups[0]["label"]
 
 
 def test_a_target_whose_pack_is_gone_still_groups(app):
@@ -86,7 +86,7 @@ def test_the_badge_does_not_call_the_fake_server_the_project(app, client):
     tid = tid_of(app, FAKE["url"])
     page = client.get(f"/targets?target={tid}").get_data(as_text=True)
     top = page.split('class="top"', 1)[-1].split("</header>", 1)[0]
-    assert "연습용 — 점검 대상 아님" in top
+    assert "연습용 — 실서버 아님" in top
     assert 'class="proj-badge">새싹에듀 모의해킹' not in top
 
 
@@ -96,7 +96,7 @@ def test_a_real_target_still_shows_the_project_badge(app, client):
     top = client.get(f"/targets?target={tid}").get_data(as_text=True)
     top = top.split('class="top"', 1)[-1].split("</header>", 1)[0]
     assert 'class="proj-badge">새싹에듀 모의해킹' in top
-    assert "점검 대상 아님" not in top
+    assert "실서버 아님" not in top
 
 
 # ── 기본 대상 ──────────────────────────────────────────────────

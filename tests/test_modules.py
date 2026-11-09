@@ -16,7 +16,7 @@ def test_headers_missing(monkeypatch, fake_fetch):
     out = http_security_headers.run(T, {"path": "/"})
     assert {"HSTS 헤더 없음", "CSP 헤더 없음", "클릭재킹 방어 헤더 없음", "쿠키 속성 누락: JSESSIONID"} <= titles(out)
     cookie = next(f for f in out if f.title.startswith("쿠키"))
-    assert "SECRETVALUE" not in cookie.evidence
+    assert "SECRETVALUE" in cookie.evidence      # 가리지 않는다 — 값까지 그대로
     assert cookie.technique == "T1539"
 
 
@@ -61,7 +61,7 @@ def test_exposed_paths(monkeypatch, fake_fetch):
     }))
     out = exposed_paths.run(T, {})
     assert titles(out) == {"Git 저장소 노출", "환경변수 파일 노출", "Tomcat 관리 콘솔 노출"}
-    assert all("supersecret" not in f.evidence for f in out)
+    assert any("supersecret" in f.evidence for f in out)   # 근거에 본문이 들어간다
 
 
 def test_exposed_paths_spa_fallback(monkeypatch, fake_fetch):

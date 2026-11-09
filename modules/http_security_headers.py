@@ -58,10 +58,9 @@ def run(target, params):
         if not any(a.startswith("samesite") for a in attrs):
             missing.append("SameSite")
         if missing:
-            # 쿠키 값은 남기지 않는다 — 이름과 속성만
             out.append(Finding(
                 title=f"쿠키 속성 누락: {cookie_name}", severity="low", location=r.url,
-                evidence=f"{status_line}\nSet-Cookie: {cookie_name}=…; " + "; ".join(attrs) + f"\n누락: {', '.join(missing)}",
+                evidence=f"{status_line}\nSet-Cookie: {raw}\n누락: {', '.join(missing)}",
                 recommendation=f"{cookie_name} 쿠키에 {', '.join(missing)} 속성을 붙입니다.",
                 technique="T1539", response=r))
     return out

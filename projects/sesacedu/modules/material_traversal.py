@@ -8,7 +8,7 @@
 로그인이 필요하다. 대상 탭의 인증 헤더에 'Authorization: Bearer ...' 를 넣어 두면
 이 대상으로 가는 요청에만 자동으로 붙는다.
 """
-from dashboard.core import Finding, ToolResult, fetch
+from dashboard.core import Finding, ToolResult, excerpt as _excerpt, fetch
 from dashboard.payloads import ENCODINGS, traversal
 
 META = {
@@ -67,7 +67,7 @@ def run(target, params):
     for path in paths:
         payload = traversal(path, depth, scheme)
         url = target.url + PATH.format(lecture=lecture, payload=payload)
-        r = fetch(url, record_body=False)   # 읽어 온 파일 내용은 요청 기록에 남기지 않는다
+        r = fetch(url)
         got = r.status == 200 and len(r.body) > 0
         rows.append([path, r.status, f"{len(r.body):,}" if got else "—",
                      "읽힘" if got else ("없음/차단" if r.status else "연결 실패")])
@@ -82,7 +82,8 @@ def run(target, params):
             severity="high",
             location=target.url + PATH.format(lecture=lecture, payload="<" + scheme + ">"),
             evidence=(f"인코딩 {scheme} · 올라갈 단계 {depth}\n"
-                      + "\n".join(f"{p} → {r.status} ({len(r.body):,}자)" for p, r in hits)),
+                      + "\n".join(f"{p} → {r.status} ({len(r.body):,}자)" for p, r in hits)
+                      + f"\n\n{hits[0][0]} 내용:\n{_excerpt(first.body)}"),
             recommendation=("경로를 정규화(realpath)한 뒤 저장 폴더 안인지 검사하고, "
                             "URL 디코딩을 먼저 한 번만 한 다음 검사합니다. "
                             "더 나은 방법은 파일 이름을 받지 않고 자료 번호로만 찾는 것입니다."),

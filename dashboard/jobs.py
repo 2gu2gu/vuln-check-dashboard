@@ -41,6 +41,7 @@ class Job:
         self.run_id = run_id
         self.target_id, self.target_name = target["id"], target["name"]
         self.module_id, self.module_name = module.id, module.name
+        self.stage = getattr(module, "stage", "")   # 도구면 끝난 뒤 결과 표로 가는 링크를 단다
         self.status = "running"          # running · done · error · cancelled
         self.message = ""
         self.error = ""
@@ -65,7 +66,7 @@ class Job:
 
     def as_dict(self):
         return {"run_id": self.run_id, "target_id": self.target_id, "target": self.target_name,
-                "module_id": self.module_id, "module": self.module_name, "status": self.status,
+                "module_id": self.module_id, "module": self.module_name, "stage": self.stage, "status": self.status,
                 "sent": self.sent, "seconds": self.seconds, "message": self.message,
                 "error": self.error, "live": self.live}
 

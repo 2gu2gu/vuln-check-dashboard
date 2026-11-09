@@ -2,8 +2,13 @@
 {% block title %}대상{% endblock %}
 {% block content %}
 <h1>대상</h1>
-<p class="lead">대상은 프로젝트에 묶입니다. 프로젝트마다 허용 범위가 달라서, 범위 밖 주소는 등록되지 않습니다.
-  <b>연습용</b>으로 표시된 것은 우리가 띄운 가짜 서버라 점검 대상이 아닙니다 — 모듈을 먼저 시험해 보는 자리입니다.</p>
+<p class="lead">점검할 서버를 여기에 등록합니다 — 한 줄이 서버 하나입니다.</p>
+<dl class="facts">
+  <dt>프로젝트</dt><dd>점검할 서비스 한 벌. 그 프로젝트에 허락된 주소만 등록됩니다 — 오타 하나로 남의 서버에 요청이 나가는 일을 막습니다.</dd>
+  <dt>점검 대상</dt><dd>그 서비스의 어느 서버인지(사용자 웹·관리자 웹 등). 모듈이 요청을 보낼 수 있는 호스트와 포트가 여기서 정해집니다.</dd>
+  <dt>이름</dt><dd>주소만 보고는 어디인지 알기 어려워서 알아보기 쉽게 붙이는 별명입니다.</dd>
+  <dt>연습용</dt><dd>모듈을 시험해 보라고 띄워 둔 가짜 서버입니다. 실제 서비스가 아닙니다.</dd>
+</dl>
 
 <div class="proj-list">
   {% for p in PROJECTS.values() %}
@@ -24,12 +29,12 @@
       {% for p in PROJECTS.values() %}<option value="{{ p.id }}" {{ 'selected' if p.id == default_pid }}>{{ p.name }}</option>{% endfor %}
     </select>
   </label>
-  <label>역할
+  <label>점검 대상
     <select name="role" id="role-pick">
       {% for p in PROJECTS.values() %}{% for rid, r in p.roles.items() %}
       <option value="{{ rid }}" data-project="{{ p.id }}" {{ 'hidden' if p.id != default_pid }}>{{ r.name }}</option>
       {% endfor %}{% endfor %}
-      <option value="" data-project="general">— 역할 없음</option>
+      <option value="" data-project="general">— 해당 없음</option>
     </select>
   </label>
   <label>이름<input name="name" required placeholder="사용자 웹"></label>
@@ -41,12 +46,12 @@
 {% if targets %}
 <div class="table-wrap">
 <table class="grid targets">
-  <thead><tr><th>프로젝트</th><th>역할</th><th>이름</th><th>주소</th><th>인증 헤더</th><th>메모</th><th>등록</th><th></th></tr></thead>
+  <thead><tr><th>프로젝트</th><th>점검 대상</th><th>이름</th><th>주소</th><th>인증 헤더</th><th>메모</th><th>등록</th><th></th></tr></thead>
   <tbody>
   {% for t in targets %}
     <tr>
       {% set tp = PROJECTS[t.project] if t.project in PROJECTS else none %}
-      <td>{% if tp and tp.is_practice(t.role) %}<span class="practice-badge" title="우리가 띄운 가짜 서버입니다. 점검 대상이 아닙니다.">연습용</span>
+      <td>{% if tp and tp.is_practice(t.role) %}<span class="practice-badge" title="연습용으로 띄운 가짜 서버입니다. 실제 서비스가 아닙니다.">연습용</span>
           {%- else %}<span class="proj-badge">{{ tp.name if tp else t.project ~ " (팩 없음)" }}</span>{% endif %}</td>
       <td class="sub">{{ PROJECTS[t.project].role_name(t.role) if t.project in PROJECTS else t.role }}</td>
       <td><a href="{{ url_for('dash.results', target=t.id) }}">{{ t.name }}</a></td>
@@ -62,7 +67,7 @@
             {{ csrf_field() }}
             <textarea name="headers" rows="3" class="mono" placeholder="Cookie: JSESSIONID=...&#10;Authorization: Bearer ...">{{ header_text[t.id] }}</textarea>
             <small class="sub">한 줄에 '이름: 값'. 저장하면 기존 값을 모두 바꿉니다. 이 대상 주소로 가는 요청에만 붙습니다.
-              값은 여기서 그대로 보이니 복사해 쓰셔도 됩니다 — 요청 기록에서만 *** 로 가립니다.</small>
+              값은 여기서 그대로 보이고 요청 기록에도 가리지 않고 남습니다.</small>
             <div class="row-btns">
               <button class="btn" type="submit">저장</button>
               {% if header_names[t.id] %}<button class="btn ghost danger" type="submit" name="clear" value="yes">지우기</button>{% endif %}

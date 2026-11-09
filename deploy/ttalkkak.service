@@ -1,0 +1,28 @@
+[Unit]
+Description=ttalkkak (DAST dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ttalkkak
+Group=ttalkkak
+WorkingDirectory=/opt/ttalkkak
+# 들어와도 되는 Host 이름. 공인 IP 로만 들어올 것이고 그 IP 가 바뀔 수 있으면 `*`,
+# 이름을 붙였으면 그 이름을 적는다(예: DASH_ALLOWED_HOSTS=dast.example.com)
+Environment=DASH_ALLOWED_HOSTS=*
+Environment=DASH_PORT=5050
+# 앞에 nginx 를 두므로 앱은 루프백에만 연다. nginx 없이 바로 열려면 DASH_BIND=0.0.0.0
+Environment=DASH_BIND=127.0.0.1
+ExecStart=/opt/ttalkkak/.venv/bin/python run.py
+Restart=on-failure
+RestartSec=3
+# instance/ (sqlite3·secret.key) 말고는 쓸 일이 없다.
+# 앞의 `-` 는 "없으면 넘어간다" — 이 폴더는 앱이 처음 뜰 때 만들기 때문에 clone 직후에는 없고,
+# `-` 없이 적으면 systemd 가 네임스페이스를 못 만들어 start 자체가 실패한다(226/NAMESPACE)
+ReadWritePaths=-/opt/ttalkkak/instance
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

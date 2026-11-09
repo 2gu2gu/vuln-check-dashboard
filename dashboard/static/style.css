@@ -52,10 +52,10 @@ code { background: var(--surface-2); border: 1px solid var(--line); border-radiu
 .sub { color: var(--sub); }
 .small { font-size: 12px; }
 .right { text-align: right; }
-h1 { font-size: 20px; margin: 0 0 4px; }
+h1 { font-size: 20px; margin: 0 0 4px; overflow-wrap: anywhere; }  /* 긴 주소 한 덩어리가 화면을 옆으로 늘리지 않게 */
 h2 { font-size: 15px; margin: 0; }
 h3 { font-size: 14px; margin: 0; }
-.lead { color: var(--sub); margin: 0 0 20px; }
+.lead { color: var(--sub); margin: 0 0 20px; overflow-wrap: anywhere; }
 
 /* 뼈대 — 왼쪽 메뉴는 드로어다. 닫으면 그 폭을 본문에 돌려준다
    (ATT&CK 표·수사보드처럼 가로로 긴 화면이 있어 200px 이 아쉽다).
@@ -424,14 +424,38 @@ mark { background: var(--mark); color: var(--mark-ink); border-radius: 2px; padd
 .scroll-bar { position: fixed; top: 0; left: 0; height: 2px; width: 0;
               background: var(--accent); z-index: 50; transition: width .08s linear; }
 
-/* 실행을 누르면 아이콘이 오른쪽 '도는 중' 으로 날아간다 — 뒤로 갔다는 신호 */
-.flyer { position: fixed; z-index: 45; width: 46px; height: 46px; border-radius: 10px;
-         background: var(--accent); opacity: .95; pointer-events: none;
-         display: grid; place-items: center; color: var(--surface); font-size: 20px; font-weight: 700;
-         box-shadow: 0 6px 18px rgba(0,0,0,.25);
-         transition: transform 1.1s cubic-bezier(.34,.9,.3,1), opacity 1.1s ease-in .25s; }
-#jobs-open.bump { animation: bump .5s ease-out; }
-@keyframes bump { 25% { transform: scale(1.35); } 60% { transform: scale(.95); } }
+/* 실행을 누르면 그 모듈이 보이는 자리에서 뭉쳐 오른쪽 위 '도는 중' 으로 날아간다 */
+/* 크기·자리는 app.js 가 카드에 맞춰 넣는다. 아래 값은 못 넣었을 때의 대비다 */
+.flyer { position: fixed; z-index: 45; width: 46px; height: 46px; border-radius: 12px;
+         background: var(--accent); opacity: .96; pointer-events: none; overflow: hidden;
+         display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+         padding: 8px; text-align: center; color: var(--surface);
+         box-shadow: 0 12px 34px rgba(0,0,0,.3); transform-origin: 0 0;
+         transition: transform .75s cubic-bezier(.34,.9,.3,1), opacity .75s ease-in .3s; }
+.flyer-go { font-size: 26px; font-weight: 700; line-height: 1; }
+.flyer-name { font-size: 14px; font-weight: 600; line-height: 1.3; max-width: 100%;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#jobs-open.bump { animation: bump .6s ease-out; }
+@keyframes bump { 20% { transform: scale(1.45); } 55% { transform: scale(.94); } 80% { transform: scale(1.12); } }
+
+/* 보낸 카드도 한 번 번쩍 — 어느 것이 날아갔는지 자리에 남는다 */
+.mod.sent, .tool-form.sent, .probe-bar.sent { animation: sent-ring .7s ease-out; }
+@keyframes sent-ring { from { box-shadow: 0 0 0 3px var(--accent); }
+                       to   { box-shadow: 0 0 0 16px rgba(127, 127, 127, 0); } }
+.sent-still { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* 도구는 그 자리에서 기다린다 — 13초·67초 걸리는 것이 있어 표시가 없으면 멈춘 줄 안다.
+   버튼은 CSS 로만 막는다. JS 로 disabled 하면 그 버튼의 값이 전송에서 빠진다(_drill). */
+.waiting button[type=submit] { opacity: .5; pointer-events: none; }
+.wait-note { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 14px;
+             /* .run-row 가 flex 라 이게 없으면 버튼 오른쪽에 끼어들어 모듈 경로를 민다 */
+             flex-basis: 100%; }
+/* 글자색은 .sub, 돌아가는 표시는 .spin, 경고 빨강은 .warn-text 를 그대로 쓴다 */
+
+/* 브라우저가 제출을 막았을 때 — 기본 말풍선은 금방 사라지고 놓치기 쉽다.
+   이름에 'need' 를 쓰면 안 된다. 준비물 행(.need, 위쪽)이 이미 그 이름을 쓴다. */
+.field-bad-note { display: block; margin-top: 4px; font-size: 13px; }
+.field-bad { outline: 2px solid var(--hit); outline-offset: 3px; border-radius: 6px; }
 
 /* 카드를 누르면 그 자리에서 커진다 */
 .mod.zoom, .tool-pick.zoom { animation: zoom-in .2s ease-out; }
@@ -440,7 +464,8 @@ mark { background: var(--mark); color: var(--mark-ink); border-radius: 2px; padd
 .mod:focus-within { box-shadow: 0 4px 16px rgba(0,0,0,.1); }
 
 @media (prefers-reduced-motion: reduce) {
-  .toast, .toast.leaving, .flyer, .mod.zoom, #jobs-open.bump { animation: none; transition: none; }
+  .toast, .toast.leaving, .flyer, .mod.zoom, #jobs-open.bump,
+  .mod.sent, .tool-form.sent, .probe-bar.sent { animation: none; transition: none; }
 }
 
 /* 묶는 기준 탭 */

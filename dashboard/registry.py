@@ -22,7 +22,7 @@ STAGES = ("collect", "check", "probe", "tool")
 STAGE_LABEL = {"collect": "표면 수집", "check": "대상 점검", "probe": "지점 점검", "tool": "도구"}
 GENERAL = "general"  # 어느 프로젝트에도 속하지 않는 대상
 # 연습용 묶음 이름. 프로젝트 이름을 쓰지 않는 것이 요점이다 — 점검 범위가 아니다.
-PRACTICE_LABEL = "연습용 — 점검 대상 아님"
+PRACTICE_LABEL = "연습용 — 실서버 아님"
 
 
 @dataclass
@@ -61,6 +61,7 @@ class ProjectInfo:
     description: str = ""
     source: str = ""
     roles: dict = field(default_factory=dict)  # {역할 id: {"name": 보일 이름, "scope": [허용 범위]}}
+    # 화면에서는 이것을 '점검 대상' 이라고 부른다(2026-11-06). 코드·DB 이름은 role 로 둔다.
     login: dict = field(default_factory=dict)  # 로그인해서 토큰 받는 법(서비스마다 다르다)
 
     def role_name(self, role: str) -> str:
@@ -79,15 +80,17 @@ def _norm_roles(roles):
     """역할은 이름만 주어도 되고, 범위까지 주어도 된다.
 
     practice 는 '점검 대상이 아니라 우리가 띄운 연습용 서버' 라는 표시다.
-    여기서 안 받아 두면 조용히 버려져 화면이 실제 대상과 똑같이 그린다.
+    login 은 그 역할만 로그인 모양이 다를 때 쓴다(관리자 API 는 사용자 API 와 다른 앱이다).
+    **여기 안 적은 열쇠는 조용히 버려진다** — 팩에 써 놓고도 안 먹는다.
     """
     out = {}
     for rid, value in (roles or {}).items():
         if isinstance(value, str):
-            out[rid] = {"name": value, "scope": None, "practice": False}
+            out[rid] = {"name": value, "scope": None, "practice": False, "login": None}
         elif isinstance(value, dict) and value.get("name"):
             out[rid] = {"name": value["name"], "scope": value.get("scope"),
-                        "practice": bool(value.get("practice"))}
+                        "practice": bool(value.get("practice")),
+                        "login": value.get("login") or None}
         else:
             raise ValueError(f"역할 {rid} 은 이름 문자열이거나 name 을 가진 dict 여야 합니다")
     return out

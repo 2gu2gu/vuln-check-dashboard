@@ -5,13 +5,14 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 import pytest
 
-from dashboard import payloads
+from dashboard import jobs, payloads
 from dashboard.blind import Oracle, _to_char
 from dashboard.core import Response, Target, ToolResult
 from dashboard.db import get_db
 from projects.sesacedu.modules import lecture_sqli, material_traversal
 
 T = Target(1, "t", "https://sesacedu.store")
+TREE = "srv\n└ sesacedu\n  └ api.env"
 
 
 # ── 인코딩 ────────────────────────────────────────────────────
@@ -106,7 +107,8 @@ def test_reads_table_list(sqlite_oracle):
 
 def fake_lectures_fetch(record=None):
     """keyword 를 SQL 에 그대로 이어 붙이는 서버. 연습용 대상과 같은 동작."""
-    db = sqlite3.connect(":memory:")
+    # 도구는 작업자 스레드에서 돈다 — 만든 스레드 밖에서도 쓰게 둔다
+    db = sqlite3.connect(":memory:", check_same_thread=False)
     db.executescript("CREATE TABLE lectures (id INTEGER, title TEXT, is_open INTEGER);"
                      "CREATE TABLE members (id INTEGER, mail TEXT);"
                      "INSERT INTO members VALUES (1, 'demo@example.test');")
@@ -228,12 +230,12 @@ def test_tools_page_lists_tools(tool_client):
 def test_tool_run_and_drill(app, tool_client):
     form = {"target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "tables",
             "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
-    page = tool_client.post("/tools/run", data=form).get_data(as_text=True)
+    page = tool_client.post("/tools/run", data=form, follow_redirects=True).get_data(as_text=True)
     assert "members" in page and "컬럼 보기" in page
 
     # 표의 '컬럼 보기'를 누른 것과 같은 요청
     drill = json.dumps({"mode": "columns", "table": "members", "offset": "0"})
-    page = tool_client.post("/tools/run", data={**form, "_drill": drill}).get_data(as_text=True)
+    page = tool_client.post("/tools/run", data={**form, "_drill": drill}, follow_redirects=True).get_data(as_text=True)
     assert "mail" in page and "members — 컬럼" in page
 
 
@@ -247,7 +249,8 @@ def test_tool_needs_confirm(app, tool_client):
 def test_tool_rejects_bad_select_option(app, tool_client):
     page = tool_client.post("/tools/run", data={
         "target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "nope",
-        "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}).get_data(as_text=True)
+        "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""},
+        follow_redirects=True).get_data(as_text=True)
     assert "목록에 있는 값" in page
 
 
@@ -258,13 +261,32 @@ def test_tool_cache_persists_between_runs(app, tool_client):
     with app.app_context():
         saved = get_db().execute("SELECT COUNT(*) c FROM tool_cache").fetchone()["c"]
     assert saved > 0
-    page = tool_client.post("/tools/run", data=form).get_data(as_text=True)
+    page = tool_client.post("/tools/run", data=form, follow_redirects=True).get_data(as_text=True)
     assert "기억해 둔 값" in page
 
 
-def test_tool_module_not_runnable_from_modules_tab(app, tool_client):
-    r = tool_client.post("/modules/sesacedu_lecture_sqli/run", data={"target_id": 1, "confirm": "yes"})
-    assert r.status_code == 302 and "/tools" in r.headers["Location"]
+def test_tool_module_runs_from_modules_tab(app, tool_client):
+    """모듈 탭에서 누르면 그 자리에서 뒤로 돈다 — 도구 탭으로 넘기지 않는다(11-07 안 1)."""
+    form = {k: v for k, v in RUN_FORM.items() if k != "module_id"}
+    r = tool_client.post("/modules/sesacedu_lecture_sqli/run", data=form)
+    assert r.status_code == 302 and "/modules" in r.headers["Location"]
+    with app.app_context():
+        run = get_db().execute("SELECT * FROM runs WHERE module_id = 'sesacedu_lecture_sqli'").fetchone()
+    assert run["status"] == "done" and "members" in run["result"]
+    # 끝난 도구에는 결과 표로 가는 주소가 붙는다
+    row = tool_client.get("/jobs?target=1").get_json()["jobs"][0]
+    assert row["result_url"].endswith(f"run={run['id']}")
+    page = tool_client.get(row["result_url"]).get_data(as_text=True)
+    assert "members" in page and "컬럼 보기" in page
+
+
+def test_tool_module_from_modules_tab_still_needs_confirm(app, tool_client):
+    form = {k: v for k, v in RUN_FORM.items() if k not in ("module_id", "confirm")}
+    page = tool_client.post("/modules/sesacedu_lecture_sqli/run", data=form,
+                            follow_redirects=True).get_data(as_text=True)
+    assert "체크해야" in page
+    with app.app_context():
+        assert get_db().execute("SELECT COUNT(*) c FROM runs").fetchone()["c"] == 0
 
 
 def test_tool_result_type_checked(app, tool_client, monkeypatch):
@@ -272,7 +294,8 @@ def test_tool_result_type_checked(app, tool_client, monkeypatch):
     monkeypatch.setattr(mod, "run", lambda *a, **k: "틀린 반환값")
     page = tool_client.post("/tools/run", data={
         "target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "probe",
-        "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}).get_data(as_text=True)
+        "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""},
+        follow_redirects=True).get_data(as_text=True)
     assert "ToolResult" in page
     assert isinstance(ToolResult(), ToolResult)
 
@@ -285,8 +308,8 @@ def add_target(client, name, url, role, project="sesacedu"):
 
 
 def test_role_required_when_project_has_roles(client):
-    assert "역할을 골라" in add_target(client, "웹", "https://sesacedu.store", "")
-    assert "역할을 골라" in add_target(client, "웹", "https://sesacedu.store", "없는역할")
+    assert "점검 대상을 골라" in add_target(client, "웹", "https://sesacedu.store", "")
+    assert "점검 대상을 골라" in add_target(client, "웹", "https://sesacedu.store", "없는역할")
     assert "등록했습니다" in add_target(client, "웹", "https://sesacedu.store", "user_web")
 
 
@@ -412,7 +435,7 @@ def test_port_check_uses_host_scope_not_role_port(app, client, monkeypatch):
         tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
     page = client.post("/tools/run", data={
         "target_id": tid, "module_id": "port_check", "confirm": "yes",
-        "ports": "22,443,8080", "expected": "443", "timeout": "1"}).get_data(as_text=True)
+        "ports": "22,443,8080", "expected": "443", "timeout": "1"}, follow_redirects=True).get_data(as_text=True)
     assert tried == [("localhost", 22), ("localhost", 443), ("localhost", 8080)]
     assert "예상 밖 2개" in page
 
@@ -454,11 +477,13 @@ def test_port_check_rejects_bad_input(app, client):
     with app.app_context():
         tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
     page = client.post("/tools/run", data={"target_id": tid, "module_id": "port_check", "confirm": "yes",
-                                           "ports": "22,abc", "expected": "", "timeout": "1"}).get_data(as_text=True)
+                                           "ports": "22,abc", "expected": "", "timeout": "1"},
+                       follow_redirects=True).get_data(as_text=True)
     assert "포트가 아닌 값" in page
     page = client.post("/tools/run", data={
         "target_id": tid, "module_id": "port_check", "confirm": "yes",
-        "ports": ",".join(str(p) for p in range(1, 40)), "expected": "", "timeout": "1"}).get_data(as_text=True)
+        "ports": ",".join(str(p) for p in range(1, 40)), "expected": "", "timeout": "1"},
+        follow_redirects=True).get_data(as_text=True)
     assert "30개까지" in page
 
 
@@ -475,7 +500,7 @@ def _drill_values(html):
 def test_drill_button_value_is_valid_json(app, tool_client):
     form = {"target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "tables",
             "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
-    html = tool_client.post("/tools/run", data=form).get_data(as_text=True)
+    html = tool_client.post("/tools/run", data=form, follow_redirects=True).get_data(as_text=True)
     values = _drill_values(html)
     assert values, "이어서 보기 버튼이 없다"
     for raw in values:
@@ -489,10 +514,10 @@ def test_clicking_drill_button_works_end_to_end(app, tool_client):
     import html as _h
     form = {"target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "tables",
             "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
-    html = tool_client.post("/tools/run", data=form).get_data(as_text=True)
+    html = tool_client.post("/tools/run", data=form, follow_redirects=True).get_data(as_text=True)
     raw = _drill_values(html)[0]
-    r = tool_client.post("/tools/run", data={**form, "_drill": _h.unescape(raw)})
-    assert r.status_code == 200
+    r = tool_client.post("/tools/run", data={**form, "_drill": _h.unescape(raw)}, follow_redirects=True)
+    assert r.status_code == 200 and "lectures — 컬럼" in r.get_data(as_text=True)
 
 
 # ── 쿼리스트링에서 뜻이 달라지는 글자 ────────────────────────────
@@ -534,3 +559,117 @@ def test_wrapping_depth_matches_the_dots():
     two = payloads.traversal("a+b", 0, "double-full")
     assert one == "a%2bb"
     assert two == "a%25%32%62b"
+
+
+# ── 도구 실행도 '도는 중' 에 올라간다 ──────────────────────────
+# 도구도 다른 모듈처럼 뒤에서 돈다(11-07 안 1). 멈춤·요청 흐름·동시 실행 상한이
+# 같이 따라오고, 결과 표는 끝난 뒤 도구 탭(?run=)에서 다시 연다.
+
+RUN_FORM = {"target_id": 1, "module_id": "sesacedu_lecture_sqli", "confirm": "yes", "mode": "tables",
+            "dbms": "sqlite", "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}
+
+
+def test_tool_run_is_live_in_the_drawer_while_it_runs(app, tool_client, monkeypatch):
+    """도는 동안 서랍에 보이고, 다른 탭에서 연 도구 화면도 그렇다고 적는다."""
+    seen = {}
+
+    def peek(target, params):
+        seen["live"] = jobs.live_count()
+        seen["rows"] = jobs.listing()
+        seen["json"] = app.test_client().get("/jobs?target=1").get_json()
+        # 다른 탭에서 도구 화면을 다시 연 것과 같다 — 결과 자리는 비어 있다
+        seen["page"] = app.test_client().get("/tools?target=1").get_data(as_text=True)
+        return ToolResult(summary="들여다봤다")
+
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run", peek)
+    tool_client.post("/tools/run", data=RUN_FORM)
+
+    assert seen["live"] == 1
+    assert seen["rows"][0]["module_id"] == "sesacedu_lecture_sqli" and seen["rows"][0]["live"]
+    assert seen["json"]["live"] == 1
+    assert "이 돌고 있습니다" in seen["page"]
+
+
+def test_tool_run_leaves_the_drawer_when_it_ends(app, tool_client, monkeypatch):
+    """끝나면 도는 수는 0 으로 돌아가고 기록과 결과 문구는 남는다."""
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run",
+                        lambda t_, p_: ToolResult(summary="표 2개"))
+    tool_client.post("/tools/run", data=RUN_FORM)
+
+    rows = jobs.listing()
+    assert jobs.live_count() == 0
+    assert rows[0]["status"] == "done" and rows[0]["message"].startswith("표 2개")
+
+
+def test_tool_run_can_be_stopped_from_the_drawer(app, tool_client, monkeypatch):
+    """멈춤을 누르면 다음 요청을 보내기 직전에 걸린다. 전에는 stop_check 가 없어 못 멈췄다."""
+    from flask import g
+
+    def long(target, params):
+        run_id = jobs.listing()[0]["run_id"]
+        assert app.test_client().post(f"/jobs/{run_id}/cancel").get_json()["ok"]
+        g.run_ctx.before_send()        # core.fetch 가 보내기 직전에 부르는 바로 그 자리
+        raise AssertionError("여기까지 오면 안 멈춘 것이다")
+
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run", long)
+    page = tool_client.post("/tools/run", data=RUN_FORM, follow_redirects=True).get_data(as_text=True)
+
+    assert "멈췄습니다" in page
+    assert jobs.listing()[0]["status"] == "cancelled" and jobs.live_count() == 0
+
+
+def test_tool_run_waits_its_turn_when_the_limit_is_full(app, tool_client, monkeypatch):
+    """동시 실행 상한은 도구에도 같이 건다 — 요청 간격을 지켜도 동시에 때리면 합쳐진 양이 는다."""
+    monkeypatch.setattr(jobs, "MAX_LIVE", 0)
+    ran = []
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run",
+                        lambda t_, p_: ran.append(1) or ToolResult(summary="돌았다"))
+    page = tool_client.post("/tools/run", data=RUN_FORM, follow_redirects=True).get_data(as_text=True)
+
+    assert ran == [] and "하나가 끝나면" in page
+
+
+def test_tool_text_is_written_to_a_file(app, tool_client, monkeypatch, tmp_path):
+    """퍼징 트리는 파일로도 남는다 — 보고서에 붙이고 팀에 넘기는 산출물이다.
+
+    화면 복원은 `runs.result` 로 된다(#71). 그것과 별개로 **받아 쓰는 사람이 sqlite 를
+    열지 않고 꺼낼 수 있어야** 한다(사용자 지적 11-07). 파일만 떼어 가도 뜻이 통하게
+    모듈·대상·시각을 머리말로 적는다.
+    """
+    app.config["RUNS_DIR"] = str(tmp_path / "runs")
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run",
+                        lambda t_, p_: ToolResult(summary="표 2개", text=TREE))
+
+    tool_client.post("/tools/run", data=RUN_FORM)
+
+    files = list((tmp_path / "runs").glob("*/*/[0-9]*.txt"))
+    assert len(files) == 1
+    body = files[0].read_text(encoding="utf-8")
+    assert "api.env" in body and "https://sesacedu.store" in body and "실행 #" in body
+    # 어디에 적혔는지 화면에도 알려 준다 — 모르면 가져다 쓰지 못한다
+    page = tool_client.get("/tools?target=1&tool=sesacedu_lecture_sqli").get_data(as_text=True)
+    assert "파일로도 남겼습니다" in page and files[0].name in page
+
+
+def test_each_run_gets_its_own_file(app, tool_client, monkeypatch, tmp_path):
+    """실행마다 따로 남아야 지난 지도와 비교할 수 있다. 덮어쓰면 비교가 없어진다."""
+    app.config["RUNS_DIR"] = str(tmp_path / "runs")
+    texts = iter(["첫 번째 지도", "두 번째 지도"])
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run",
+                        lambda t_, p_: ToolResult(summary="표", text=next(texts)))
+    tool_client.post("/tools/run", data=RUN_FORM)
+    tool_client.post("/tools/run", data=RUN_FORM)
+
+    files = sorted((tmp_path / "runs").glob("*/*/[0-9]*.txt"))
+    assert [f.stem for f in files] == ["0001", "0002"]
+    assert "첫 번째 지도" in files[0].read_text(encoding="utf-8")
+    assert "두 번째 지도" in files[1].read_text(encoding="utf-8")
+
+
+def test_text_file_is_not_written_when_there_is_nothing_to_write(app, tool_client, monkeypatch, tmp_path):
+    """본문 없는 도구까지 빈 파일을 쌓으면 폴더가 색인 구실을 못 한다."""
+    app.config["RUNS_DIR"] = str(tmp_path / "runs")
+    monkeypatch.setattr(app.config["MODULES"]["sesacedu_lecture_sqli"], "run",
+                        lambda t_, p_: ToolResult(summary="표만 있다"))
+    tool_client.post("/tools/run", data=RUN_FORM)
+    assert list((tmp_path / "runs").rglob("*.txt")) == []

@@ -119,3 +119,14 @@ def test_a_real_target_does_not_get_a_prefilled_password(app, client):
     page = client.get(f"/targets?target={tid}").get_data(as_text=True)
     assert 'name="secret" type="password"' in page
     assert "demo1234" not in page
+
+
+def test_token_in_the_authorization_response_header_is_taken(monkeypatch):
+    """실서버 /backend/login 은 토큰을 본문이 아니라 응답 헤더 Authorization: Bearer … 로 준다."""
+    from dashboard import core
+    from projects.sesacedu import PROJECT
+    body = json.dumps({"code": "LOGIN_SUCCESS", "message": "", "result": {"member": {"memberId": 1}}})
+    monkeypatch.setattr(core, "fetch", lambda *a, **k: core.Response(
+        url="https://sesacedu.store/backend/login", status=200,
+        headers=[("Authorization", "Bearer a.b.c")], body=body))
+    assert login.fetch_token("https://sesacedu.store", PROJECT["login"], "t@sesacedu.test", "pw") == "a.b.c"

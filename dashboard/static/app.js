@@ -200,30 +200,183 @@
     draw();
   })();
 
-  // ── 실행하면 아이콘이 '도는 중' 으로 날아간다 ────────────
+  // ── 제출이 '막혔을' 때도 말해 준다 ──────────────────────
+  // 브라우저 기본 검증에 걸리면 submit 이벤트가 아예 나지 않는다. 그러면 날아가는
+  // 표시도, 기다리는 표시도, 서버 메시지도 없다 — 눌렀는데 아무 일도 안 일어난 것처럼
+  // 보인다. 도구 탭의 '자체 환경 확인'은 실행할 때마다 다시 꺼지므로 자주 걸린다.
+  // (모듈·표면 탭은 required 가 없어 서버까지 가고 거기서 말해 준다.)
+  // invalid 는 버블링하지 않는다 — 캡처로 받아야 document 에서 잡힌다.
+  var lastJump = 0;
+  document.addEventListener("invalid", function (e) {
+    var el = e.target;
+    if (!el || !el.form) { return; }
+    var holder = el.closest("label") || el.parentNode;
+    if (!holder || !holder.appendChild) { return; }
+
+    function clear() {                      // 고치면 지운다
+      holder.classList.remove("field-bad");
+      if (note.parentNode) { note.parentNode.removeChild(note); }
+      el.removeEventListener("change", clear);
+      el.removeEventListener("input", clear);
+    }
+
+    var note = holder.querySelector(".field-bad-note");
+    if (!note) {
+      note = document.createElement("span");
+      note.className = "field-bad-note warn-text";   // 빨강·굵게는 기존 토큰이 한다
+      note.setAttribute("role", "alert");
+      holder.appendChild(note);
+      el.addEventListener("change", clear);          // 쪽지와 한 생애 — clear 가 둘 다 걷는다
+      el.addEventListener("input", clear);
+    }
+    note.textContent = (el.type === "checkbox")
+      ? "여기에 체크해야 실행됩니다"
+      : (el.validationMessage || "이 칸을 채워 주세요");
+    holder.classList.add("field-bad");
+
+    // 여러 칸이 한꺼번에 걸려도 첫 칸으로만 한 번 옮긴다
+    if (Date.now() - lastJump > 700) {
+      lastJump = Date.now();
+      if (el.scrollIntoView) { el.scrollIntoView({block: "center", behavior: "smooth"}); }
+    }
+  }, true);
+
+  // 페이지마다 하나, 세션에 묶인 값이다(base.html 머리). 폼이 없는 탭에도 서랍이
+  // 있어서 숨은 input 에서 주워 읽을 수가 없다 — meta 가 유일한 출처다.
+  var CSRF = (document.querySelector('meta[name=csrf]') || {}).content || "";
+
+  // ── 실행하면 그 모듈이 뭉쳐서 '도는 중' 으로 날아간다 ──────
   // 눌렀는데 화면이 그대로면 아무 일도 안 일어난 줄 안다. 뒤로 갔다는 신호다.
+  // 전에는 두 가지 때문에 보이지 않았다(사용자 지적 11-05 "눈에 안 띄어").
+  //  (1) 출발점이 카드 맨 위였다. 카드를 펴면 실행 버튼은 한참 아래라, 스크롤을 내린 채
+  //      누르면 46px 짜리가 화면 위 안 보이는 곳에서 출발했다.
+  //  (2) 실행은 뒤에서 돌고 화면은 곧바로 결과/표면 탭으로 넘어간다. 1.1초짜리가
+  //      0.2초 만에 잘렸다.
+  // 이제 화면에 보이는 카드 만한 덩어리가 그 자리에서 떠오른다. 서랍에 올라가는
+  // 실행이면 다 날아간다 — 모듈·표면(뒤에서 돈다)도, 도구(요청 안에서 돈다)도.
+  // 가는 곳이 같으면 가는 모습도 같아야 한다. 다른 것은 **그 다음**뿐이다:
+  // 뒤에서 도는 쪽은 화면이 곧바로 넘어가므로 다 날아갈 때까지 넘기기를 미루고,
+  // 도구는 응답이 올 때까지 화면이 그대로라 미룰 것이 없다.
   (function () {
+    var FLY = 750, WAIT = 820;   // 날아가는 시간 / 화면을 넘기기까지. WAIT > FLY 여야 한다
+    var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // 어떻게 끝나는 실행인지는 **템플릿이 말해 준다**. data-autosubmit·data-confirm 과
+    // 같은 자리다. 주소 모양으로 되짚으면 틀린다 — 실제로 틀렸었다: stage="tool" 모듈
+    // 카드도 /modules/<mid>/run 으로 보내는데 서버는 아무것도 안 돌리고 도구 탭으로
+    // 넘긴다(routes.py module_run). 주소만 보면 '뒤에서 돈다' 로 읽혀, 도는 것도 없이
+    // 날아갔다. 이제 그 카드에는 data-run 이 없어 아무 일도 안 한다.
     document.addEventListener("submit", function (e) {
       var form = e.target;
-      if (!form.action || form.action.indexOf("/run") === -1) return;
-      var card = form.closest(".mod, .tool-form, .probe-bar") || form;
+      if (e.defaultPrevented) return;
+      if (form.dataset.run !== "bg") return;   // 없으면 건드리지 않는다
+      // 표면 탭은 폼이 지점 표까지 다 감싼다 — 폼을 카드로 쓰면 화면만 한 덩어리가 된다.
+      // 누르는 자리인 안쪽 막대(.probe-bar, sticky 라 늘 보인다)를 집는다.
+      var card = form.closest(".mod, .tool-form, .probe-bar")
+                 || form.querySelector(".probe-bar") || form;
+
+      if (form.dataset.sending) {
+        // 넘기기를 미루는 동안 또 누르면 같은 실행이 두 번 들어간다. 전에는 바로
+        // 넘어가서 이 구멍이 없었다 — 미루기로 한 이상 여기서 막아야 한다.
+        e.preventDefault();
+        return;
+      }
       var dest = document.getElementById("jobs-open");
-      if (!dest || !card.getBoundingClientRect) return;
-      var a = card.getBoundingClientRect(), b = dest.getBoundingClientRect();
-      var fly = document.createElement("div");
-      fly.className = "flyer";
-      fly.textContent = "\u25b6";
-      fly.style.left = (a.left + a.width / 2 - 23) + "px";
-      fly.style.top = (a.top + 24) + "px";
-      document.body.appendChild(fly);
-      requestAnimationFrame(function () {
-        fly.style.transform = "translate(" + (b.left + b.width / 2 - a.left - a.width / 2) + "px,"
-                            + (b.top + b.height / 2 - a.top - 24 - 23) + "px) scale(.45) rotate(18deg)";
-        fly.style.opacity = "0";
-      });
-      setTimeout(function () { fly.remove(); dest.classList.add("bump"); }, 1150);
-      setTimeout(function () { dest.classList.remove("bump"); }, 1700);
+      if (!dest || typeof form.submit !== "function") return;
+
+      if (still) {                       // 움직임을 줄이는 설정이면 테두리만 잠깐 남긴다
+        card.classList.add("sent-still");
+        setTimeout(function () { card.classList.remove("sent-still"); }, 1200);
+        return;
+      }
+
+      // 화면에 보이는 부분에서 출발한다 — 카드가 길어 위아래로 벗어나 있어도
+      var r = card.getBoundingClientRect();
+      var head = document.querySelector("header.top");
+      var lo = head ? head.getBoundingClientRect().bottom + 8 : 8;   // 위에 붙은 머리 밑
+      var top = Math.max(r.top, lo);
+      var box = {left: r.left, width: r.width, top: top,
+                 height: Math.min(r.bottom, window.innerHeight - 8) - top};
+      if (box.height < 60 || box.width < 60) {   // 카드가 거의 안 보이면 누른 버튼 자리에서
+        var hit = e.submitter || form.querySelector("button[type=submit]") || form;
+        var hr = hit.getBoundingClientRect();
+        box = {left: hr.left, top: hr.top, width: hr.width, height: hr.height};
+      }
+      box.height = Math.min(box.height, 320);    // 너무 길면 윗동강만 떠오른다
+      // 어느 쪽으로든 화면을 벗어났으면 끌어온다. 밖에서 출발하면 안 보이고,
+      // 안 보이면 아무 일도 안 일어난 것과 같다 — 이번 건의 출발점이 바로 그거였다.
+      box.top = Math.min(Math.max(box.top, lo), window.innerHeight - 8 - box.height);
+      box.left = Math.min(Math.max(box.left, 8), window.innerWidth - 8 - Math.min(box.width, window.innerWidth - 16));
+
+      var ghost = document.createElement("div");
+      ghost.className = "flyer";
+      ghost.style.left = box.left + "px";
+      ghost.style.top = box.top + "px";
+      ghost.style.width = box.width + "px";
+      ghost.style.height = box.height + "px";
+      ghost.style.transitionDuration = FLY + "ms";
+      ghost.innerHTML = '<span class="flyer-go">\u25b6</span><span class="flyer-name"></span>';
+      var title = card.querySelector("h3") || card.querySelector("h2");
+      ghost.querySelector(".flyer-name").textContent = title ? title.textContent.trim() : "실행";
+      document.body.appendChild(ghost);
+
+      // 붙인 자세를 한 번 굳히고(강제 리플로우) 바로 목표 자세를 준다.
+      // requestAnimationFrame 한 번만으로는 두 자세가 같은 프레임에 묶일 수 있다.
+      void ghost.offsetWidth;
+      var b = dest.getBoundingClientRect();
+      var s = Math.min(1, 60 / Math.max(box.width, 1));
+      ghost.style.transform =
+        "translate(" + (b.left + b.width / 2 - box.width * s / 2 - box.left) + "px,"
+                     + (b.top + b.height / 2 - box.height * s / 2 - box.top) + "px)" +
+        " scale(" + s + ") rotate(10deg)";
+      ghost.style.opacity = "0";
+      card.classList.add("sent");
+      setTimeout(function () { dest.classList.add("bump"); }, FLY - 140);
+      setTimeout(function () { ghost.remove(); }, WAIT + 1500);   // 화면이 안 넘어가도 치운다
+
+      // 다 날아간 다음에 넘긴다 — 바로 넘기면 눈에 띄기 전에 잘린다.
+      // form.submit() 은 누른 버튼의 name/value 를 싣지 않는다. 도구 표의
+      // '이어서 보기'(_drill) 가 그 값으로 움직이므로 숨은 칸으로 옮겨 싣는다.
+      e.preventDefault();
+      var sub = e.submitter;
+      if (sub && sub.name) {
+        var carry = document.createElement("input");
+        carry.type = "hidden";
+        carry.name = sub.name;
+        carry.value = sub.value;
+        form.appendChild(carry);
+      }
+      form.dataset.sending = "1";
+      var go = form.querySelector("button[type=submit]");
+      if (go) { go.disabled = true; }
+      setTimeout(function () {
+        try {
+          form.submit();
+        } catch (err) {                      // 못 보내면 묶어 두지 않는다
+          delete form.dataset.sending;
+          if (go) { go.disabled = false; }
+        }
+      }, WAIT);
     }, true);
+  })();
+
+  // ── 도구 탭: 보던 도구가 끝나면 결과가 뜨게 새로 고친다 ─────
+  (function () {
+    var wait = document.querySelector("[data-wait-run]");
+    if (!wait) return;
+    var run = wait.getAttribute("data-wait-run");
+    var m = location.search.match(/[?&]target=(\d+)/);
+    var arg = m ? "?target=" + m[1] : "";
+    var t = setInterval(function () {
+      fetch("/jobs" + arg).then(function (r) { return r.json(); }).then(function (d) {
+        var j = (d.jobs || []).filter(function (x) { return String(x.run_id) === run; })[0];
+        if (j && j.live) return;
+        clearInterval(t);
+        var u = new URL(location.href);
+        u.searchParams.set("run", run);
+        location.replace(u.toString());
+      }).catch(function () {});
+    }, 2000);
   })();
 
   // ── 모듈 실행 드로어 ─────────────────────────────────────
@@ -256,6 +409,14 @@
       li.querySelector("b").textContent = j.module;
       li.querySelector(".state").textContent = state + " · 요청 " + j.sent + " · " + j.seconds + "초";
       li.querySelector(".why").textContent = j.error || j.message || j.target;
+      if (j.result_url) {                    // 도구는 결과 표를 도구 탭에서 다시 연다
+        var go = document.createElement("a");
+        go.href = j.result_url;
+        go.className = "small";
+        go.textContent = "결과 표 보기 →";
+        go.addEventListener("click", function (e) { e.stopPropagation(); });
+        li.appendChild(go);
+      }
       if (j.live) {
         var stop = document.createElement("button");
         stop.type = "button";
@@ -263,7 +424,18 @@
         stop.textContent = "멈춤";
         stop.addEventListener("click", function (e) {
           e.stopPropagation();
-          fetch("/jobs/" + j.run_id + "/cancel", {method: "POST"}).then(poll);
+          // _csrf 를 안 실으면 before_request 가 400 으로 자른다 — 지금껏 아무것도
+          // 안 멈추고 있었다(실측: POST /jobs/1/cancel → 400).
+          if (!CSRF) { stop.textContent = "토큰 없음"; return; }   // 빈 값을 보내 400 을 자초하지 않는다
+          fetch("/jobs/" + j.run_id + "/cancel", {
+            method: "POST",
+            headers: {"Content-Type": "application/x-www-form-urlencoded"},
+            body: "_csrf=" + encodeURIComponent(CSRF)
+          }).then(function (r) {
+            // poll() 이 목록을 통째로 다시 그린다 — 실패했으면 글자가 남게 두고 멈춘다
+            if (!r.ok) { stop.textContent = "못 멈춤"; return; }
+            return poll();
+          });
         });
         li.querySelector(".job-top").appendChild(stop);
       }
@@ -284,8 +456,32 @@
           list.appendChild(li);
         }
         d.jobs.forEach(function (j) { list.appendChild(row(j)); });
+        d.jobs.forEach(freshenRunRow);
         return d;
       }).catch(function () {});
+    }
+
+    // 모듈 탭 '최근 실행' 표는 페이지를 그릴 때 한 번 찍힌다. 도는 동안 요청 수가
+    // 1 에 멈춰 있어 안 도는 것처럼 보였다(사용자 지적) — 드로어가 받아 오는 같은 값으로
+    // 그 줄의 '요청'·'상태' 칸만 갈아 끼운다. **요청 기록 목록은 건드리지 않는다**:
+    // 목록이 저절로 바뀌면 누르려던 줄이 달아난다.
+    function freshenRunRow(j) {
+      var tr = document.querySelector('tr[data-run="' + j.run_id + '"]');
+      if (!tr) { return; }
+      var reqs = tr.querySelector(".run-reqs");
+      if (reqs) {
+        var want = j.sent ? '<a href="' + reqs.dataset.href + '">' + j.sent + "개 보기</a>"
+                          : '<span class="sub">0</span>';
+        if (reqs.innerHTML !== want) { reqs.innerHTML = want; }
+      }
+      var st = tr.querySelector(".run-status");
+      if (st) {
+        var cls = j.status === "error" ? "status st-error" : j.status === "done" ? "status st-fixed" : "status";
+        var txt = j.status === "error" ? "실패" : j.status === "done" ? "완료" : j.status;
+        var want2 = '<span class="' + cls + '">' + txt + "</span>"
+                  + (j.error ? '<div class="sub small">' + j.error + "</div>" : "");
+        if (st.innerHTML !== want2) { st.innerHTML = want2; }
+      }
     }
 
     // 한 줄 = 보낸 요청 하나. 누르면 그 자리에서 패킷 원문이 펴진다.

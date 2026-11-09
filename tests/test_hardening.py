@@ -54,7 +54,8 @@ def test_join():
     assert core.join("http://a:1/", "/x") == "http://a:1/x"
 
 
-def test_exchange_recorded_and_secrets_masked(app, client, opener):
+def test_exchange_recorded_whole(app, client, opener):
+    """보낸 것·받은 것을 가리지 않고 남긴다(2026-11-07 사용자 지시)."""
     sent, reply = opener
     add_target(client)
     client.post("/targets/1/headers", data={"headers": "Cookie: SID=abc123\nAuthorization: Bearer tok999"})
@@ -69,8 +70,8 @@ def test_exchange_recorded_and_secrets_masked(app, client, opener):
         x = get_db().execute("SELECT * FROM exchanges").fetchone()
         f = get_db().execute("SELECT exchange_id FROM findings LIMIT 1").fetchone()
     stored = x["req_headers"] + x["resp_headers"]
-    assert "abc123" not in stored and "tok999" not in stored and "SERVERSECRET" not in stored
-    assert "***(대상 인증 헤더)" in stored and "JSESSIONID=***" in stored
+    assert "abc123" in stored and "tok999" in stored and "SERVERSECRET" in stored
+    assert "***" not in stored
     assert f["exchange_id"] == x["id"]
 
     detail = client.get(f"/history/{x['id']}").get_data(as_text=True)
@@ -116,14 +117,15 @@ def test_connection_error_is_recorded(app, client, opener):
     assert x["status"] == 0 and "refused" in x["error"] and run["status"] == "error"
 
 
-def test_sensitive_body_not_recorded(app, client, opener):
+def test_every_response_body_is_recorded(app, client, opener):
+    """.env 본문도 그대로 남는다 — 무엇이 읽혔는지가 증거다."""
     _, reply = opener
     add_target(client)
     reply["resp"] = FakeResp(body=b"DB_PASSWORD=supersecret\n")
     client.post("/modules/sesacedu_exposed_paths/run", data={"target_id": 1, "confirm": "yes"})
     with app.app_context():
         bodies = " ".join(r["resp_body"] for r in get_db().execute("SELECT resp_body FROM exchanges WHERE url LIKE '%/.env'"))
-    assert "supersecret" not in bodies and "남기지 않음" in bodies
+    assert "supersecret" in bodies and "남기지 않음" not in bodies
 
 
 def test_self_scan_blocked(client):
@@ -146,3 +148,32 @@ def test_csrf_and_host(tmp_path):
     token = re.search(r'name="_csrf" value="([0-9a-f]+)"', c.get("/targets").get_data(as_text=True)).group(1)
     assert c.post("/targets", data={**data, "_csrf": token}).status_code == 302
     assert c.get("/", headers={"Host": "evil.example"}).status_code == 400
+
+
+def _app(tmp_path, **cfg):
+    return create_app({"TESTING": True, "SECRET_KEY": "t", "DATABASE": str(tmp_path / "h.sqlite3"),
+                       "CSRF": False, "DELAY_MS": 0, **cfg})
+
+
+def test_allowed_hosts_opens_one_name(tmp_path):
+    """서버에 올려 밖에서 열 때는 들어올 이름을 적어 준다. 적은 것만 들어온다."""
+    c = _app(tmp_path, ALLOWED_HOSTS=["dast.example"]).test_client()
+    assert c.get("/", headers={"Host": "dast.example"}).status_code == 200
+    assert c.get("/", headers={"Host": "dast.example:80"}).status_code == 200   # 포트는 떼고 본다
+    assert c.get("/", headers={"Host": "DAST.EXAMPLE"}).status_code == 200      # 대소문자 무시
+    assert c.get("/", headers={"Host": "evil.example"}).status_code == 400
+    assert c.get("/", headers={"Host": "127.0.0.1"}).status_code == 200         # 로컬은 늘 된다
+
+
+def test_allowed_hosts_star_takes_any(tmp_path):
+    """공인 IP 가 중지·시작마다 바뀌는 자리용. 이름 검사를 통째로 끄는 것과 같다."""
+    c = _app(tmp_path, ALLOWED_HOSTS=["*"]).test_client()
+    assert c.get("/", headers={"Host": "13.125.1.2"}).status_code == 200
+    assert c.get("/", headers={"Host": "evil.example"}).status_code == 200
+
+
+def test_default_is_local_only(tmp_path):
+    """기본값은 그대로다 — 적지 않으면 내 PC 뿐."""
+    c = _app(tmp_path).test_client()
+    assert c.get("/", headers={"Host": "localhost"}).status_code == 200
+    assert c.get("/", headers={"Host": "dast.example"}).status_code == 400

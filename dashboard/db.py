@@ -123,6 +123,8 @@ MIGRATIONS = [
     # 백그라운드 실행 — 끝난 뒤에도 무슨 일이 있었는지 남는다
     ("runs", "sent", "INTEGER NOT NULL DEFAULT 0"),
     ("runs", "message", "TEXT NOT NULL DEFAULT ''"),
+    # 도구도 뒤에서 돈다 — 화면에 그릴 결과(표·내용)를 끝난 뒤 다시 열 수 있게 남긴다
+    ("runs", "result", "TEXT"),
 ]
 
 
