@@ -4,6 +4,10 @@
 
 {% macro param_input(p, prefix="", values={}) -%}
 {% set val = values.get(p.name, p.default) if values else p.default %}
+{% if p.type == "hidden" %}
+{# 사람이 넣는 칸이 아니라 표의 버튼(_drill)이 실어 나르는 값 — 화면에 안 보인다 #}
+<input type="hidden" name="{{ prefix }}{{ p.name }}" value="{{ val }}">
+{%- else %}
 {# 비워 둬도 되는지를 칸마다 알려 준다. 모듈이 안 적어 뒀으면 기본값 유무로 정한다. #}
 {% set need = p.need or ('optional' if p.default else 'required') %}
 <label class="field field-{{ p.type or 'text' }}">
@@ -49,6 +53,7 @@
   {% endif %}
   {% if p.help %}<small class="sub">{{ p.help | strong }}</small>{% endif %}
 </label>
+{%- endif %}
 {%- endmacro %}
 
 {% macro verdict(v) -%}
