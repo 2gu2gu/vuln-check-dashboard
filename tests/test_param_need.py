@@ -14,7 +14,9 @@ def all_params(app):
     with app.app_context():
         for m in app.config["MODULES"].values():
             for p in m.params or []:
-                yield m.id, p
+                # hidden 은 사람이 채우는 칸이 아니라 버튼(_drill)이 실어 나르는 값 — 라벨·필수 표시가 없다
+                if p.get("type") != "hidden":
+                    yield m.id, p
 
 
 def test_every_input_says_whether_it_can_be_left_empty(app):

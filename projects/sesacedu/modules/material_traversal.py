@@ -46,11 +46,15 @@ META = {
         {"name": "depth", "need": "optional", "label": "올라갈 단계", "type": "int", "default": "9",
          "help": "저장 폴더에서 위로 몇 번 올라갈지. 넉넉히 줘도 최상위에서 멈춥니다."},
         {"name": "lecture", "need": "required", "label": "강의 번호", "default": "123"},
+        # 표의 '내용 보기' 가 어느 경로를 펼칠지 실어 나른다 — 목록은 그대로 두고 그 한 줄 내용만 보여 준다
+        {"name": "show", "type": "hidden", "default": ""},
     ],
 }
 
 PATH = "/backend/lectures/{lecture}/material/download?file={payload}"
 MAX_PATHS = 40
+# 화면 미리보기 길이. 전체는 자르지 않고 요청 기록에 남으니(core.fetch 가 받은 응답을
+# BODY_LIMIT 까지 기록) 여기서 길면 요청 기록 탭에서 받은 응답 전문을 본다.
 PREVIEW = 4000
 
 
@@ -71,7 +75,8 @@ def run(target, params):
         got = r.status == 200 and len(r.body) > 0
         rows.append([path, r.status, f"{len(r.body):,}" if got else "—",
                      "읽힘" if got else ("없음/차단" if r.status else "연결 실패")])
-        drills.append({"내용 보기": {"paths": path}} if got else None)
+        # 목록은 그대로 두고 그 줄 내용만 펼친다 — paths 를 덮지 않고 show 에만 어느 줄인지 적는다
+        drills.append({"내용 보기": {"show": path}} if got else None)
         if got:
             hits.append((path, r))
 
@@ -91,14 +96,19 @@ def run(target, params):
     else:
         finding = []
 
-    # 한 줄만 넣었고 읽혔으면 내용까지 보여 준다
+    # 내용을 펼칠 줄을 고른다 — 표에서 '내용 보기' 로 고른 것(show), 없으면 한 줄만 넣었을 때 그 줄
+    want = (params.get("show") or "").strip().lstrip("/")
+    chosen = next((r for p, r in hits if p == want), None)
+    if chosen is None and len(paths) == 1 and hits:
+        chosen = hits[0][1]
     text = ""
-    if len(paths) == 1 and hits:
-        body = hits[0][1].body
-        text = body[:PREVIEW] + (f"\n… (전체 {len(body):,}자 중 앞 {PREVIEW:,}자)" if len(body) > PREVIEW else "")
+    if chosen is not None:
+        body = chosen.body
+        head = f"{want or paths[0]} 내용:\n" if len(paths) > 1 else ""
+        text = head + body[:PREVIEW] + (f"\n… (앞 {PREVIEW:,}자 · 전체 {len(body):,}자는 요청 기록 탭의 받은 응답에서)" if len(body) > PREVIEW else "")
 
     return ToolResult(
         summary=f"{len(paths)}개 중 {len(hits)}개 읽힘 · 인코딩 {ENCODINGS.get(scheme, scheme)}",
         columns=["경로", "응답", "크기", "결과"], rows=rows, drills=drills,
         text=text, findings=finding,
-        note="읽기만 합니다. 파일 내용은 화면에만 보이고 요청 기록·DB 에 저장하지 않습니다.")
+        note="읽기만 합니다. 화면 미리보기는 앞 4,000자까지만 보이고, 받은 응답 전체는 요청 기록 탭에서 봅니다.")
