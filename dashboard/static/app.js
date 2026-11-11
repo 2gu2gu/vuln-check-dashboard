@@ -751,3 +751,70 @@
     });
   });
 })();
+
+
+// 글자 찾기 — 받은 응답·보낸 요청·도구 결과 같은 긴 텍스트 상자 안에서 찾는다.
+// 브라우저 Ctrl+F 와 달리 대시보드 화면에 남고, 그 상자들만 훑어 몇 번째/몇 개인지 보여 준다.
+(function () {
+  var pres = [].slice.call(document.querySelectorAll("#raw-req, #raw-resp, pre.tool-text"));
+  // CSS Custom Highlight API 가 없는 옛 브라우저에서는 바를 안 띄운다 — Ctrl+F 를 쓰면 된다
+  if (!pres.length || !window.CSS || !CSS.highlights || typeof Highlight === "undefined") return;
+
+  var bar = document.createElement("div");
+  bar.className = "find-bar";
+  bar.innerHTML =
+    '<input type="search" class="find-q" placeholder="이 안에서 글자 찾기" aria-label="글자 찾기">' +
+    '<span class="find-count sub small" role="status"></span>' +
+    '<button type="button" class="btn ghost small-btn find-prev" aria-label="이전 찾은 것">\u2191</button>' +
+    '<button type="button" class="btn ghost small-btn find-next" aria-label="다음 찾은 것">\u2193</button>';
+  var anchor = pres[0].closest(".exchange, .tool-result") || pres[0];
+  anchor.parentNode.insertBefore(bar, anchor);
+
+  var q = bar.querySelector(".find-q"), count = bar.querySelector(".find-count");
+  var ranges = [], at = -1;
+
+  function clear() {
+    CSS.highlights.delete("find"); CSS.highlights.delete("find-at");
+    ranges = []; at = -1; count.textContent = "";
+  }
+
+  function run() {
+    var term = q.value;
+    clear();
+    if (!term) return;
+    var low = term.toLowerCase(), all = new Highlight();
+    pres.forEach(function (pre) {
+      var w = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT), n;
+      while ((n = w.nextNode())) {
+        // shortcut: 한 텍스트 노드 안에서만 찾는다 — <mark>(vcd...) 토큰 경계를 넘는 일치는 못 찾는다. 드물다.
+        var t = n.nodeValue.toLowerCase(), i = 0, p;
+        while ((p = t.indexOf(low, i)) !== -1) {
+          var r = document.createRange();
+          r.setStart(n, p); r.setEnd(n, p + term.length);
+          ranges.push(r); all.add(r);
+          i = p + term.length;
+        }
+      }
+    });
+    CSS.highlights.set("find", all);
+    count.textContent = ranges.length ? "0/" + ranges.length : "없음";
+    if (ranges.length) go(0);
+  }
+
+  function go(i) {
+    if (!ranges.length) return;
+    at = (i + ranges.length) % ranges.length;
+    var one = new Highlight(); one.add(ranges[at]);
+    CSS.highlights.set("find-at", one);         // 지금 보는 것만 색을 달리한다
+    count.textContent = (at + 1) + "/" + ranges.length;
+    ranges[at].startContainer.parentElement.scrollIntoView({ block: "center" });
+  }
+
+  var timer;
+  q.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(run, 120); });
+  q.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { e.preventDefault(); go(at + (e.shiftKey ? -1 : 1)); }
+  });
+  bar.querySelector(".find-next").addEventListener("click", function () { go(at + 1); });
+  bar.querySelector(".find-prev").addEventListener("click", function () { go(at - 1); });
+})();

@@ -620,3 +620,10 @@ html { scroll-behavior: smooth; }
 .grid.targets td:nth-child(5) { min-width: 300px; }   /* 인증 헤더 */
 .grid.targets td:nth-child(6) { min-width: 120px; }   /* 메모 */
 .grid.targets td.mono { overflow-wrap: break-word; }  /* 글자 하나씩 끊지 않는다 */
+
+/* 글자 찾기 바 — 긴 텍스트 상자 위에 붙는다 */
+.find-bar { display: flex; gap: 6px; align-items: center; margin: 0 0 8px; flex-wrap: wrap; }
+.find-bar .find-q { flex: 0 1 260px; }
+.find-count { min-width: 44px; }
+::highlight(find) { background: #ffe58a; color: #1a1a1a; }
+::highlight(find-at) { background: #ff9f1c; color: #1a1a1a; }
