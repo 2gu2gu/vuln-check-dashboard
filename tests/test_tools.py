@@ -189,7 +189,8 @@ def test_traversal_tool_finds_readable_file(monkeypatch):
     r = material_traversal.run(T, {"paths": "etc/passwd\netc/shadow", "scheme": "double-full",
                                    "depth": "9", "lecture": "123"})
     assert r.rows[0][3] == "읽힘" and r.rows[1][3] == "없음/차단"
-    assert r.drills[0] == {"내용 보기": {"paths": "etc/passwd"}} and r.drills[1] is None
+    # '내용 보기' 는 paths 를 덮지 않고 show 에만 그 줄을 적는다 — 눌러도 목록이 안 사라진다
+    assert r.drills[0] == {"내용 보기": {"show": "etc/passwd"}} and r.drills[1] is None
     assert r.findings[0].severity == "high"
 
 
@@ -198,6 +199,16 @@ def test_traversal_tool_shows_content_for_single_path(monkeypatch):
     r = material_traversal.run(T, {"paths": "etc/passwd", "scheme": "double-full",
                                    "depth": "9", "lecture": "123"})
     assert "root:x:0:0" in r.text
+
+
+def test_view_content_keeps_the_whole_list(monkeypatch):
+    """'내용 보기' 로 한 줄을 펼쳐도 나머지 목록이 사라지지 않는다 (show 가 paths 를 안 덮는다)."""
+    monkeypatch.setattr(material_traversal, "fetch", fake_download_fetch())
+    r = material_traversal.run(T, {"paths": "etc/passwd\netc/shadow", "scheme": "double-full",
+                                   "depth": "9", "lecture": "123", "show": "etc/passwd"})
+    assert len(r.rows) == 2                      # 목록은 두 줄 그대로
+    assert "root:x:0:0" in r.text                # 고른 줄 내용은 펼쳐진다
+    assert r.text.startswith("etc/passwd 내용:")  # 어느 줄인지 머리에 적는다
 
 
 def test_traversal_tool_plain_scheme_is_blocked(monkeypatch):
