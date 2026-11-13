@@ -9,7 +9,7 @@ PROJECT = {
     # 역할마다 호스트와 포트를 함께 적어 둔다 — 한 역할로 돌린 모듈이 다른 서버로 나가지 못한다.
     # Wazuh(EC2 ③)는 우리 쪽 탐지 장비라 점검 대상이 아니다. 역할을 두지 않는다.
     # 로그인해서 토큰 받는 법. 비밀번호는 저장하지 않고 받은 토큰만 인증 헤더에 넣는다.
-    # 주소는 08_모의해킹/file_inclution/fsmap/core/probe.py 가 쓰는 것과 같다.
+    # 주소는 08_모의해킹/file_inclusion/fsmap/core/probe.py 가 쓰는 것과 같다.
     "login": {
         "path": "/backend/login",
         "json": {"email": "{id}", "pw": "{secret}"},
