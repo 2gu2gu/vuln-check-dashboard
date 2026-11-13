@@ -18,6 +18,8 @@
   --hit-soft: #F6E7E0;
   --mark: #F2D36B;        /* 점검 표식 강조 */
   --mark-ink: #1C1C1C;
+  --find: #FFE58A;        /* 글자 찾기 — 걸린 곳 전부 */
+  --find-at: #FF9F1C;     /* 글자 찾기 — 지금 보고 있는 곳 */
 
   --sev-critical: #8E2F3C;
   --sev-high: #B5532E;
@@ -38,6 +40,7 @@
   --text: #ECECEC; --sub: #A3A3A3; --accent: #8DB4D4; --accent-soft: #2B3842;
   --hit: #E39A78; --hit-soft: #3D2C25;
   --mark: #8A6D1F; --mark-ink: #FFF3CC;
+  --find: #8A6D1F; --find-at: #C2791A;
   --sev-critical: #E0899A; --sev-high: #E39A78; --sev-medium: #D9B65E; --sev-low: #8DB4D4; --sev-info: #A3A3A3;
   color-scheme: dark;
 }
@@ -625,5 +628,5 @@ html { scroll-behavior: smooth; }
 .find-bar { display: flex; gap: 6px; align-items: center; margin: 0 0 8px; flex-wrap: wrap; }
 .find-bar .find-q { flex: 0 1 260px; }
 .find-count { min-width: 44px; }
-::highlight(find) { background: #ffe58a; color: #1a1a1a; }
-::highlight(find-at) { background: #ff9f1c; color: #1a1a1a; }
+::highlight(find) { background: var(--find); color: var(--mark-ink); }
+::highlight(find-at) { background: var(--find-at); color: var(--mark-ink); }
