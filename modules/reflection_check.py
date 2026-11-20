@@ -8,6 +8,8 @@ from dashboard.core import Check
 META = {
     "id": "reflection_check",
     "name": "입력값 반사 확인",
+    # XSS 점검의 ① 받는 구간이 같은 일을 한다(11-20). 목록에서 숨기고 id 로는 그대로 돈다
+    "hidden": True,
     "category": "입력 검증",
     "kisa": ["XS"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
     # 반사형 XSS 의 전형값 — 피해자가 링크를 눌러야 하고 브라우저로 범위가 넘어간다

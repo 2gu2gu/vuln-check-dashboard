@@ -30,6 +30,7 @@
         "token_keys": ["token"], "token_header": "",    # 이쪽은 본문으로 준다
     }
 """
+import base64
 import json
 import re
 
@@ -136,3 +137,55 @@ def fetch_token(target_url: str, cfg: dict, ident: str, secret: str, hosts=None)
 def header_line(cfg: dict, token: str) -> str:
     """대상의 인증 헤더에 넣을 한 줄."""
     return "%s: %s%s" % (cfg.get("header") or "Authorization", cfg.get("prefix") or "", token)
+
+
+# ── 손으로 넣는 인증 방식(11-20 사용자 요청) ────────────────────────
+# 로그인해서 토큰을 받는 길(위)이 전부가 아니다. 토큰을 어디서 이미 받아 뒀거나,
+# 브라우저에서 쿠키를 그대로 가져오거나, Basic·API 키를 쓰는 곳이 있다. 모두 결국
+# '이름: 값' 한 줄이라 아래에서 그 줄만 만들어 준다 — 저장은 기존 인증 헤더 칸 그대로다.
+AUTH_WAYS = [
+    {"id": "bearer", "label": "Bearer 토큰", "header": "Authorization",
+     "fields": [{"name": "token", "label": "토큰", "ph": "eyJhbGciOi…"}],
+     "help": "받아 둔 토큰을 붙여 넣으면 Authorization: Bearer … 로 들어갑니다."},
+    {"id": "cookie", "label": "쿠키 주입", "header": "Cookie",
+     "fields": [{"name": "cookie", "label": "쿠키", "ph": "JSESSIONID=…; remember=…"}],
+     "help": "브라우저 개발자도구의 Cookie 줄을 그대로 붙여 넣습니다."},
+    {"id": "basic", "label": "Basic 인증", "header": "Authorization",
+     "fields": [{"name": "ident", "label": "아이디", "ph": "test@example.com"},
+                {"name": "secret", "label": "비밀번호", "ph": "", "secret": True}],
+     "help": "아이디:비밀번호를 base64 로 바꿔 Authorization: Basic … 으로 넣습니다. 값은 그대로 저장됩니다."},
+    {"id": "apikey", "label": "API 키", "header": "",
+     "fields": [{"name": "name", "label": "헤더 이름", "ph": "X-API-Key"},
+                {"name": "value", "label": "키", "ph": ""}],
+     "help": "헤더 이름을 직접 적습니다(X-API-Key, X-Auth-Token 등)."},
+]
+WAY_BY_ID = {w["id"]: w for w in AUTH_WAYS}
+
+
+def auth_line(way_id: str, form) -> tuple:
+    """고른 방식과 입력값 → (헤더 이름, 넣을 한 줄). 값이 비면 ValueError."""
+    way = WAY_BY_ID.get(way_id)
+    if not way:
+        raise ValueError("인증 방식을 고르세요")
+    got = {f["name"]: (form.get(f["name"]) or "").strip() for f in way["fields"]}
+    missing = [f["label"] for f in way["fields"] if not got[f["name"]]]
+    if missing:
+        raise ValueError(f"{way['label']}: {', '.join(missing)} 을(를) 적어 주세요")
+    if way_id == "bearer":
+        return "Authorization", "Authorization: Bearer " + re.sub(r"^\s*Bearer\s+", "", got["token"])
+    if way_id == "cookie":
+        return "Cookie", "Cookie: " + got["cookie"]
+    if way_id == "basic":
+        raw = f"{got['ident']}:{got['secret']}".encode("utf-8")
+        return "Authorization", "Authorization: Basic " + base64.b64encode(raw).decode()
+    name = got["name"]
+    if not re.fullmatch(r"[A-Za-z0-9-]+", name):
+        raise ValueError("헤더 이름은 영문·숫자·- 만 씁니다")
+    return name, f"{name}: {got['value']}"
+
+
+def replace_line(text: str, name: str, line: str) -> str:
+    """같은 이름의 인증 줄만 바꾼다 — 다른 줄(쿠키 등)은 그대로 둔다."""
+    keep = [ln for ln in (text or "").splitlines()
+            if ln.strip() and ln.split(":", 1)[0].strip().lower() != name.lower()]
+    return "\n".join(keep + [line])

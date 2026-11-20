@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from dashboard import core
 from dashboard.core import Point, Response
-from modules import sqli_probe, traversal_probe, xss_probe
+from modules import sqli_probe, stored_xss_probe, traversal_probe, xss_probe
 
 T = core.Target(id=1, name="t", url="https://sesacedu.store")
 
@@ -416,3 +416,93 @@ def test_deep_module_popup_picks_one_point_and_run_fills_it(app, client, monkeyp
         params = json.loads(get_db().execute("SELECT params FROM runs WHERE module_id = 'sesacedu_lecture_sqli'")
                             .fetchone()["params"])
     assert params["point_url"] == "https://sesacedu.store/backend/lectures" and params["point_param"] == "keyword"
+
+
+# ── 저장형 XSS 지점 점검(11-20) ─────────────────────────────────
+
+def _write_point(param="content"):
+    return Point(method="POST", url="https://sesacedu.store/backend/posts", param=param, place="form",
+                 sample="hi", fields={param: "hi"})
+
+
+def test_stored_xss_needs_write_ack():
+    try:
+        stored_xss_probe.run(T, [_write_point()], {"write_ack": ""})
+    except ValueError as e:
+        assert "WRITE" in str(e)
+    else:
+        raise AssertionError("쓰기 허용 없이 돌면 안 된다")
+
+
+def test_stored_xss_stops_when_nothing_is_stored(monkeypatch):
+    sent = _server(monkeypatch, lambda url: (200, "아무것도 남지 않음"))
+    c = stored_xss_probe.run(T, [_write_point()], {"write_ack": "WRITE"})[0]
+    assert c.verdict == "safe" and "후보 제외" in c.evidence
+    assert len(sent) == 2                                   # 쓰기 한 번 + 다시 읽기 한 번
+
+
+def test_stored_xss_found_when_payload_survives_the_read(monkeypatch):
+    kept = []
+
+    def handler(url):
+        if url.endswith("/backend/posts") and kept:          # 다시 읽기 — 마지막으로 쓴 값이 보인다
+            return 200, "<div>" + kept[-1] + "</div>"
+        return 200, "등록됨"
+    sent = []
+
+    def fetch(url, method="GET", data=None, **_kw):
+        sent.append((method, url))
+        if method == "POST":
+            kept.append((data or {}).get("content", ""))
+            return Response(url=url, status=200, body="등록됨")
+        status, body = handler(url)
+        return Response(url=url, status=status, body=body)
+    monkeypatch.setattr(core, "fetch", fetch)
+    c = stored_xss_probe.run(T, [_write_point()], {"write_ack": "WRITE"})[0]
+    assert c.verdict == "vuln" and "저장형 XSS 후보" in c.title
+    assert "② 기본" in c.evidence and "③ 심화" not in c.evidence
+
+
+def test_stored_xss_reads_the_given_urls(monkeypatch):
+    seen = []
+
+    def fetch(url, method="GET", **_kw):
+        seen.append(url)
+        return Response(url=url, status=200, body="")
+    monkeypatch.setattr(core, "fetch", fetch)
+    stored_xss_probe.run(T, [_write_point()], {"write_ack": "WRITE",
+                                                  "read_urls": "https://sesacedu.store/board\n"})
+    assert "https://sesacedu.store/board" in seen
+
+
+# ── 인증 방식 여러 가지(11-20 사용자 요청) ───────────────────────────
+
+def test_auth_ways_make_the_header_line(app, client):
+    from tests.test_app import add_target, target_id
+    add_target(client, "https://sesacedu.store", name="사용자 웹")
+    tid = target_id(app, "https://sesacedu.store")
+    page = client.get(f"/targets?target={tid}").get_data(as_text=True)
+    for label in ("Bearer 토큰", "쿠키 주입", "Basic 인증", "API 키"):
+        assert label in page
+    client.post(f"/targets/{tid}/auth", data={"way": "bearer", "token": "Bearer abc"}, follow_redirects=True)
+    client.post(f"/targets/{tid}/auth", data={"way": "cookie", "cookie": "JSESSIONID=1"}, follow_redirects=True)
+    with app.app_context():
+        from dashboard.db import get_db
+        text = get_db().execute("SELECT headers FROM targets WHERE id = ?", [tid]).fetchone()["headers"]
+    assert text.splitlines() == ["Authorization: Bearer abc", "Cookie: JSESSIONID=1"]   # 둘 다 남는다
+    client.post(f"/targets/{tid}/auth", data={"way": "basic", "ident": "a@b.c", "secret": "pw"},
+                follow_redirects=True)
+    with app.app_context():
+        from dashboard.db import get_db
+        text = get_db().execute("SELECT headers FROM targets WHERE id = ?", [tid]).fetchone()["headers"]
+    assert "Authorization: Basic YUBiLmM6cHc=" in text and "Cookie: JSESSIONID=1" in text   # 같은 이름만 바뀐다
+    r = client.post(f"/targets/{tid}/auth", data={"way": "apikey", "name": "X API", "value": "k"},
+                    follow_redirects=True)
+    assert "헤더 이름은" in r.get_data(as_text=True)
+
+
+def test_old_point_modules_are_tidied(app, client):
+    tid = _seed_points(app, client)
+    page = client.get(f"/modules?target={tid}").get_data(as_text=True)
+    assert 'data-mod="reflection_check"' not in page            # XSS 점검 ① 이 같은 일을 한다
+    assert "사전으로 입력값 넣어 보기 (심화)" in page and "새싹에듀 XSS 조합 넣어 보기 (심화)" in page

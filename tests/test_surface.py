@@ -110,7 +110,7 @@ def seeded(app, client):
 def test_collect_then_surface_page(client, seeded):
     tid, ids = seeded
     page = client.get(f"/targets?target={tid}").get_data(as_text=True)
-    assert "/courses" in page and "category" in page and "입력값 반사 확인" in page
+    assert "/courses" in page and "category" in page and "XSS 점검" in page
     assert set(ids) == {"category", "level", "title", "body"}
 
 

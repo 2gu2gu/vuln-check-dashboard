@@ -7,7 +7,7 @@
 모듈 단계(META "stage")
   check   (기본) run(target, params) → [Finding]          대상 하나를 통째로 점검 — 이 파일
   collect        run(target, params) → [Point]            표면 수집 — 예: modules/surface_crawl.py
-  probe          run(target, points, params) → [Check]    표면 탭에서 고른 지점마다 판정 — 예: modules/reflection_check.py
+  probe          run(target, points, params) → [Check]    표면 탭에서 고른 지점마다 판정 — 예: modules/xss_probe.py
   유형별 점검(SQLi·XSS·경로 조작 등)은 probe 로 만들면 표면 수집 결과를 그대로 받아 쓴다.
   값 넣어 보내기·반사 판정은 dashboard/probe.py 의 send()·judge_reflection() 을 쓴다.
 

@@ -306,6 +306,7 @@ def targets():
         "SUM(param != '') AS params FROM points GROUP BY target_id")}
     return render_template("targets.html", target=target, targets=targets, picked=picked, point_counts=point_counts,
                            header_names=names, header_text=header_text, logins=logins,
+                           auth_ways=login_mod.AUTH_WAYS,
                            groups=groups, totals=totals, probes=_shown(_probe_modules(target)),
                            collectors=[m for m in _shown(_modules_for(target)).values() if m.stage == "collect"],
                            verdicts=VERDICTS, states=dv.STATES, source_label=dv.SOURCE_LABEL, args=request.args,
@@ -349,6 +350,25 @@ def target_headers(tid):
     except ValueError as e:
         flash(str(e), "error")
     return redirect(url_for("dash.targets", target=tid))
+
+
+@bp.post("/targets/<int:tid>/auth")
+def target_auth(tid):
+    """손으로 넣는 인증(Bearer·쿠키·Basic·API 키) — 고른 방식대로 헤더 한 줄을 만들어 넣는다."""
+    db = get_db()
+    t = db.execute("SELECT * FROM targets WHERE id = ?", [tid]).fetchone() or abort(404)
+    back = url_for("dash.targets", target=tid)
+    try:
+        name, line = login_mod.auth_line(request.form.get("way", ""), request.form)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(back)
+    db.execute("UPDATE targets SET headers = ? WHERE id = ?",
+               [login_mod.replace_line(t["headers"], name, line), tid])
+    db.commit()
+    # 값은 가리지 않는다 — 자체 실습 환경이고, 안 보이면 맞게 들어갔는지 확인할 수 없다(요청 기록도 같은 기준)
+    flash(f"인증 헤더에 넣었습니다 — {line}", "ok")
+    return redirect(back)
 
 
 @bp.post("/targets/<int:tid>/login")

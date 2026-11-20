@@ -15,7 +15,7 @@ from dashboard.core import Check
 
 META = {
     "id": "payload_probe",
-    "name": "사전으로 입력값 넣어 보기",
+    "name": "사전으로 입력값 넣어 보기 (심화)",
     "category": "입력 검증",
     "kisa": ["XS", "SI"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
     "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
@@ -26,7 +26,7 @@ META = {
         {"tactic": "TA0001", "technique": "T1190", "name": "Exploit Public-Facing Application"},
         {"tactic": "TA0002", "technique": "T1059.007", "name": "Command and Scripting Interpreter: JavaScript"},
     ],
-    "description": "사전의 입력을 지점마다 차례로 넣고, 그대로 돌아오는지·오류가 새는지 봅니다. {T} 는 그 요청의 표식으로 바뀝니다.",
+    "description": "**심화** — 취약점별 점검에서 후보가 남은 지점에 씁니다. 사전의 입력을 지점마다 차례로 넣고, 그대로 돌아오는지·오류가 새는지 봅니다. {T} 는 그 요청의 표식으로 바뀝니다.",
     "needs": [
         {"kind": "env", "name": "DASH_WORDLISTS", "required": False,
          "why": "저장소에 든 씨앗 사전만으로는 찾는 범위가 좁습니다. SecLists 를 붙이면 고르는 칸에 함께 뜹니다",
