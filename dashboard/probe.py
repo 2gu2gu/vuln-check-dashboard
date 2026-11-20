@@ -57,6 +57,21 @@ def _excerpt(body: str, i: int, n: int, pad: int = 40) -> str:
     return body[max(0, i - pad): i + n + pad].replace("\n", " ").strip()
 
 
+def encoded_echo(body: str, sent: str):
+    """보낸 값이 **퍼센트 인코딩된 채로만** 돌아왔는가 → 그 자리의 발췌, 아니면 None.
+
+    경로 변수를 풀지 않고 응답 데이터에 그대로 담는 화면이 이렇다(Next.js 라우터 묶음
+    `self.__next_f.push([1,"…params…"])` 가 그렇다). `"` 는 `%22`, `<` 는 `%3C` 로 남으므로
+    문자열을 닫거나 태그를 만들 수 없다 — 스크립트 블록 안에 돌아와도 실행되지 않는다.
+    11-20 관리자 웹 경로 변수 4개(`/users/{userId}` 등)를 브라우저로 확인한 결과다.
+    """
+    enc = quote(sent, safe="")
+    if enc == sent or sent in body:  # 특수문자가 없는 값, 또는 날것으로 돌아온 값은 여기서 볼 게 없다
+        return None
+    i = body.find(enc)
+    return _excerpt(body, i, len(enc)) if i >= 0 else None
+
+
 def judge_reflection(body: str, token: str, sent: str):
     """보낸 값(sent, token 포함)이 응답에 어떻게 돌아왔는지 본다 → (verdict, 위치, 발췌).
 
@@ -89,6 +104,7 @@ class Ladder:
         self.point = point
         self.lines = []
         self.verdict, self.response, self.title, self.stage = "safe", None, "", ""
+        self.encoded = []  # 인코딩된 채로만 돌아온 자리 [(단계, 설명, 발췌)]
 
     def note(self, stage, text):
         self.lines.append(f"{STAGE_LABEL[stage]} {text}")
@@ -103,6 +119,16 @@ class Ladder:
             self.verdict, self.response, self.stage = "potential", response, stage
         self.note(stage, note)
 
+    def encoded_only(self, stage="bypass"):
+        """인코딩된 채로만 돌아왔으면 근거에 적고 True — 깨뜨릴 수 없으니 안전으로 둔다."""
+        if self.verdict != "safe" or not self.encoded:
+            return False
+        kind, excerpt = self.encoded[-1][1:]
+        self.note(stage, f"넣은 값이 퍼센트 인코딩된 채로만 돌아옴({kind}) — `\"` 는 %22, `<` 는 %3C 로 남아 "
+                         f"문자열·태그를 깨뜨릴 수 없음: …{excerpt}…")
+        self.note(stage, "돌아오는 자리가 스크립트 블록이어도 실행되지 않는 모양이다 — 안전")
+        return True
+
     @property
     def done(self):
         return self.verdict == "vuln"
@@ -116,4 +142,7 @@ class Ladder:
             if got:
                 self.hit(stage, r, got[0], got[1])
                 return True
+            excerpt = encoded_echo(r.body, value)
+            if excerpt:
+                self.encoded.append((stage, kind, excerpt))
         return False
