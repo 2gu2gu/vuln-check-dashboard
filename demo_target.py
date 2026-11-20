@@ -336,7 +336,16 @@ def api_docs():
 
 @app.get("/backend/courses")
 def courses():
+    # 숨은 파라미터 연습 — 화면·JS 어디에도 없는 debug 를 붙이면 응답이 달라진다
+    if request.args.get("debug"):
+        return _envelope("SUCCESS", "ok", {"items": [{"id": 1, "title": "강의 1"}], "sql": "SELECT * FROM lectures"})
     return _envelope("SUCCESS", "ok", [{"id": 1, "title": "강의 1"}])
+
+
+@app.get("/backend/health")
+def health():
+    """예측 연습 — 어디에도 링크가 없지만 /backend + 흔한 단어로 찾힌다."""
+    return _envelope("SUCCESS", "UP", None)
 
 
 @app.get("/backend/courses/<int:cid>")
