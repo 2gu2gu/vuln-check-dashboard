@@ -1,4 +1,9 @@
-"""MITRE ATT&CK Enterprise 전술 14개(공격 진행 순서)."""
+"""MITRE ATT&CK Enterprise 전술 15개(공격 진행 순서).
+
+ATT&CK content v20.1 기준(11-20 attack.mitre.org/tactics/enterprise 에서 확인).
+v20 에서 TA0005 이름이 Defense Evasion → Stealth 로 바뀌고 TA0112 Defense Impairment 가 새로 생겼다.
+판이 바뀌면 이 목록과 보고서(결과보고서 양식 G-6 등)를 같이 고친다.
+"""
 
 TACTICS = [
     ("TA0043", "Reconnaissance", "정찰"),
@@ -7,7 +12,8 @@ TACTICS = [
     ("TA0002", "Execution", "실행"),
     ("TA0003", "Persistence", "지속성"),
     ("TA0004", "Privilege Escalation", "권한 상승"),
-    ("TA0005", "Defense Evasion", "방어 회피"),
+    ("TA0005", "Stealth", "은폐"),
+    ("TA0112", "Defense Impairment", "방어 무력화"),
     ("TA0006", "Credential Access", "자격 증명 접근"),
     ("TA0007", "Discovery", "탐색"),
     ("TA0008", "Lateral Movement", "내부 이동"),

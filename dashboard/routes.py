@@ -969,7 +969,7 @@ def history_detail(xid):
 # ── ATT&CK · 시나리오 · 보고서 ───────────────────────────────
 
 def _attack_columns(target):
-    """ATT&CK 매트릭스 — 전술 14개 열, 칸은 모듈이 다루는 기법."""
+    """ATT&CK 매트릭스 — 전술 15개 열(v20.1), 칸은 모듈이 다루는 기법."""
     hit = set()
     if target:
         hit = {r["technique"] for r in get_db().execute(
