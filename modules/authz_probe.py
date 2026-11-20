@@ -19,7 +19,7 @@
 """
 from urllib.parse import urlsplit, urlunsplit
 
-from dashboard import core
+from dashboard import core, probe
 from dashboard.core import Check
 
 META = {
@@ -74,22 +74,10 @@ def _same(a, b, pct: float) -> bool:
     return abs(len(a.body) - len(b.body)) * 100 / big <= pct
 
 
-def _shell_of(target):
-    """대상 첫 화면을 인증 없이 한 번 읽어 둔다 — 화면 틀(SPA 껍데기)을 가리는 잣대다.
-
-    어느 주소를 불러도 이것과 같은 본문이 오면 그 주소는 '보호된 화면' 이 아니라 앱 껍데기다.
-    """
-    try:
-        r = core.fetch(core.join(target.url, "/"), auth=False)
-    except OSError:
-        return None
-    return r.body if r.status in OPEN and r.body else None
-
-
 def run(target, points, params):
     pct = float(params.get("same_pct") or 5)
     have_auth = bool(core.auth_headers())
-    shell = _shell_of(target)
+    shell = probe.app_shell(target)
     out = []
     for p in points:
         lines, verdict, keep, title = [], "safe", None, ""

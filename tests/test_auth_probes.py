@@ -118,7 +118,8 @@ def test_idor_second_account_seeing_the_same_resource_is_vuln(monkeypatch):
 
 def test_idor_without_any_token_is_vuln(monkeypatch):
     _ctx(monkeypatch)
-    _server(monkeypatch, lambda url, h: (200, "주문 103 상세" * 20))
+    # 첫 화면과 다른 본문이어야 '화면 틀' 이 아니라 진짜 자원으로 본다
+    _server(monkeypatch, lambda url, h: (200, "첫 화면") if url.endswith("/") else (200, "주문 103 상세" * 20))
     c = idor_probe.run(T, [_num()], {})[0]
     assert c.verdict == "vuln" and "인증 없이" in c.title
 
@@ -260,5 +261,18 @@ def test_idor_leaves_query_points_without_a_sample_alone(monkeypatch):
     """쿼리 파라미터는 이름만 보고 번호를 넣어 볼 수 없다 — keyword=1 은 뜻이 없다."""
     _ctx(monkeypatch)
     sent = _server(monkeypatch, lambda url, h: (200, "x" * 100))
-    assert idor_probe.run(T, [Point(method="GET", url="https://sesacedu.store/backend/lectures", param="keyword", place="query", sample="")], {}) == []
-    assert sent == []
+    assert idor_probe.run(T, [Point(method="GET", url="https://sesacedu.store/backend/lectures",
+                                    param="keyword", place="query", sample="")], {}) == []
+    # 첫 화면 한 번(화면 틀 잣대)만 나가고 지점에는 아무것도 안 보낸다
+    assert [u for _m, u, _h in sent] == ["https://sesacedu.store/"]
+
+
+def test_idor_does_not_call_a_spa_shell_an_open_resource(monkeypatch):
+    """11-21 실측: /mypage/buy/history/1 등 7개가 전부 564바이트 껍데기인데 취약으로 적혔다."""
+    _ctx(monkeypatch)
+    SHELL = "<!doctype html><html><div id=root></div></html>"
+    _server(monkeypatch, lambda url, h: (200, SHELL))
+    out = idor_probe.run(T, [_path()], {})
+    assert out == [] or out[0].verdict == "safe"
+    ev = "" if not out else out[0].evidence
+    assert out == [] or ("화면 틀(SPA 껍데기)" in ev and "HAR" in ev)

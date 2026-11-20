@@ -93,6 +93,22 @@ def judge_reflection(body: str, token: str, sent: str):
 # ② 기본 페이로드 → ③ 심화 페이로드 → ④ 우회 페이로드 순서로 넣는다. 하나라도 확인되면 멈춘다.
 # 받는 구간이 아니면 거기서 끝내 요청을 아낀다.
 
+def app_shell(target):
+    """대상 첫 화면을 인증 없이 한 번 읽어 둔다 → 본문, 없으면 None.
+
+    React·Vue·Next 같은 앱은 **어느 주소를 불러도 같은 index.html** 을 돌려준다. 그 본문과 글자
+    하나까지 같은 응답이 오면 그 주소는 '보호된 화면' 도 '그 번호의 자원' 도 아니라 앱 껍데기다.
+    권한은 뒤쪽 API 가 보는데 그건 이 주소가 아니다.
+    11-21 실측: 사용자 웹의 /mypage·/instructor·/mypage/buy/history/1 이 전부 같은 564바이트였고,
+    그걸 모르는 채로 인증·인가가 취약 6, IDOR 이 취약 7 을 적었다. 둘 다 거짓 양성이었다.
+    """
+    try:
+        r = core.fetch(core.join(target.url, "/"), auth=False)
+    except OSError:
+        return None
+    return r.body if 200 <= r.status < 300 and r.body else None
+
+
 STAGES = ("screen", "basic", "deep", "bypass")
 STAGE_LABEL = {"screen": "① 받는 구간", "basic": "② 기본", "deep": "③ 심화", "bypass": "④ 우회"}
 
