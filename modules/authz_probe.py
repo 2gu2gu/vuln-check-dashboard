@@ -125,13 +125,21 @@ def run(target, points, params):
                     note("deep", "경로 모양만 바꿔 차단을 지나감 — 앞단이 경로를 글자로 막고 있다")
                     verdict, keep, title = "vuln", t, f"경로 변형({kind})으로 차단 통과"
                     break
-            # ④ 우회 — 경로 알림 헤더
+            # ④ 우회 — 경로 알림 헤더.
+            # **첫 화면과 견준다.** 헤더를 안 따르면 그냥 첫 화면이 오는데, 그것이 막힌 응답(401)과
+            # 다르다고 해서 '따랐다' 고 하면 안 된다. 11-21 실측에서 이 한 줄이 없어 /backend/mypage 등
+            # 12건이 통째로 거짓 양성이 됐다(GET / 이 늘 564바이트 앱 껍데기를 돌려준다).
             if verdict == "safe":
+                root = core.fetch(core.join(target.url, "/"), auth=False)
                 for name, kind in HEADER_TRICKS:
                     t = core.fetch(core.join(target.url, "/"), headers={name: path}, auth=False)
-                    note("bypass", f"{kind}: {name}: {path} → {t.status} · {len(t.body)}B")
+                    note("bypass", f"{kind}: {name}: {path} → {t.status} · {len(t.body)}B "
+                                   f"(헤더 없이 첫 화면은 {root.status} · {len(root.body)}B)")
+                    if t.body == root.body:
+                        note("bypass", "헤더를 넣으나 빼나 첫 화면이 그대로 옴 — 뒷단이 헤더를 따르지 않는다")
+                        continue
                     if t.status in OPEN and len(t.body) and not _same(t, n, pct):
-                        note("bypass", "뒷단이 헤더의 경로를 따랐다 — 앞단 차단을 지나감")
+                        note("bypass", "헤더를 넣었더니 첫 화면과도 막힌 응답과도 다른 것이 왔다 — 뒷단이 경로를 따랐다")
                         verdict, keep, title = "vuln", t, f"{kind}로 차단 통과"
                         break
         if verdict == "safe":
