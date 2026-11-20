@@ -112,7 +112,7 @@
 </div>
 
 <section class="cards">
-  <div class="card"><small>엔드포인트</small><strong>{{ totals.endpoints }}</strong></div>
+  <div class="card"><small>엔드포인트</small><strong>{{ totals.endpoints }}</strong>{% if totals.hidden %}<small>없는 경로 {{ totals.hidden }}개는 빼고 셈</small>{% endif %}</div>
   <div class="card"><small>파라미터</small><strong>{{ totals.params }}</strong></div>
   {% for v in ("vuln", "potential", "safe") %}
   <div class="card">{{ verdict(v) }}<strong>{{ totals[v] }}</strong><small>판정 수</small></div>

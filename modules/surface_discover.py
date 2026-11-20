@@ -15,6 +15,7 @@ from dashboard.core import Point, fetch
 
 META = {
     "id": "surface_discover",
+    "hidden": True,  # 표면 수집(surface_collect)이 부품으로 쓴다 — 목록에 따로 안 띄운다(11-20)
     "name": "표면 자동 수집",
     "category": "표면 수집",
     "kind": "active",

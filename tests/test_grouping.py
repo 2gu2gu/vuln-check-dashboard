@@ -118,7 +118,7 @@ def test_collapsed_card_still_says_what_is_inside(app, client):
     add_target(client)
     html = client.get("/modules").get_data(as_text=True)
     assert "눌러서 펴기" in html
-    assert "입력칸" in html
+    assert "설정" in html
 
 
 def test_a_module_with_unmet_needs_says_so_before_opening(app, client):

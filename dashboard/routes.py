@@ -32,6 +32,11 @@ def _project_of(target):
     return _projects().get(target["project"]) or _projects()[GENERAL]
 
 
+def _shown(mods):
+    """화면에 띄울 모듈만 — 다른 모듈의 부품(hidden)은 뺀다. 실행·검증은 _modules_for 그대로 쓴다."""
+    return {k: m for k, m in mods.items() if not m.hidden}
+
+
 def _modules_for(target):
     """대상이 있으면 범용 + 그 프로젝트 전용 중 역할이 맞는 것, 없으면 전부."""
     return modules_for(_modules(), target["project"], target["role"]) if target else _modules()
@@ -297,11 +302,12 @@ def targets():
     groups, totals = _surface_of(picked, sort=request.args.get("sort", ""), state=request.args.get("state", ""),
                                  show_all=request.args.get("show") == "all")
     point_counts = {row["target_id"]: {"pages": row["pages"], "params": row["params"]} for row in get_db().execute(
-        "SELECT target_id, COUNT(DISTINCT url) AS pages, SUM(param != '') AS params FROM points GROUP BY target_id")}
+        "SELECT target_id, COUNT(DISTINCT CASE WHEN state NOT IN ('not_found', 'soft_404') THEN url END) AS pages, "
+        "SUM(param != '') AS params FROM points GROUP BY target_id")}
     return render_template("targets.html", target=target, targets=targets, picked=picked, point_counts=point_counts,
                            header_names=names, header_text=header_text, logins=logins,
-                           groups=groups, totals=totals, probes=_probe_modules(target),
-                           collectors=[m for m in _modules_for(target).values() if m.stage == "collect"],
+                           groups=groups, totals=totals, probes=_shown(_probe_modules(target)),
+                           collectors=[m for m in _shown(_modules_for(target)).values() if m.stage == "collect"],
                            verdicts=VERDICTS, states=dv.STATES, source_label=dv.SOURCE_LABEL, args=request.args,
                            surl=_surface_link(target))
 
@@ -386,7 +392,7 @@ def target_login(tid):
 @bp.get("/modules")
 def modules():
     target, targets = _current_target()
-    available = _modules_for(target)
+    available = _shown(_modules_for(target))
     project = _project_of(target) if target else None
     # 묶는 기준은 취약점 하나만 둔다(11-20 사용자 결정). 단계·전술·분야 탭은 뺐다.
     way = "vuln"
@@ -683,7 +689,7 @@ MISSING = ("not_found", "soft_404")
 
 def _suggest_modules(target):
     """추천 점검 키 → 이 대상에서 쓸 수 있는 모듈 [(id, 이름, 단계)]. 없으면 빈 목록."""
-    mods = _modules_for(target).values()
+    mods = _shown(_modules_for(target)).values()
     want = {"INJECT": lambda m: m.stage == "probe" and (getattr(m, "vuln", "") in ("XSS", "SQL") or m.id == "payload_probe"),
             "FILE": lambda m: getattr(m, "vuln", "") == "FILE" and m.stage in ("probe", "tool")}
     return {k: [(m.id, m.name, m.stage) for m in mods if f(m)] for k, f in want.items()}
@@ -734,11 +740,14 @@ def _surface_of(target, sort="", state="", show_all=False):
         for c in checks.get(p["id"], []):
             totals[c["verdict"]] += 1
     groups = list(by_url.values())
-    totals["endpoints"] = len(groups)
     keep = []
     for gr in groups:
         states = {e["state"] for e in gr["ends"]}
         gr["missing"] = bool(states) and states <= set(MISSING)
+        # 엔드포인트 수는 있는 주소만 센다 — 없는 경로(404·가짜 200)까지 세면 '30개인데 파라미터 9개' 처럼
+        # 부풀어 보였다(사용자 지적 11-20). 숨긴 수는 hidden 으로 따로 보인다
+        if not gr["missing"]:
+            totals["endpoints"] += 1
         if state and state not in states:
             continue
         if gr["missing"] and not show_all and state not in MISSING:
@@ -898,7 +907,7 @@ def _tool_run_row(target, mod, run_id=None):
 
 
 def _tool_page(target, targets, mod, values, run=None):
-    tools = _tool_modules(target)
+    tools = _shown(_tool_modules(target))
     # 도는 중인 도구는 화면에도 적는다. 결과 자리가 비어 있으면 아무 일도 없던 것 같다.
     live = [j for j in jobs.listing(target["id"]) if j["live"] and j["module_id"] in tools] if target else []
     result = json.loads(run["result"]) if run is not None and run["result"] else None
@@ -912,7 +921,7 @@ def _tool_page(target, targets, mod, values, run=None):
 @bp.get("/tools")
 def tools():
     target, targets = _current_target()
-    tools_ = _tool_modules(target)
+    tools_ = _shown(_tool_modules(target))
     mod = tools_.get(request.args.get("tool") or "") or (next(iter(tools_.values())) if tools_ else None)
     values = {p["name"]: p.get("default", "") for p in mod.params} if mod else {}
     run = _tool_run_row(target, mod, request.args.get("run", type=int))
@@ -1027,7 +1036,7 @@ def _attack_columns(target):
     columns = []
     for tid, en, ko in TACTICS:
         cells = {}
-        for mod in _modules_for(target).values():
+        for mod in _shown(_modules_for(target)).values():
             for a in mod.attack:
                 if a["tactic"] == tid:
                     cell = cells.setdefault(a["technique"], {"technique": a["technique"], "name": a.get("name", ""),
@@ -1057,7 +1066,7 @@ def scenario():
         found = db.execute(
             "SELECT * FROM findings WHERE target_id = ? AND status IN ('open', 'confirmed') "
             "ORDER BY " + SEVERITY_ORDER_SQL, [target["id"]]).fetchall()
-        rows = board.build(found, list(_modules_for(target).values()), _technique_tactic(),
+        rows = board.build(found, list(_shown(_modules_for(target)).values()), _technique_tactic(),
                            lambda m: module_needs(m, target))
         head = board.summary(rows)
         cands = cve.candidates(db, target, found, current_app.config["PROJECTS_PKG"])

@@ -219,7 +219,9 @@ def test_wordlist_select_honours_module_default(app, client):
 
     # 대상 점검·수집 모듈은 모듈 탭에, 지점 점검 모듈은 표면 탭에 입력칸이 뜬다
     mods = client.get(f"/modules?target={tid}").get_data(as_text=True)
-    assert selected(mods, r'action="[^"]*content_discovery/run".*?</form>').endswith("|web-common.txt")
+    # 표면 수집 폼 안의 '③ 사전' 칸(앞의 '어디까지 할지' 고르는 칸이 아니라)
+    form = re.search(r'id="run-surface_collect".*?</form>', mods, re.S).group(0)
+    assert selected(form[form.index('name="wordlist"'):], r'.*?</select>').endswith("|web-common.txt")
 
     surf = client.get(f"/targets?target={tid}").get_data(as_text=True)
     assert selected(surf, r'data-for="payload_probe".*?</div>').endswith("|payload-reflect.txt")
@@ -297,14 +299,14 @@ def test_run_button_sits_outside_the_folded_body(client, seeded):
     import re
     tid, _ = seeded
     page = client.get(f"/modules?target={tid}").get_data(as_text=True)
-    card = re.search(r'data-mod="surface_crawl".*?</article>', page, re.S).group(0)
+    # 표면 수집은 하나로 묶였다(11-20) — 그 카드 하나로 본다
+    card = re.search(r'data-mod="surface_collect".*?</article>', page, re.S).group(0)
     quick, body = card.split('class="mod-body"', 1)
-    assert 'form="run-surface_crawl"' in quick and ">수집</button>" in quick
-    assert 'id="run-surface_crawl"' in body and "<button" not in body
+    assert 'form="run-surface_collect"' in quick and ">수집</button>" in quick
+    assert 'id="run-surface_collect"' in body and "<button" not in body
     # 능동 모듈의 '자체 환경 확인' 도 접힌 쪽에 있고 같은 폼으로 간다
-    active = re.search(r'data-mod="content_discovery".*?</article>', page, re.S).group(0)
-    assert 'name="confirm" value="yes" form="run-content_discovery"' in active.split('class="mod-body"', 1)[0]
-    probe = re.search(r'data-mod="reflection_check".*?</article>', page, re.S).group(0)
+    assert 'name="confirm" value="yes" form="run-surface_collect"' in quick
+    probe = re.search(r'data-mod="xss_probe".*?</article>', page, re.S).group(0)
     assert "지점 골라 점검" in probe.split('class="mod-body"', 1)[0]
 
 

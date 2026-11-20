@@ -244,3 +244,54 @@ def test_jobs_poll_hands_over_finished_runs_once(app, client, monkeypatch):
     first = client.get(f"/jobs?target={tid}").json["done"]
     assert [j["module_id"] for j in first] == ["sqli_probe"]
     assert client.get(f"/jobs?target={tid}").json["done"] == []      # 한 번만 알린다
+
+
+# ── 표면 수집 하나로(11-20) ──────────────────────────────────────
+
+def test_old_collectors_are_hidden_but_still_runnable(app, client):
+    tid = _seed_points(app, client)                     # surface_import 로 넣는다 — 숨겨도 돈다
+    page = client.get(f"/modules?target={tid}").get_data(as_text=True)
+    assert 'data-mod="surface_collect"' in page
+    for old in ("surface_crawl", "surface_discover", "surface_import", "har_import", "content_discovery"):
+        assert f'data-mod="{old}"' not in page, old
+    with app.app_context():
+        from dashboard.db import get_db
+        assert get_db().execute("SELECT COUNT(*) FROM points WHERE param = 'keyword'").fetchone()[0] == 1
+
+
+def test_surface_collect_reads_pasted_formats(monkeypatch):
+    from modules import surface_collect
+    assert surface_collect.paste_kind('{"log": {"entries": []}}') == "har"
+    assert surface_collect.paste_kind("/admin                (Status: 200) [Size: 10]") == "tool"
+    assert surface_collect.paste_kind("https://sesacedu.store/a?x=1") == "urls"
+    pts = surface_collect.run(T, {"mode": "paste", "paste": "https://sesacedu.store/a?x=1\n/b?y=2"})
+    assert {(p.param) for p in pts} >= {"x", "y"}
+
+
+def test_surface_collect_runs_steps_in_order(monkeypatch):
+    from modules import content_discovery, surface_collect, surface_discover
+    order = []
+    monkeypatch.setattr(surface_discover, "run", lambda t, p: order.append("auto") or [])
+    monkeypatch.setattr(content_discovery, "run", lambda t, p: order.append("hidden") or [])
+    surface_collect.run(T, {"mode": "deep", "paste": "https://sesacedu.store/a?x=1"})
+    assert order == ["auto", "hidden"]
+    order.clear()
+    surface_collect.run(T, {"mode": "auto"})
+    assert order == ["auto"]
+
+
+def test_endpoint_count_leaves_out_missing_paths(app, client):
+    """없는 경로(404·가짜 200)는 엔드포인트 수에서 뺀다 — '30개인데 파라미터 9개' 처럼 부풀었다(11-20)."""
+    from tests.test_app import add_target, target_id
+    from dashboard.db import get_db
+    add_target(client, "https://sesacedu.store", name="사용자 웹")
+    tid = target_id(app, "https://sesacedu.store")
+    with app.app_context():
+        db = get_db()
+        for url, st in (("https://sesacedu.store/ok", "exists"), ("https://sesacedu.store/gone", "not_found")):
+            db.execute("INSERT INTO points (target_id, method, url, param, place, source, first_seen, last_seen, state) "
+                       "VALUES (?, 'GET', ?, '', 'path', 'js', 'x', 'x', ?)", [tid, url, st])
+        db.commit()
+    page = client.get(f"/targets?target={tid}").get_data(as_text=True)
+    assert "<small>엔드포인트</small><strong>1</strong>" in page and "없는 경로 1개는 빼고 셈" in page
+    assert "페이지 1 ·" in page
