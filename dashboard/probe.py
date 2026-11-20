@@ -1,6 +1,8 @@
 """지점 점검 모듈이 같이 쓰는 도구: 값 넣어 보내기, 응답에 어떻게 돌아왔는지 판정."""
+import json
+import re
 import uuid
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from . import core
 
@@ -14,7 +16,16 @@ def marker() -> str:
 
 def send(point, value: str):
     """point.param 자리에 value 를 넣어 보낸다. 같은 요청의 다른 파라미터는 발견 당시 값으로 채운다."""
+    if point.place == "header":
+        return core.fetch(point.url, headers={point.param: value})
+    if point.place == "path":
+        # /lectures/{id} 의 {id} 자리에 넣는다. 다른 경로 변수는 1 로 채운다
+        url = re.sub(r"\{[^}/]+\}", "1", point.url.replace("{" + point.param + "}", quote(value, safe="")))
+        return core.fetch(url)
     fields = {**point.fields, point.param: value}
+    if point.place == "json":
+        return core.fetch(point.url, method=point.method if point.method != "GET" else "POST",
+                          raw_body=json.dumps(fields, ensure_ascii=False).encode())
     if point.place == "form" and point.method == "POST":
         return core.fetch(point.url, method="POST", data=fields)
     return core.fetch(point.url + "?" + urlencode(fields))
@@ -22,6 +33,12 @@ def send(point, value: str):
 
 def request_line(point, value: str) -> str:
     """근거에 남길 요청 한 줄. 다른 파라미터 값은 적지 않는다."""
+    if point.place == "path":
+        return f"GET {point.url.replace('{' + point.param + '}', value)}"
+    if point.place == "header":
+        return f"{point.method} {point.url}  [헤더 {point.param}: {value}]"
+    if point.place == "json":
+        return f"{point.method} {point.url}  [JSON {point.param}={value}]"
     if point.place == "form" and point.method == "POST":
         return f"POST {point.url}  [본문 {point.param}={value}]"
     return f"GET {point.url}?{point.param}={value}"

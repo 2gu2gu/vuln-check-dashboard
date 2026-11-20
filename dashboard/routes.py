@@ -545,11 +545,18 @@ def _save_points(mod, tid, points):
         sample = "" if SECRET_NAME.search(p.param) else p.sample[:200]
         exists = db.execute("SELECT 1 FROM points WHERE target_id = ? AND method = ? AND url = ? AND param = ? AND place = ?",
                             [tid, p.method, p.url, p.param, p.place]).fetchone()
+        # 상태·점수는 새로 확인한 값이 있을 때만 덮는다 — 확인 없이 다시 모은 모듈이 지우지 않게
         db.execute(
-            "INSERT INTO points (target_id, method, url, param, place, sample, source, module_id, first_seen, last_seen) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (target_id, method, url, param, place) DO UPDATE SET "
-            "last_seen = excluded.last_seen, sample = CASE WHEN excluded.sample != '' THEN excluded.sample ELSE sample END",
-            [tid, p.method, p.url, p.param, p.place, sample, p.source, mod.id, now, now])
+            "INSERT INTO points (target_id, method, url, param, place, sample, source, module_id, first_seen, last_seen, "
+            "state, status, evidence, risk) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (target_id, method, url, param, place) DO UPDATE SET "
+            "last_seen = excluded.last_seen, sample = CASE WHEN excluded.sample != '' THEN excluded.sample ELSE sample END, "
+            "state = CASE WHEN excluded.state != '' THEN excluded.state ELSE state END, "
+            "status = CASE WHEN excluded.state != '' THEN excluded.status ELSE status END, "
+            "evidence = CASE WHEN excluded.evidence != '' THEN excluded.evidence ELSE evidence END, "
+            "risk = CASE WHEN excluded.state != '' THEN excluded.risk ELSE risk END",
+            [tid, p.method, p.url, p.param, p.place, sample, p.source, mod.id, now, now,
+             p.state, p.status, p.evidence[:1000], p.risk])
         new += not exists
     return new, skipped
 

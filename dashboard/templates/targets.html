@@ -197,7 +197,7 @@
         <td><input type="checkbox" name="point" value="{{ p.id }}" aria-label="{{ gr.path }} {{ p.param }} 선택"></td>
         <td class="mono sub">{{ p.method }}</td>
         <td class="mono">{{ p.param }}</td>
-        <td class="sub">{{ {"query": "쿼리", "form": "폼 본문", "path": "경로"}[p.place] }}</td>
+        <td class="sub">{{ {"query": "쿼리", "form": "폼 본문", "path": "경로", "json": "JSON 본문", "header": "헤더"}.get(p.place, p.place) }}</td>
         <td class="mono sub loc" title="{{ p.sample }}">{{ p.sample }}</td>
         <td class="sub">{{ p.source }}</td>
         <td>{% for c in p.checks %}
