@@ -654,6 +654,18 @@
       boxes.forEach(function (b) { if (b.checked) n++; });
       picked.textContent = n + "개 선택";
     };
+    // 추천 점검 칩: 그 지점을 고르고, 점검 모듈을 추천한 것으로 맞춘 뒤 점검 막대로 간다
+    probeForm.querySelectorAll(".sg[data-mod]").forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        var box = probeForm.querySelector('input[name=point][value="' + chip.dataset.point + '"]');
+        if (box) box.checked = true;
+        var sel = document.getElementById("probe-module");
+        if (sel) { sel.value = chip.dataset.mod; sel.dispatchEvent(new Event("change")); }
+        count();
+        var bar = probeForm.querySelector(".probe-bar");
+        if (bar) bar.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    });
     document.getElementById("pick-all").addEventListener("change", function (e) {
       boxes.forEach(function (b) { b.checked = e.target.checked; });
       count();

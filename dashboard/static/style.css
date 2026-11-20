@@ -651,6 +651,34 @@ html { scroll-behavior: smooth; }
 .mod-quick label.check { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .mod-quick .btn[disabled] { opacity: .45; cursor: not-allowed; }
 
+/* ── 표면: 확인 상태·위험 점수·추천 점검(11-20 표면 자동 수집 2단계) ── */
+.sf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 10px; }
+.sf-bar .sf-gap { margin-left: 14px; }
+.ep-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.st { display: inline-block; font-size: 12px; font-weight: 600; padding: 0 7px; border-radius: 4px;
+      border: 1px solid currentColor; white-space: nowrap; color: var(--sub); }
+.st b { font-family: var(--mono); font-weight: 500; }
+.st-exists { color: var(--accent); background: var(--accent-soft); }
+.st-auth_required { color: var(--sev-medium); }
+.st-method_mismatch, .st-redirect { color: var(--sev-low); }
+.st-server_error { color: var(--sev-high); background: var(--hit-soft); }
+.st-not_found, .st-soft_404, .st-unverified { color: var(--sub); border-style: dashed; }
+.risk { position: relative; display: inline-flex; align-items: center; font-size: 12px; font-weight: 600;
+        min-width: 74px; padding: 0 7px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.risk i { position: absolute; left: 0; top: 0; bottom: 0; opacity: .22; }
+.risk.r-hi { color: var(--sev-high); } .risk.r-hi i { background: var(--sev-high); }
+.risk.r-mid { color: var(--sev-medium); } .risk.r-mid i { background: var(--sev-medium); }
+.risk.r-lo { color: var(--sev-low); } .risk.r-lo i { background: var(--sev-low); }
+.ep-ev { margin-top: 4px; }
+.ep-ev summary { cursor: pointer; }
+.ep-ev dl { margin: 6px 0 0; }
+.ep-ev ul { margin: 2px 0 6px; padding-left: 18px; }
+.sg-cell { white-space: nowrap; }
+.sg { display: inline-block; font: inherit; font-size: 12px; padding: 1px 8px; margin: 1px 4px 1px 0; border-radius: 999px;
+      border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
+.sg:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+.sg.none { color: var(--sub); border-style: dashed; cursor: help; }
+
 /* ── 수사보드 캠페인 (왼쪽 후보 · 오른쪽 보드) ───────────────── */
 .cp-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 14px; }
 .cp-pick { display: flex; align-items: center; gap: 8px; font-weight: 600; }

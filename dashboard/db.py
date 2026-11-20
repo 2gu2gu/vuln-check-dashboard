@@ -159,6 +159,11 @@ MIGRATIONS = [
     ("runs", "message", "TEXT NOT NULL DEFAULT ''"),
     # 도구도 뒤에서 돈다 — 화면에 그릴 결과(표·내용)를 끝난 뒤 다시 열 수 있게 남긴다
     ("runs", "result", "TEXT"),
+    # 표면 자동 수집 — 있는지 확인한 결과와 위험 점수(11-20)
+    ("points", "state", "TEXT NOT NULL DEFAULT ''"),
+    ("points", "status", "INTEGER NOT NULL DEFAULT 0"),
+    ("points", "evidence", "TEXT NOT NULL DEFAULT ''"),
+    ("points", "risk", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

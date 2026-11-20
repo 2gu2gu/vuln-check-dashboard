@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify, redirect,
                    render_template, request, url_for)
 
-from . import board, campaign, cve, cvss, grouping, jobs, login as login_mod, needs, runfiles, scope, stats, wordlists
+from . import board, campaign, cve, cvss, discovery as dv, grouping, jobs, login as login_mod, needs, runfiles, scope, stats, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -269,14 +269,16 @@ def targets():
     # 페이지·파라미터와 지점 점검이 목록 아래에 뜬다.
     # ?target= 로 누른 대상만 펼친다. 처음 열면 목록만 보인다.
     picked = target if request.args.get("target", type=int) and target else None
-    groups, totals = _surface_of(picked)
+    groups, totals = _surface_of(picked, sort=request.args.get("sort", ""), state=request.args.get("state", ""),
+                                 show_all=request.args.get("show") == "all")
     point_counts = {row["target_id"]: {"pages": row["pages"], "params": row["params"]} for row in get_db().execute(
         "SELECT target_id, COUNT(DISTINCT url) AS pages, SUM(param != '') AS params FROM points GROUP BY target_id")}
     return render_template("targets.html", target=target, targets=targets, picked=picked, point_counts=point_counts,
                            header_names=names, header_text=header_text, logins=logins,
                            groups=groups, totals=totals, probes=_probe_modules(target),
                            collectors=[m for m in _modules_for(target).values() if m.stage == "collect"],
-                           verdicts=VERDICTS)
+                           verdicts=VERDICTS, states=dv.STATES, source_label=dv.SOURCE_LABEL, args=request.args,
+                           surl=_surface_link(target))
 
 
 @bp.post("/targets/<int:tid>/delete")
@@ -552,11 +554,18 @@ def _save_points(mod, tid, points):
         sample = "" if SECRET_NAME.search(p.param) else p.sample[:200]
         exists = db.execute("SELECT 1 FROM points WHERE target_id = ? AND method = ? AND url = ? AND param = ? AND place = ?",
                             [tid, p.method, p.url, p.param, p.place]).fetchone()
+        # 상태·점수는 새로 확인한 값이 있을 때만 덮는다 — 확인 없이 다시 모은 모듈이 지우지 않게
         db.execute(
-            "INSERT INTO points (target_id, method, url, param, place, sample, source, module_id, first_seen, last_seen) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (target_id, method, url, param, place) DO UPDATE SET "
-            "last_seen = excluded.last_seen, sample = CASE WHEN excluded.sample != '' THEN excluded.sample ELSE sample END",
-            [tid, p.method, p.url, p.param, p.place, sample, p.source, mod.id, now, now])
+            "INSERT INTO points (target_id, method, url, param, place, sample, source, module_id, first_seen, last_seen, "
+            "state, status, evidence, risk) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (target_id, method, url, param, place) DO UPDATE SET "
+            "last_seen = excluded.last_seen, sample = CASE WHEN excluded.sample != '' THEN excluded.sample ELSE sample END, "
+            "state = CASE WHEN excluded.state != '' THEN excluded.state ELSE state END, "
+            "status = CASE WHEN excluded.state != '' THEN excluded.status ELSE status END, "
+            "evidence = CASE WHEN excluded.evidence != '' THEN excluded.evidence ELSE evidence END, "
+            "risk = CASE WHEN excluded.state != '' THEN excluded.risk ELSE risk END",
+            [tid, p.method, p.url, p.param, p.place, sample, p.source, mod.id, now, now,
+             p.state, p.status, p.evidence[:1000], p.risk])
         new += not exists
     return new, skipped
 
@@ -620,11 +629,35 @@ def _probe_modules(target):
     return {k: m for k, m in _modules_for(target).items() if m.stage == "probe"}
 
 
-def _surface_of(target):
-    """대상 하나가 모은 지점을 주소별로 묶는다 → (묶음 목록, 개수)."""
-    groups, totals = [], {"endpoints": 0, "params": 0, **{v: 0 for v in VERDICTS}}
+MISSING = ("not_found", "soft_404")
+
+
+def _suggest_modules(target):
+    """추천 점검 키 → 이 대상에서 쓸 수 있는 모듈 [(id, 이름, 단계)]. 없으면 빈 목록."""
+    mods = _modules_for(target).values()
+    want = {"INJECT": lambda m: m.stage == "probe" and (getattr(m, "vuln", "") in ("XSS", "SQL") or m.id == "payload_probe"),
+            "FILE": lambda m: getattr(m, "vuln", "") == "FILE" and m.stage in ("probe", "tool")}
+    return {k: [(m.id, m.name, m.stage) for m in mods if f(m)] for k, f in want.items()}
+
+
+def _evidence(text):
+    try:
+        ev = json.loads(text or "")
+        return ev if isinstance(ev, dict) else None
+    except ValueError:
+        return None
+
+
+def _surface_of(target, sort="", state="", show_all=False):
+    """대상 하나가 모은 지점을 주소별로 묶는다 → (묶음 목록, 개수).
+
+    표면 자동 수집이 남긴 상태·점수·근거를 묶음마다 붙이고(11-20 2단계), 고른 대로 거르고 줄 세운다.
+    없는 경로(404·가짜 200)는 기본으로 숨긴다 — 보이면 '찔러 볼 곳' 처럼 읽힌다.
+    """
+    groups, totals = [], {"endpoints": 0, "params": 0, "hidden": 0, **{v: 0 for v in VERDICTS}}
     if not target:
         return groups, totals
+    suggest_mods = _suggest_modules(target)
     db = get_db()
     checks = {}
     for c in db.execute("SELECT pc.* FROM point_checks pc JOIN points p ON p.id = pc.point_id WHERE p.target_id = ?",
@@ -633,20 +666,50 @@ def _surface_of(target):
     by_url = {}
     for p in db.execute("SELECT * FROM points WHERE target_id = ? ORDER BY url, method, place, param", [target["id"]]):
         grp = by_url.setdefault(p["url"], {"url": p["url"], "path": urlsplit(p["url"]).path or "/",
-                                           "methods": set(), "sources": set(), "params": []})
+                                           "methods": set(), "sources": set(), "params": [], "ends": [], "risk": 0})
         grp["methods"].add(p["method"])
-        grp["sources"].add(p["source"])
-        if p["param"]:
-            grp["params"].append({**dict(p), "checks": [
-                {"module": _modules()[c["module_id"]].name if c["module_id"] in _modules() else c["module_id"],
-                 "verdict": c["verdict"], "evidence": c["evidence"], "exchange_id": c["exchange_id"]}
-                for c in checks.get(p["id"], [])]})
-            totals["params"] += 1
-            for c in checks.get(p["id"], []):
-                totals[c["verdict"]] += 1
+        grp["sources"].update(s for s in p["source"].split(",") if s)
+        grp["risk"] = max(grp["risk"], p["risk"] or 0)
+        if not p["param"]:
+            if p["state"]:
+                grp["ends"].append({"method": p["method"], "state": p["state"], "status": p["status"],
+                                    "risk": p["risk"], "ev": _evidence(p["evidence"])})
+            continue
+        grp["params"].append({**dict(p), "suggest": [
+            {"key": k, "label": dv.SUGGEST_LABEL[k], "modules": suggest_mods.get(k, [])}
+            for k in dv.suggest(p["param"], p["place"])], "checks": [
+            {"module": _modules()[c["module_id"]].name if c["module_id"] in _modules() else c["module_id"],
+             "verdict": c["verdict"], "evidence": c["evidence"], "exchange_id": c["exchange_id"]}
+            for c in checks.get(p["id"], [])]})
+        totals["params"] += 1
+        for c in checks.get(p["id"], []):
+            totals[c["verdict"]] += 1
     groups = list(by_url.values())
     totals["endpoints"] = len(groups)
-    return groups, totals
+    keep = []
+    for gr in groups:
+        states = {e["state"] for e in gr["ends"]}
+        gr["missing"] = bool(states) and states <= set(MISSING)
+        if state and state not in states:
+            continue
+        if gr["missing"] and not show_all and state not in MISSING:
+            totals["hidden"] += 1
+            continue
+        keep.append(gr)
+    totals["states"] = sorted({e["state"] for gr in groups for e in gr["ends"]}, key=list(dv.STATES).index)
+    if sort == "risk" or (not sort and any(gr["risk"] for gr in keep)):
+        keep.sort(key=lambda gr: (-gr["risk"], gr["path"]))
+    return keep, totals
+
+
+def _surface_link(target):
+    """지금 고른 거르기 값을 지키며 하나만 바꾼 대상 탭 주소를 만든다(빈 값은 뺀다)."""
+    def link(over):
+        keep = {k: v for k, v in request.args.items() if k != "target"}
+        keep.update(over)
+        return url_for("dash.targets", target=target["id"] if target else None,
+                       **{k: v for k, v in keep.items() if v}) + "#surface"
+    return link
 
 
 def _surface_url(tid):
