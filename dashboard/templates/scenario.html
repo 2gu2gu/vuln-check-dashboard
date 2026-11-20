@@ -3,79 +3,279 @@
 {% block title %}수사보드{% endblock %}
 {% block content %}
 <h1>수사보드</h1>
-<p class="lead">전술을 공격 진행 순서로 세웠습니다. 칸마다
-  <b class="bd-k-done">확인됨</b>(실제로 돌려서 나온 것)과
-  <b class="bd-k-todo">제안</b>(그 전술을 다루는데 아직 안 돌린 모듈)을 <b>따로</b> 담습니다 —
-  섞어 두면 발표에서 "이건 실제로 한 건가요?" 에 답을 못 합니다.</p>
+
+<nav class="tabs" role="tablist" aria-label="수사보드 화면">
+  <a href="#board" role="tab" class="tab" data-tab="board">수사보드</a>
+  <a href="#matrix" role="tab" class="tab" data-tab="matrix">ATT&amp;CK 매트릭스</a>
+</nav>
+
+<section id="board" class="tab-panel" role="tabpanel">
+<p class="lead">왼쪽 <b>후보</b>에서 끌어다 오른쪽 <b>캠페인 보드</b>의 전술 열에 놓고, 노드 오른쪽 점을 끌어 다음 노드로 잇습니다.
+  후보는 대시보드가 늘어놓는 재료이고, 보드에는 <b>팀이 고른 것만</b> 올라갑니다.
+  CVE 는 버전이 맞는다는 뜻일 뿐이라 팀이 확인하기 전까지 <b>추정</b>입니다.</p>
 
 {% if not target %}
   {{ empty("대상을 먼저 고르세요", "수사보드는 대상 하나의 진행을 보여 줍니다.", url_for('dash.targets'), "대상 등록") }}
-{% elif not rows %}
-  {{ empty("아직 아무것도 없습니다", "모듈을 하나 돌리면 여기에 흐름이 생깁니다.", url_for('dash.modules', target=target.id), "모듈로 가기") }}
 {% else %}
 
-<div class="panel bd-head">
-  <div>
-    <b>{{ head.done }}</b> / {{ head.tactics }} 전술에서 결과가 나왔습니다
-    {%- if head.last %} · 가장 멀리 간 곳 <b>{{ head.last }}</b>{% endif %}
+{# ── 캠페인 고르기 · 만들기 ── #}
+<div class="cp-bar panel">
+  {% if campaigns %}
+  <label class="cp-pick">캠페인
+    <select id="cp-pick">
+      {% for c in campaigns %}
+      <option value="{{ url_for('dash.scenario', target=target.id, campaign=c.id) }}#board" {{ 'selected' if current and current.id == c.id }}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if current and current.goal %}<span class="sub">목표 <b>{{ current.goal }}</b></span>{% endif %}
+  {% endif %}
+  <details class="cp-new" {{ 'open' if not campaigns }}>
+    <summary class="btn ghost">새 캠페인</summary>
+    <form method="post" action="{{ url_for('dash.campaign_create') }}" class="cp-new-form">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="target_id" value="{{ target.id }}">
+      <input name="name" placeholder="이름 (예: S1 웹에서 관리자까지)" required maxlength="80">
+      <input name="goal" placeholder="목표 (예: 관리자 권한, 학생 DB)" maxlength="200">
+      <button class="btn">만들기</button>
+    </form>
+  </details>
+  {% if current %}
+  <form method="post" action="{{ url_for('dash.campaign_delete', cid=current.id) }}" class="cp-del"
+        data-confirm="캠페인 '{{ current.name }}' 과 그 노드·선을 모두 지울까요? 결과는 남습니다.">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <button class="btn ghost">캠페인 지우기</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="cp-shell">
+{# ── 왼쪽: 후보 ── #}
+<aside class="cp-cands" aria-label="후보">
+  {% if head %}
+  <div class="cp-sum sub small"><b>{{ head.done }}</b> / {{ head.tactics }} 전술에서 결과
+    {%- if head.next %} · 다음으로 해 볼 곳 <b>{{ head.next }}</b>{% endif %}</div>
+  {% endif %}
+
+  {# 용도로 나눈 후보 탭 — 무엇을 찾고 있는지에 따라 고른다. 같은 결과는 한 줄로 묶는다. #}
+  {% set recon = rows | selectattr('tactic', 'equalto', 'TA0043') | list %}
+  {% set attack_rows = rows | rejectattr('tactic', 'equalto', 'TA0043') | list %}
+  {% set n_clue = cands.observed | length + (recon | map(attribute='found') | map('groupby', 'title') | map('list') | map('length') | sum) %}
+  {% set n_weapon = cands.team | length + (cands.observed | map(attribute='cves', default=[]) | map('length') | sum) + (attack_rows | map(attribute='found') | map('groupby', 'title') | map('list') | map('length') | sum) %}
+  {% set n_next = rows | map(attribute='suggest') | map('length') | sum %}
+  <div class="cp-find">
+    <input type="search" id="cp-q" placeholder="후보 찾기 (예: tomcat, SQL, 9.8)" aria-label="후보 찾기">
   </div>
-  {% if head.next %}
-  <div class="sub">다음으로 해 볼 곳 <b>{{ head.next }}</b>
-    {%- if head.next_mods %} — {{ head.next_mods | join(' · ') }}{% endif %}</div>
-  {% endif %}
-  {% if head.blocked %}
-  <div class="sub bd-k-blocked">준비가 안 돼 못 돌리는 모듈 {{ head.blocked }}개 — 칸 안에 이유가 적혀 있습니다</div>
-  {% endif %}
-</div>
+  <nav class="cp-ctabs" role="tablist" aria-label="후보 종류">
+    <button type="button" role="tab" data-ctab="clue" title="밖에서 알아낸 것 — 버전·배너·노출된 정보">단서 <span>{{ n_clue }}</span></button>
+    <button type="button" role="tab" data-ctab="weapon" title="들어가는 데 쓸 것 — CVE 와 확인된 취약점">침투 수단 <span>{{ n_weapon }}</span></button>
+    <button type="button" role="tab" data-ctab="next" title="아직 안 돌린 모듈">다음 시도 <span>{{ n_next }}</span></button>
+    <button type="button" role="tab" data-ctab="manual" title="딸깍이 밖에서 한 단계">직접 추가</button>
+  </nav>
 
-<div class="board">
-{% for r in rows %}
-  <section class="bd-col {{ 'on' if r.done }}">
-    <header class="bd-col-head">
-      <span class="bd-step">{{ loop.index }}</span>
-      <b>{{ r.name }}</b>
-      <span class="sub mono small">{{ r.tactic }}</span>
-    </header>
-
-    {% if r.found %}
-    <div class="bd-group">
-      <div class="bd-kind bd-k-done">확인됨 {{ r.found | length }}</div>
-      {% for f in r.found %}
-      <a class="bd-card done" href="{{ url_for('dash.results', target=target.id, severity=f.severity) }}">
-        <div class="bd-card-top">{{ sev(f.severity) }}
-          <span class="sub mono small">{{ f.technique }}</span></div>
-        <div class="bd-card-title">{{ f.title }}</div>
-        <div class="sub small mono bd-loc">{{ f.location }}</div>
-        {% if f.cvss_vector %}<div class="sub small">{{ f.cvss_vector }}</div>{% endif %}
-      </a>
-      {% endfor %}
+  {# ── 단서: 관찰한 버전 + 정찰 결과 ── #}
+  <div class="cp-cpanel" data-cpanel="clue">
+    <div class="cp-sub">관찰한 버전 — 끌어다 놓으면 정찰 열에, CVE 는 '침투 수단' 에서</div>
+    {% for o in cands.observed %}
+    <div class="cp-cand" draggable="true" data-kind="observed" data-ref="{{ o.product }} {{ o.version }}"
+         data-tactic="TA0043" data-title="{{ o.product }} {{ o.version }}" data-sub="{{ o.title }} · {{ o.location }}" data-status="확인">
+      <span class="cp-k">버전</span> <b>{{ o.product }} {{ o.version }}</b>
+      {% if o.distro %}<span class="sub small">({{ o.distro }})</span>{% endif %}
+      {% if o.asked %}<span class="sub small">· CVE {{ o.cves | length }}</span>{% endif %}
+      <div class="sub small cp-loc">{{ o.location }}</div>
+      {% if o.distro %}<div class="small cp-warn">배포판 패키지는 번호를 그대로 두고 패치만 넣기도 합니다</div>{% endif %}
     </div>
+    {% else %}
+    <p class="sub small">버전이 보이는 결과가 없습니다. 모듈 탭에서 '서버 정보 노출' 을 돌리면 생깁니다.</p>
+    {% endfor %}
+
+    {% for r in recon if r.found %}
+    <div class="cp-sub">정찰 결과 — 같은 제목은 한 줄로 묶었습니다</div>
+    {% for g in r.found | groupby('title') %}
+    {% set f = g.list[0] %}
+    <div class="cp-cand" draggable="true" data-kind="finding" data-ref="{{ f.id }}" data-tactic="{{ r.tactic }}"
+         data-title="{{ g.grouper }}" data-sub="{{ f.location }}{{ ' 외 ' ~ (g.list | length - 1) ~ '곳' if g.list | length > 1 }}"
+         data-status="{{ '확인' if f.status == 'confirmed' else '미확인' }}">
+      {{ sev(f.severity) }} <b>{{ g.grouper }}</b>{% if g.list | length > 1 %} <span class="cp-tag">{{ g.list | length }}곳</span>{% endif %}
+      <div class="sub small cp-loc">{{ f.location }}</div>
+    </div>
+    {% endfor %}
+    {% endfor %}
+  </div>
+
+  {# ── 침투 수단: 팀 CVE → NVD CVE(걸러서) → 정찰 밖의 확인된 결과 ── #}
+  <div class="cp-cpanel" data-cpanel="weapon" hidden>
+    {% if cands.team %}
+    <div class="cp-sub">팀이 다룬 CVE</div>
+    {% for c in cands.team %}
+    <div class="cp-cand cp-cve" draggable="true" data-kind="cve" data-ref="{{ c.id or c.name }}" data-tactic="{{ c.tactic }}"
+         data-title="{{ c.id or c.name }}" data-sub="{{ c.name }} · {{ c.product }} {{ c.version }}" data-status="{{ c.status }}"
+         data-note="{{ c.doc }}">
+      <b class="mono">{{ c.id or '번호 없음' }}</b>
+      <span class="cp-st" data-st="{{ c.status }}">{{ c.status }} {{ c.date }}</span>
+      <span class="cp-tag {{ 'seen' if c.seen else 'inside' }}" title="{{ '배너·오류 페이지로 밖에서 버전이 보인다' if c.seen else 'SBOM 등 안쪽 정보로만 안다 — 레드팀은 밖에서 몰랐을 것' }}">{{ '밖에서 보임' if c.seen else '안쪽 정보' }}</span>
+      <div class="small">{{ c.name }}</div>
+      <div class="sub small">{{ c.product }} {{ c.version }} — {{ c.note }}</div>
+    </div>
+    {% endfor %}
     {% endif %}
 
-    {% if r.suggest %}
-    <div class="bd-group">
-      <div class="bd-kind bd-k-todo">제안 {{ r.suggest | length }} <span class="sub">— 아직 안 돌린 모듈</span></div>
-      {% for s in r.suggest %}
-      <a class="bd-card todo {{ s.state }}"
-         href="{{ url_for('dash.targets' if s.mod.stage == 'probe' else ('dash.tools' if s.mod.stage == 'tool' else 'dash.modules'),
-                          target=target.id, tool=s.mod.id if s.mod.stage == 'tool' else none) }}">
-        <div class="bd-card-top">
-          <span class="stage stage-{{ s.mod.stage }}">{{ s.stage }}</span>
-          {% if s.mod.vuln and s.mod.vuln != '기타' %}<span class="sub small">{{ s.mod.vuln }}</span>{% endif %}
-        </div>
-        <div class="bd-card-title">{{ s.mod.name }}</div>
-        {% if s.why %}<div class="sub small bd-why">{{ s.why }}</div>
-        {% else %}<div class="sub small">여기서 바로 돌릴 수 있습니다 →</div>{% endif %}
-      </a>
-      {% endfor %}
+    <div class="cp-sub cp-sub-row">버전으로 찾은 CVE (NVD)
+      {% if cands.observed %}
+      <form method="post" action="{{ url_for('dash.cve_nvd') }}" class="cp-nvd">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="target_id" value="{{ target.id }}">
+        {% if current %}<input type="hidden" name="campaign" value="{{ current.id }}">{% endif %}
+        <button class="btn ghost" title="services.nvd.nist.gov 에 제품·버전만 보냅니다. 받은 것은 저장해 둡니다">
+          {{ 'NVD 다시 찾기' if cands.asked else 'NVD 에서 찾기' }}</button>
+      </form>
+      {% endif %}
+    </div>
+    {% if cands.asked %}
+    <div class="cp-chips" role="group" aria-label="CVE 거르기">
+      <button type="button" class="on" data-cvefilter="2" title="팀이 다룬 것과 CISA 가 실제 악용을 확인한 것(KEV)">팀·실제 악용</button>
+      <button type="button" data-cvefilter="1" title="위에 더해 CVSS 9.0 이상">+ 9.0 이상</button>
+      <button type="button" data-cvefilter="0">전부</button>
     </div>
     {% endif %}
-  </section>
-{% endfor %}
-</div>
+    {% for o in cands.observed if o.asked %}
+    <details class="cp-cves" open>
+      <summary class="small"><b>{{ o.product }} {{ o.version }}</b> — {{ o.cves | length }}개
+        <span class="sub">(NVD {{ o.asked_at | kst }})</span></summary>
+      {% for c in o.cves %}
+      {% set hot = 2 if (c.team or c.kev) else (1 if (c.score or 0) >= 9 else 0) %}
+      <div class="cp-cand cp-cve" draggable="true" data-kind="cve" data-ref="{{ c.id }}" data-tactic="TA0001"
+           data-title="{{ c.id }}" data-sub="{{ o.product }} {{ o.version }}{{ ' · CVSS ' ~ c.score if c.score }}" data-status="{{ c.status }}"
+           data-hot="{{ hot }}" title="{{ c.summary }}">
+        <a class="mono" href="https://nvd.nist.gov/vuln/detail/{{ c.id }}" target="_blank" rel="noopener" draggable="false">{{ c.id }}</a>
+        {% if c.score %}<span class="cp-score">{{ c.score }}</span>{% endif %}
+        {% if c.kev %}<span class="cp-tag kev" title="CISA 가 실제 악용을 확인한 목록(KEV)에 있음">실제 악용</span>{% endif %}
+        <span class="cp-st" data-st="{{ c.status }}">{{ '팀 ' if c.team }}{{ c.status }}</span>
+        <div class="sub small cp-sum-line">{{ c.summary }}</div>
+      </div>
+      {% endfor %}
+      <p class="sub small cp-hidden-note"></p>
+    </details>
+    {% else %}
+    <p class="sub small">{{ "'NVD 에서 찾기' 를 누르면 관찰한 버전의 CVE 가 여기에 옵니다." if cands.observed else "관찰한 버전이 없어 찾을 것이 없습니다." }}</p>
+    {% endfor %}
 
-<p class="sub small bd-note">전술 순서는 ATT&amp;CK 의 것이고, 각 칸의 모듈은 그 모듈이 <code>META["attack"]</code> 에
-  직접 적어 둔 전술로 들어갑니다. <b>"이 기법 다음엔 저 기법" 같은 연결은 쓰지 않습니다</b> —
-  그 데이터를 갖고 있지 않아 지어내게 됩니다. 실제 시나리오는 팀이 이 흐름을 보고 정합니다.</p>
+    {% set has_hits = attack_rows | selectattr('found') | list %}
+    {% if has_hits %}
+    <div class="cp-sub">확인된 취약점 (정찰 밖)</div>
+    {% for r in has_hits %}
+    {% for g in r.found | groupby('title') %}
+    {% set f = g.list[0] %}
+    <div class="cp-cand" draggable="true" data-kind="finding" data-ref="{{ f.id }}" data-tactic="{{ r.tactic }}"
+         data-title="{{ g.grouper }}" data-sub="{{ f.location }}{{ ' 외 ' ~ (g.list | length - 1) ~ '곳' if g.list | length > 1 }}"
+         data-status="{{ '확인' if f.status == 'confirmed' else '미확인' }}">
+      {{ sev(f.severity) }} <b>{{ g.grouper }}</b> <span class="sub small">{{ r.name }}</span>
+      {% if g.list | length > 1 %}<span class="cp-tag">{{ g.list | length }}곳</span>{% endif %}
+      <div class="sub small cp-loc">{{ f.location }}</div>
+    </div>
+    {% endfor %}
+    {% endfor %}
+    {% endif %}
+  </div>
+
+  {# ── 다음 시도: 안 돌린 모듈, 바로 돌릴 수 있는 것부터 ── #}
+  <div class="cp-cpanel" data-cpanel="next" hidden>
+    {% for r in rows if r.suggest %}
+    <div class="cp-sub">{{ r.name }}</div>
+    {% for s in r.suggest | sort(attribute='state', reverse=true) %}
+    <div class="cp-cand todo" draggable="true" data-kind="module" data-ref="{{ s.mod.id }}" data-tactic="{{ r.tactic }}"
+         data-title="{{ s.mod.name }}" data-sub="{{ s.why or s.stage }}" data-status="미확인">
+      <span class="stage stage-{{ s.mod.stage }}">{{ s.stage }}</span> <b>{{ s.mod.name }}</b>
+      {% if s.why %}<div class="sub small bd-why">{{ s.why }}</div>{% endif %}
+    </div>
+    {% endfor %}
+    {% else %}<p class="sub small">안 돌린 모듈이 없습니다.</p>
+    {% endfor %}
+  </div>
+
+  {# ── 직접 추가: 딸깍이 밖에서 한 단계 ── #}
+  <div class="cp-cpanel" data-cpanel="manual" hidden>
+    <p class="sub small">딸깍이 밖에서 한 단계를 올립니다. 자주 쓰는 것을 누르면 칸이 채워집니다. 근거 문서 경로를 적어 두세요.</p>
+    <div class="cp-presets">
+      {% for t, tac in [("리버스 셸 획득", "TA0002"), ("웹셸 업로드·실행", "TA0003"), ("TTY 셸 안정화", "TA0002"),
+                        ("자격증명 파일 읽기 (api.env 등)", "TA0006"), ("JWT 토큰 위조", "TA0006"), ("권한 상승", "TA0004"),
+                        ("C2 임플란트 설치", "TA0011"), ("크론탭 지속성", "TA0003"), ("내부 서버로 이동", "TA0008"),
+                        ("DB 백업·덤프", "TA0009"), ("데이터 반출", "TA0010")] %}
+      <button type="button" class="cp-preset" data-title="{{ t }}" data-tactic="{{ tac }}">{{ t }}</button>
+      {% endfor %}
+    </div>
+    <form class="cp-manual" id="cp-manual">
+      <input name="title" placeholder="무엇을 했나 (예: 리버스 셸 uid=tomcat)" required maxlength="200">
+      <select name="tactic">
+        {% for tid, en, ko in tactics %}<option value="{{ tid }}" {{ 'selected' if tid == 'TA0002' }}>{{ ko }} · {{ tid }}</option>{% endfor %}
+      </select>
+      <select name="status">
+        {% for st in ('확인', '코드 확인', '추정', '미확인') %}<option>{{ st }}</option>{% endfor %}
+      </select>
+      <input name="note" placeholder="근거 문서 (예: 08_모의해킹/log4shell/README.md)" maxlength="500">
+      <button class="btn" {{ 'disabled' if not current }}>보드에 올리기</button>
+      {% if not current %}<span class="sub small">캠페인을 먼저 만드세요</span>{% endif %}
+    </form>
+  </div>
+  <p class="sub small cp-empty-q" hidden>찾는 후보가 이 탭에 없습니다. 다른 탭도 보세요.</p>
+</aside>
+
+{# ── 오른쪽: 캠페인 보드 ── #}
+<div class="cp-main">
+  {% if not current %}
+  <div class="empty panel">
+    <b>캠페인을 만들면 여기에 보드가 생깁니다</b>
+    <p class="sub">한 캠페인 = 목표 하나까지 가는 길 하나. 예: "S1 웹에서 관리자까지", "S2 Log4Shell 에서 DB 까지".</p>
+  </div>
+  {% else %}
+  <div class="cp-scroll">
+    <div class="cp-canvas" id="cp-canvas">
+      {% for tid, en, ko in tactics %}
+      <section class="cp-col" data-tactic="{{ tid }}">
+        <header><b>{{ ko }}</b><small class="mono">{{ tid }}</small></header>
+        <div class="cp-drop" data-tactic="{{ tid }}"></div>
+      </section>
+      {% endfor %}
+      <svg class="cp-lines" id="cp-lines" aria-hidden="true">
+        <defs><marker id="cp-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0L10 5L0 10z"/></marker></defs>
+      </svg>
+      <div class="cp-labels" id="cp-labels"></div>
+    </div>
+  </div>
+  <p class="sub small bd-note">빈 전술 열은 흐리게 보입니다. 끄는 동안 보드 왼쪽·오른쪽 가장자리로 가면 보드가 밀립니다.
+    선 위 글자는 <b>앞 단계에서 얻어 다음 단계에 넘긴 것</b>(JWT_SECRET, ADMIN 토큰 …)을 적는 자리입니다 — 눌러서 고칩니다.
+    "이 기법 다음엔 저 기법" 같은 연결을 대시보드가 지어내지 않습니다. 선은 팀이 긋는 것만 있습니다.</p>
+  <script type="application/json" id="cp-state">{{ current | tojson }}</script>
+  <script type="application/json" id="cp-urls">{{ {"base": url_for('dash.campaign_node_add', cid=current.id)[:-6]} | tojson }}</script>
+  {% endif %}
+</div>
+</div>
 {% endif %}
+</section>
+
+<section id="matrix" class="tab-panel" role="tabpanel">
+<p class="lead">모듈이 다루는 기법만 칸으로 보입니다.
+  <span class="legend"><i class="cell-dot"></i>모듈 있음</span>
+  <span class="legend"><i class="cell-dot hit"></i>이 대상에서 발견됨</span></p>
+
+<div class="matrix">
+  {% for c in columns %}
+  <section class="col {{ 'empty-col' if not c.cells }}">
+    <header><b>{{ c.ko }}</b><small>{{ c.en }}</small><small class="mono">{{ c.id }}</small></header>
+    {% for cell in c.cells %}
+    <a class="cell {{ 'hit' if cell.hit }}" href="{{ cell.url }}" target="_blank" rel="noopener"
+       title="{{ cell.modules | join(', ') }}">
+      <span class="mono">{{ cell.technique }}</span>
+      <span>{{ cell.name }}</span>
+      <small>{{ cell.modules | length }}개 모듈{{ " · 발견" if cell.hit }}</small>
+    </a>
+    {% else %}
+    <p class="col-empty">—</p>
+    {% endfor %}
+  </section>
+  {% endfor %}
+</div>
+</section>
+<script src="{{ url_for('static', filename='campaign.js') }}"></script>
 {% endblock %}

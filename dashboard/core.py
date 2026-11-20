@@ -45,7 +45,7 @@ class Finding:
             raise ValueError(f"알 수 없는 심각도: {self.severity}")
 
 
-PLACES = ("path", "query", "form")  # 엔드포인트만 / URL 쿼리 / POST 폼 본문
+PLACES = ("path", "query", "form", "json", "header")  # 엔드포인트만 / URL 쿼리 / 폼 본문 / JSON 본문 / 요청 헤더
 
 
 @dataclass
@@ -56,8 +56,13 @@ class Point:
     param: str = ""          # 비면 엔드포인트만
     place: str = "path"      # path / query / form
     sample: str = ""         # 발견 당시 값 — 같은 요청의 다른 파라미터를 채울 때 쓴다
-    source: str = ""         # link / form / js / import
+    source: str = ""         # link / form / js / import / spec / meta / manifest
     id: int = 0              # 저장된 뒤 채워진다
+    # 표면 자동 수집이 채운다(11-20). 다른 수집 모듈은 비워 둔다
+    state: str = ""          # discovery.STATES 의 키 — 있음·인증 필요·soft-404 …
+    status: int = 0          # 확인할 때 받은 HTTP 코드(원래 값)
+    evidence: str = ""       # 어디서 무엇을 보고 알았는지
+    risk: int = 0            # 0~100. 이유는 evidence 에 같이 적는다
     fields: dict = field(default_factory=dict)  # 점검 때 같은 요청의 파라미터 전부(앱이 채움)
 
     def __post_init__(self):

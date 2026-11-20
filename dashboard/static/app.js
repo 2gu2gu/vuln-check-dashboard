@@ -654,6 +654,18 @@
       boxes.forEach(function (b) { if (b.checked) n++; });
       picked.textContent = n + "개 선택";
     };
+    // 추천 점검 칩: 그 지점을 고르고, 점검 모듈을 추천한 것으로 맞춘 뒤 점검 막대로 간다
+    probeForm.querySelectorAll(".sg[data-mod]").forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        var box = probeForm.querySelector('input[name=point][value="' + chip.dataset.point + '"]');
+        if (box) box.checked = true;
+        var sel = document.getElementById("probe-module");
+        if (sel) { sel.value = chip.dataset.mod; sel.dispatchEvent(new Event("change")); }
+        count();
+        var bar = probeForm.querySelector(".probe-bar");
+        if (bar) bar.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    });
     document.getElementById("pick-all").addEventListener("change", function (e) {
       boxes.forEach(function (b) { b.checked = e.target.checked; });
       count();
@@ -828,4 +840,33 @@
   });
   bar.querySelector(".find-next").addEventListener("click", function () { go(at + 1); });
   bar.querySelector(".find-prev").addEventListener("click", function () { go(at - 1); });
+})();
+
+
+// 한 페이지 안의 탭 — 주소의 #이름 으로 고른 칸만 보인다(수사보드 | ATT&CK 매트릭스).
+// JS 가 없으면 두 칸이 위아래로 다 보인다. 옛 /attack 주소는 #matrix 로 들어온다.
+(function () {
+  var tabs = document.querySelectorAll(".tabs .tab");
+  if (!tabs.length) return;
+  var showTab = function () {
+    var want = location.hash.slice(1), names = [];
+    tabs.forEach(function (t) { names.push(t.dataset.tab); });
+    if (names.indexOf(want) < 0) want = names[0];
+    tabs.forEach(function (t) {
+      var on = t.dataset.tab === want;
+      t.classList.toggle("on", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      var panel = document.getElementById(t.dataset.tab);
+      if (panel) panel.hidden = !on;
+    });
+  };
+  tabs.forEach(function (t) {
+    t.addEventListener("click", function (e) {
+      e.preventDefault();                       // 탭 머리로 화면이 튀지 않게 주소만 바꾼다
+      history.replaceState(null, "", "#" + t.dataset.tab);
+      showTab();
+    });
+  });
+  window.addEventListener("hashchange", showTab);
+  showTab();
 })();

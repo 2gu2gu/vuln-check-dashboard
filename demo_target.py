@@ -123,6 +123,7 @@ HOME = """<!doctype html><meta charset="utf-8"><title>연습용 대상</title>
 <form action="/search" method="get"><input name="q" value="sql"><button>찾기</button></form>
 <form action="/guestbook" method="post"><input name="name"><textarea name="message"></textarea><button>남기기</button></form>
 <script>fetch('/api/items?keyword=a')</script>
+<script src="/static/app.js"></script>
 <h2>연습용 계정</h2>
 <p>전부 가짜입니다. <code>POST /backend/login</code> 에
 <code>{"email": ..., "pw": ...}</code> 로 보내면 <code>result.token</code> 에 토큰이 옵니다.</p>
@@ -271,6 +272,108 @@ def me():
     except Exception:
         return _envelope("UNAUTHORIZED", "토큰을 읽을 수 없습니다.", None, status=401)
     return _envelope("SUCCESS", "확인됨", claims)
+
+
+# ── 표면 자동 수집 연습(11-20) ──────────────────────────────────
+# 실서버처럼 화면은 JS 가 API 를 부르고, 경로가 /backend 로 시작한다.
+# 표면 자동 수집이 JS·robots·API 명세에서 엔드포인트를 찾고, 가짜 200(soft-404)을
+# 걸러내는지 여기서 시험한다.
+APP_JS = r"""
+const api = axios.create({ baseURL: '' });
+export function loadCourses(keyword, sort) {
+  return fetch(`/backend/courses?keyword=${keyword}&sort=${sort}`);
+}
+export function loadCourse(courseId) { return fetch(`/backend/courses/${courseId}`); }
+export function enroll(courseId, memberId) {
+  return axios.post('/backend/enroll', { courseId, memberId });
+}
+export function reviews(courseId) { return fetch("/backend/courses/" + courseId + "/reviews"); }
+const ROUTES = ["/app/dashboard", "/app/settings"];
+const STATS = "/backend/admin/stats";
+const ICON = "/static/logo.png";
+//# sourceMappingURL=app.js.map
+"""
+APP_MAP = json.dumps({"version": 3, "sources": ["src/report.js"], "sourcesContent": [
+    "export const exportReport = (fmt) => fetch('/backend/report/export', {method: 'POST', body: JSON.stringify({fmt, range: 1})});"]})
+OPENAPI = {
+    "openapi": "3.0.1", "info": {"title": "연습용", "version": "1"},
+    "paths": {
+        "/backend/courses": {"get": {"parameters": [{"name": "keyword", "in": "query"}, {"name": "sort", "in": "query"}]}},
+        "/backend/courses/{courseId}": {"get": {"parameters": [{"name": "courseId", "in": "path"}]}},
+        "/backend/enroll": {"post": {"requestBody": {"content": {"application/json": {
+            "schema": {"$ref": "#/components/schemas/Enroll"}}}}}},
+        "/backend/proxy": {"get": {"parameters": [{"name": "url", "in": "query"}]}},
+    },
+    "components": {"schemas": {"Enroll": {"properties": {"courseId": {}, "memberId": {}}}}},
+}
+
+
+@app.get("/static/app.js")
+def app_js():
+    return Response(APP_JS, mimetype="application/javascript")
+
+
+@app.get("/static/app.js.map")
+def app_js_map():
+    return Response(APP_MAP, mimetype="application/json")
+
+
+@app.get("/robots.txt")
+def robots():
+    return Response("User-agent: *\nDisallow: /internal-report\nSitemap: /sitemap.xml\n", mimetype="text/plain")
+
+
+@app.get("/sitemap.xml")
+def sitemap():
+    return Response('<?xml version="1.0"?><urlset><url><loc>http://127.0.0.1:5051/about?ref=sitemap</loc></url></urlset>',
+                    mimetype="application/xml")
+
+
+@app.get("/v3/api-docs")
+def api_docs():
+    return Response(json.dumps(OPENAPI, ensure_ascii=False), mimetype="application/json")
+
+
+@app.get("/backend/courses")
+def courses():
+    # 숨은 파라미터 연습 — 화면·JS 어디에도 없는 debug 를 붙이면 응답이 달라진다
+    if request.args.get("debug"):
+        return _envelope("SUCCESS", "ok", {"items": [{"id": 1, "title": "강의 1"}], "sql": "SELECT * FROM lectures"})
+    return _envelope("SUCCESS", "ok", [{"id": 1, "title": "강의 1"}])
+
+
+@app.get("/backend/health")
+def health():
+    """예측 연습 — 어디에도 링크가 없지만 /backend + 흔한 단어로 찾힌다."""
+    return _envelope("SUCCESS", "UP", None)
+
+
+@app.get("/backend/courses/<int:cid>")
+def course(cid):
+    return _envelope("SUCCESS", "ok", {"id": cid})
+
+
+@app.post("/backend/enroll")
+def enroll():
+    return _envelope("SUCCESS", "ok", None)
+
+
+@app.get("/backend/proxy")
+def proxy():
+    """주소를 받는 칸 — 수집 점수에서 SSRF 후보로 올라와야 한다. 실제로 가져오지는 않는다."""
+    return _envelope("BAD_REQUEST", "url 이 필요합니다", None, status=400)
+
+
+@app.get("/backend/admin/stats")
+def admin_stats():
+    return _envelope("FORBIDDEN", "관리자만", None, status=403)
+
+
+@app.get("/app/")
+@app.get("/app/<path:_rest>")
+def spa_shell(_rest=""):
+    """SPA 처럼 없는 주소에도 200 과 같은 화면을 준다 — 가짜 200(soft-404) 연습."""
+    return "<!doctype html><div id=root></div><script src=/static/app.js></script>"
 
 
 if __name__ == "__main__":
