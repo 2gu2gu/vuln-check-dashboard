@@ -226,3 +226,39 @@ def test_authz_still_flags_a_real_page_that_differs_from_the_shell(monkeypatch):
     _server(monkeypatch, lambda url, h: (200, SHELL) if url.endswith("/") else (200, "강사센터 목록" * 40))
     c = authz_probe.run(T, [_end("https://sesacedu.store/backend/instructor")], {})[0]
     assert c.verdict == "vuln" and "인증 없이 열리는 주소" in c.title
+
+
+def _path(param="orderId", sample=""):
+    return Point(method="GET", url="https://sesacedu.store/backend/mypage/buy/history/{orderId}",
+                 param=param, place="path", sample=sample)
+
+
+def test_idor_finds_a_baseline_number_when_the_point_has_no_sample(monkeypatch):
+    """API 명세에서 온 지점은 표본 값이 없다 — 11-21 실측에서 10개가 통째로 건너뛰어졌다.
+
+    번호 자리면 몇 개 넣어 보고 내용이 오는 것을 기준으로 삼는다.
+    """
+    _ctx(monkeypatch)
+
+    def handler(url, h):
+        n = url.rstrip("/").rsplit("/", 1)[-1]
+        if n == "3":
+            return 200, "주문 3 상세" * 20          # 1·2 는 비고 3 만 내용이 있다
+        return 404, ""
+    _server(monkeypatch, handler)
+    c = idor_probe.run(T, [_path()], {})[0]
+    assert "기준 번호 찾기(1)" in c.evidence and "3 이 내용을 돌려줌" in c.evidence
+
+
+def test_idor_skips_a_path_point_that_answers_to_nothing(monkeypatch):
+    _ctx(monkeypatch)
+    _server(monkeypatch, lambda url, h: (404, ""))
+    assert idor_probe.run(T, [_path()], {}) == []
+
+
+def test_idor_leaves_query_points_without_a_sample_alone(monkeypatch):
+    """쿼리 파라미터는 이름만 보고 번호를 넣어 볼 수 없다 — keyword=1 은 뜻이 없다."""
+    _ctx(monkeypatch)
+    sent = _server(monkeypatch, lambda url, h: (200, "x" * 100))
+    assert idor_probe.run(T, [Point(method="GET", url="https://sesacedu.store/backend/lectures", param="keyword", place="query", sample="")], {}) == []
+    assert sent == []
