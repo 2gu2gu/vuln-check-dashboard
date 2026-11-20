@@ -159,6 +159,7 @@ META = {
     "id": "sesacedu_material_traversal_fuzz",
     "name": "자료 경로 조작 퍼징 (구조 그리기)",
     "category": "경로 조작",
+    "kisa": ["FD"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
     # 로그인한 사용자가 저장소 밖 파일·디렉터리 구조를 알아낸다
     "cvss": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
     # 노션 '웹 서비스 취약점 목록' 의 취약점 유형 — 같은 경로 조작으로 저장 폴더 밖 구조를 알아내는 것

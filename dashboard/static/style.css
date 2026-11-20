@@ -16,6 +16,10 @@
   --accent-soft: #E6EEF4;
   --hit: #B5532E;
   --hit-soft: #F6E7E0;
+  /* 결과 탭 '점검 현황' 위험도 색 — 보고서와 같은 계열, 채도 한 단계 낮춤. dataviz 검사(밝은 화면) 통과 */
+  --sv-critical: #93343A; --sv-high: #C5622E; --sv-medium: #BFA036; --sv-low: #3E8E57; --sv-info: #A8A6A0;
+  --potential-soft: #F5ECD6;  /* 판정 '잠재' 바탕 */
+  --safe-soft: #ECEBE7;       /* 판정 '안전' 바탕 */
   --mark: #F2D36B;        /* 점검 표식 강조 */
   --mark-ink: #1C1C1C;
   --find: #FFE58A;        /* 글자 찾기 — 걸린 곳 전부 */
@@ -38,7 +42,7 @@
 :root[data-theme="dark"] {
   --bg: #1C1C1C; --surface: #262626; --surface-2: #2C2C2C; --line: #3A3A3A;
   --text: #ECECEC; --sub: #A3A3A3; --accent: #8DB4D4; --accent-soft: #2B3842;
-  --hit: #E39A78; --hit-soft: #3D2C25;
+  --hit: #E39A78; --hit-soft: #3D2C25; --potential-soft: #3A321F; --safe-soft: #333333;
   --mark: #8A6D1F; --mark-ink: #FFF3CC;
   --find: #8A6D1F; --find-at: #C2791A;
   --sev-critical: #E0899A; --sev-high: #E39A78; --sev-medium: #D9B65E; --sev-low: #8DB4D4; --sev-info: #A3A3A3;
@@ -233,8 +237,8 @@ table.grid { width: 100%; border-collapse: collapse; }
 .stage-probe { color: var(--hit); border-color: var(--hit); }
 .verdict { display: inline-block; font-size: 12px; font-weight: 600; padding: 0 8px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; }
 .v-vuln { color: var(--sev-high); background: var(--hit-soft); }
-.v-potential { color: var(--sev-medium); }
-.v-safe { color: var(--sub); }
+.v-potential { color: var(--sev-medium); background: var(--potential-soft); }
+.v-safe { color: var(--sub); background: var(--safe-soft); }
 .vchip { display: inline-flex; align-items: center; gap: 4px; margin: 0 8px 2px 0; }
 .vchip small { color: var(--sub); font-size: 11px; }
 
@@ -733,3 +737,84 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
   .cp-shell { grid-template-columns: 1fr; }
   .cp-cands { position: static; max-height: 420px; }
 }
+
+/* ── 결과 탭 '점검 현황'(11-20) ──────────────────────────────
+   보고서 자동화 툴 그림과 같은 모양. 노션 '보고서 디자인 레퍼런스': 색은 절제, 숫자는 크게,
+   글자는 글자 색으로(위험도 색은 칠한 면에만). 위험도 색 토큰(--sv-*)은 맨 위 토큰 블록에 있다.
+   어두운 화면에서도 같은 색을 쓴다 — 막대에 건수를 적고 범례를 두어 색만으로 읽지 않게 했다. */
+.sv-critical { background: var(--sv-critical); } .sv-high { background: var(--sv-high); }
+.sv-medium { background: var(--sv-medium); } .sv-low { background: var(--sv-low); } .sv-info { background: var(--sv-info); }
+
+.overview { display: flex; flex-direction: column; gap: 12px; margin-bottom: 22px; }
+.ov-head h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -0.02em; }
+.ov-line { margin: 0; font-size: 15px; }
+.ov-line b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.ov-sep { color: var(--line); margin: 0 8px; }
+.chart-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 12px; }
+@media (max-width: 1000px) { .chart-row { grid-template-columns: minmax(0, 1fr); } }
+.chart { margin: 0; display: flex; flex-direction: column; gap: 14px; }
+.chart figcaption { font-weight: 700; font-size: 14px; letter-spacing: -0.01em; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--sub); }
+.legend li { display: inline-flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; }
+
+/* 위험도별 건수 — 세로 막대, 값은 막대 위에 */
+.vbars { display: grid; grid-template-columns: repeat(5, 1fr); height: 210px; }
+.vbar-col { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; justify-items: center; gap: 4px; min-height: 0; }
+.vbar-val { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.vbar-slot { width: 100%; height: 100%; display: flex; align-items: flex-end; justify-content: center;
+             border-bottom: 1px solid var(--line); }
+.vbar { display: block; width: 56%; max-width: 48px; min-height: 3px; border-radius: 4px 4px 0 0; }
+.vbar-label { font-size: 12px; color: var(--sub); padding-top: 2px; }
+
+/* 대상별 위험도 분포 — 가로 누적 막대, 칸 안에 건수 */
+.hstack { display: flex; flex-direction: column; gap: 10px; }
+.hs-row { display: grid; grid-template-columns: 140px minmax(0, 1fr); align-items: center; gap: 10px; }
+.hs-name { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hs-row.on .hs-name { font-weight: 700; }
+.hs-track { position: relative; display: flex; gap: 2px; height: 24px; }
+.hs-seg { display: flex; align-items: center; justify-content: center; min-width: 18px; font-size: 12px; font-weight: 600;
+          color: var(--surface); font-variant-numeric: tabular-nums; }
+.hs-seg:hover { text-decoration: none; filter: brightness(1.08); }
+.hs-seg:first-child { border-radius: 4px 0 0 4px; } .hs-seg:last-child { border-radius: 0 4px 4px 0; }
+.hs-seg:only-child { border-radius: 4px; }
+.hs-seg.sv-medium, .hs-seg.sv-info { color: var(--text); }
+.hs-axis .hs-track { height: 16px; border-top: 1px solid var(--line); }
+.hs-tick { position: absolute; top: 2px; transform: translateX(-50%); font-size: 11px; color: var(--sub); font-variant-numeric: tabular-nums; }
+
+/* 대상별 취약점 요약 표 */
+.sum-table th.num, .sum-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.sum-table tr.on td { background: var(--accent-soft); }
+.sum-table tfoot td { border-top: 2px solid var(--line); background: var(--surface-2); }
+.list-head { font-size: 16px; margin: 4px 0 10px; }
+/* ── 대상 탭: 한 줄에 대상 하나, 누르면 아래에 펼친다(11-20) ── */
+.tlist { list-style: none; margin: 0 0 12px; padding: 0; background: var(--surface);
+         border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.tlist li + li { border-top: 1px solid var(--line); }
+.tlist a { display: flex; align-items: baseline; gap: 14px; padding: 12px 16px; color: var(--text); }
+.tlist a:hover { background: var(--surface-2); text-decoration: none; }
+.tlist li.on a { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.tlist .t-name { min-width: 120px; }
+.tlist .t-url { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tlist .t-meta { white-space: nowrap; }
+.tlist .chev { color: var(--sub); }
+.add-target summary { cursor: pointer; }
+.add-target[open] summary { margin-bottom: 12px; }
+.add-target .form-row { border: 0; padding: 0; margin: 0; box-shadow: none; background: none; }
+.t-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.t-head h2 { margin: 0; }
+.t-head h2 .mono { font-size: 13px; font-weight: 400; margin-left: 8px; }
+.t-tools { display: flex; align-items: flex-start; gap: 10px; }
+.t-tools .hdr-edit[open] { min-width: 360px; }
+@media (max-width: 700px) { .tlist a { flex-wrap: wrap; gap: 4px 12px; } .tlist .t-name { min-width: 0; } }
+
+/* ── 모듈 카드 규격(11-20): 접힌 카드는 크기가 같고 실행 버튼이 같은 높이에 온다 ──
+   제목 2줄·설명 3줄 자리를 늘 잡아 두고 넘치면 '…' 로 자른다. 펴면 전부 보인다.
+   펼친 카드가 옆 카드를 같이 늘리지 않게 줄 높이는 각자 둔다(align-items: start). */
+.mod-grid { align-items: start; }
+.mod-open h3 { margin: 0 0 4px; line-height: 1.4; min-height: 2.8em;
+               display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.mod-open p { line-height: 1.55; min-height: 4.65em;
+              display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.mod.open .mod-open h3, .mod.open .mod-open p { display: block; min-height: 0; overflow: visible; }
+.mod-quick { min-height: 38px; }

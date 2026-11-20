@@ -5,6 +5,7 @@ META = {
     "id": "http_security_headers",
     "name": "HTTP 보안 헤더",
     "category": "설정 점검",
+    "kisa": ["SN", "CC"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
     "kind": "passive",
     "attack": [
         {"tactic": "TA0043", "technique": "T1595.002", "name": "Vulnerability Scanning"},
