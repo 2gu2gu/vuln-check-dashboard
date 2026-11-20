@@ -663,3 +663,14 @@ html { scroll-behavior: smooth; }
 .t-tools { display: flex; align-items: flex-start; gap: 10px; }
 .t-tools .hdr-edit[open] { min-width: 360px; }
 @media (max-width: 700px) { .tlist a { flex-wrap: wrap; gap: 4px 12px; } .tlist .t-name { min-width: 0; } }
+
+/* ── 모듈 카드 규격(11-20): 접힌 카드는 크기가 같고 실행 버튼이 같은 높이에 온다 ──
+   제목 2줄·설명 3줄 자리를 늘 잡아 두고 넘치면 '…' 로 자른다. 펴면 전부 보인다.
+   펼친 카드가 옆 카드를 같이 늘리지 않게 줄 높이는 각자 둔다(align-items: start). */
+.mod-grid { align-items: start; }
+.mod-open h3 { margin: 0 0 4px; line-height: 1.4; min-height: 2.8em;
+               display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.mod-open p { line-height: 1.55; min-height: 4.65em;
+              display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.mod.open .mod-open h3, .mod.open .mod-open p { display: block; min-height: 0; overflow: visible; }
+.mod-quick { min-height: 38px; }

@@ -51,7 +51,7 @@
       <span class="sub">{{ m.category }}{% if m.vuln and m.vuln != '기타' %} · <b>{{ m.vuln }}</b>{% endif %}</span>
     </header>
     <button class="mod-open" type="button" aria-expanded="false" aria-controls="body-{{ m.id }}">
-      <h3>{{ m.name }}</h3>
+      <h3 title="{{ m.name }}">{{ m.name }}</h3>
       <p>{{ m.description | strong }}</p>
       <span class="mod-cue">
         {%- if blocked %}<span class="cue-todo">준비할 것 {{ blocked | length }}개</span>
