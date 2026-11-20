@@ -55,9 +55,6 @@ META = {
         {"name": "stored_vector", "need": "conditional", "when": "저장형 모드",
          "type": "int", "default": "1", "label": "저장할 테스트 값 번호",
          "help": "1~100 중 조합 하나만 저장합니다. 1번은 img/onerror입니다."},
-        {"name": "write_ack", "need": "conditional", "when": "저장형 모드",
-         "label": "저장 허용 확인", "default": "",
-         "help": "삭제 가능한 테스트 데이터에서만 실행하고, 확인 칸에 WRITE를 입력하세요."},
         {"name": "dom_depth", "need": "conditional", "when": "DOM 기반 모드",
          "type": "int", "default": "20", "label": "읽을 외부 스크립트 수 (0~40)",
          "help": "페이지에 걸린 같은 출처 <script src> 를 앞에서부터 이만큼 읽습니다."},
@@ -377,8 +374,7 @@ def _resolve_read_location(point, written, read_path, origin):
 
 
 def stored_check(target, points, params):
-    if params.get("write_ack", "").strip() != "WRITE":
-        raise ValueError("저장형은 저장 허용 확인 칸에 WRITE를 입력해야 합니다.")
+    # 저장형은 데이터가 남는다 — 지우는 것은 사람 몫이다(확인 칸은 11-21 사용자 지시로 뺐다)
     if len(points) != 1 or (points[0].method, points[0].place) != ("POST", "form"):
         raise ValueError("저장형은 POST 폼 파라미터를 정확히 하나 선택하세요.")
     point = points[0]

@@ -342,3 +342,79 @@ def test_jndi_tries_every_header_not_just_the_first(monkeypatch):
     _server(monkeypatch, h)
     c = jndi_probe.run(T, [_end("https://sesacedu.store/login")], {})[0]
     assert c.verdict == "vuln" and "X-Api-Version" in c.title
+
+
+# ── 표면 품질(11-21 실측에서 드러난 것) ─────────────────────
+
+def test_spec_base_is_recovered_when_servers_lies(monkeypatch):
+    """명세의 servers 가 `/backend` 를 빼먹어도 명세를 찾은 자리에서 되찾는다.
+
+    11-21 실측: 새싹에듀 명세는 `https://sesacedu.store` 라고만 적어 두었는데 실제 API 는
+    `/backend` 아래에 있다. 그걸 믿어 모은 주소가 전부 화면 라우트(SPA 껍데기)로 떨어졌다.
+    """
+    from dashboard import discovery as dv
+    doc = {"servers": [{"url": "https://sesacedu.store"}], "paths": {"/lectures": {"get": {}}}}
+    assert dv.base_candidates(doc, "https://sesacedu.store/backend/v3/api-docs") == ["", "/backend"]
+
+    SHELL = "<!doctype html>앱 껍데기"
+
+    def get(url):
+        if url.endswith("/backend/lectures"):
+            return Response(url=url, status=200, body='{"lectures":[]}')
+        return Response(url=url, status=200, body=SHELL)       # 나머지는 화면 틀
+    base, why = dv.pick_base(doc, "https://sesacedu.store/backend/v3/api-docs", "https://sesacedu.store", get)
+    assert base == "/backend" and "화면 라우트였다" in why
+
+
+def test_spec_base_keeps_what_the_spec_says_when_it_works(monkeypatch):
+    from dashboard import discovery as dv
+    doc = {"servers": [{"url": "https://sesacedu.store/api"}], "paths": {"/lectures": {"get": {}}}}
+    get = lambda url: Response(url=url, status=200, body='{"ok":true}' if "/api/" in url else "첫 화면")
+    base, _why = dv.pick_base(doc, "https://sesacedu.store/v3/api-docs", "https://sesacedu.store", get)
+    assert base == "/api"
+
+
+def test_url_import_makes_a_point_for_each_path_variable():
+    """URL 목록으로 경로 틀을 넣으면 변수도 고를 수 있어야 한다 — 없으면 IDOR 이 고를 게 없다."""
+    from modules import surface_import
+    pts = surface_import.run(T, {"urls": "https://sesacedu.store/backend/lectures/{lid}/qna/{qnaid}"})
+    got = {(p.param, p.place) for p in pts}
+    assert ("lid", "path") in got and ("qnaid", "path") in got
+
+
+def test_path_ids_are_harvested_from_the_listing_above(monkeypatch):
+    """`/lectures/{lid}/qna/{qnaid}` 를 1/1 로 부르면 404 다 — 한 단계 위 목록에서 번호를 거둔다."""
+    from dashboard import probe
+    seen = []
+
+    def fetch(url, **_kw):
+        seen.append(url)
+        if url.endswith("/backend/lectures"):
+            return Response(url=url, status=200, body='{"lectures":[{"lectureId":103}]}')
+        if url.endswith("/backend/lectures/103"):
+            return Response(url=url, status=200, body='{"ok":1}')
+        return Response(url=url, status=404, body="")
+    monkeypatch.setattr(core, "fetch", fetch)
+    monkeypatch.setattr(core, "run_cache", dict)
+    ids = probe.path_ids("https://sesacedu.store/backend/lectures/{lid}/qna/{qnaid}", skip="qnaid")
+    assert ids["lid"] == "103" and ids["qnaid"] == ""
+    assert probe.fill_path("https://sesacedu.store/backend/lectures/{lid}/qna/{qnaid}", "qnaid", "460") \
+        == "https://sesacedu.store/backend/lectures/103/qna/460"
+
+
+def test_path_ids_fall_back_when_the_listing_says_nothing(monkeypatch):
+    from dashboard import probe
+    monkeypatch.setattr(core, "run_cache", dict)
+    monkeypatch.setattr(core, "fetch", lambda url, **_k: Response(url=url, status=404, body=""))
+    ids = probe.path_ids("https://sesacedu.store/backend/lectures/{lid}", skip="")
+    assert ids["lid"] == "1"
+
+
+def test_the_confirm_boxes_are_all_gone():
+    """확인 칸(WRITE·UPLOAD·SEND·JNDI)은 전부 뺐다(11-20·21 사용자 지시). 경고는 설명에 남는다."""
+    from modules import jndi_probe, rate_limit_probe, stored_xss_probe, upload_probe
+    from projects.sesacedu.modules import sesacedu_forum_stored_xss, sesacedu_xss
+    for mod in (upload_probe, jndi_probe, rate_limit_probe, stored_xss_probe,
+                sesacedu_forum_stored_xss, sesacedu_xss):
+        names = {p["name"] for p in mod.META.get("params", [])}
+        assert not {n for n in names if n.endswith("_ack")}, mod.META["id"]

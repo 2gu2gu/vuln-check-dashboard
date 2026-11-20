@@ -53,6 +53,8 @@ _REC = ("자원을 돌려주기 전에 **토큰의 사용자 번호와 자원의
 NUMBER = re.compile(r"^\d{1,12}$")
 # 표본 값이 없는 지점(API 명세에서 온 /mypage/buy/history/{orderId} 같은 것)에서 기준이 될 번호를 찾는다.
 # 11-21 실측: 사용자 웹의 orderId·aid·qid·iqid·sid 가 전부 표본 없이 들어와 10개가 통째로 건너뛰어졌다.
+# 아무 번호나 넣으면 대개 404 라, 먼저 **한 단계 위 목록에서 진짜 번호를 거두고**(probe.path_ids)
+# 그래도 없으면 아래 것들을 넣어 본다.
 LOOKUP = ["1", "2", "3", "103", "123"]
 UUIDISH = re.compile(r"^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$", re.I)
 MIN_BODY = 40  # 이보다 짧은 응답은 견줄 내용이 없다고 본다
@@ -103,7 +105,18 @@ def _baseline(point, lad, shell):
         return s, probe.send(point, s)
     if point.place != "path":
         return "", None
-    for guess in LOOKUP:
+    # 한 단계 위 목록에서 이 변수의 진짜 번호를 거둔다 — /lectures/103/qna 를 읽어 qid 를 얻는 식
+    harvested = []
+    try:
+        base = probe.fill_path(point.url, point.param, "")
+        listing = core.fetch(base.rstrip("/").rsplit("/", 1)[0])
+        if listing.status in OPEN:
+            harvested = probe._ids_from(listing.body)
+            if harvested:
+                lad.note("screen", f"한 단계 위 목록에서 번호를 거둠: {', '.join(harvested[:6])}")
+    except OSError:
+        pass
+    for guess in harvested + [g for g in LOOKUP if g not in harvested]:
         r = probe.send(point, guess)
         lad.note("screen", f"기준 번호 찾기({guess}): → {r.status} · {len(r.body)}B")
         if shell is not None and r.body == shell:

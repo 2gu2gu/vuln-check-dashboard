@@ -2,11 +2,20 @@
 import json
 import re
 import uuid
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
 from . import core
 
 CONTEXT_LABEL = {"html": "본문", "attribute": "태그 속성", "script": "스크립트 블록"}
+
+# 경로 틀의 {변수} 자리에 넣을 진짜 번호. 1 로 채우면 대개 404 라 점검이 ① 에서 멈춘다.
+# 11-21 실측: /backend/lectures/{lid}/qna/{qnaid} 를 1/1 로 부르면 404 인데, 한 단계 위 목록
+# /backend/lectures/103/qna 를 읽으면 qid 460 이 나오고 그 글은 인증 없이 열린다(비밀글 노출).
+# 도구가 그걸 못 보고 지나간 건 번호를 못 찾아서였다.
+ID_IN_JSON = re.compile(r'"[A-Za-z_]*(?:id|Id|ID|no|No|seq|Seq|num|Num)"\s*:\s*(\d{1,12})')
+ID_IN_PATH = re.compile(r"/(\d{1,12})(?=[/\"'\s]|$)")
+FALLBACK_IDS = ("1", "2", "3", "103", "123")
+MAX_TRY = 6
 
 
 def marker() -> str:
@@ -14,14 +23,82 @@ def marker() -> str:
     return "vcd" + uuid.uuid4().hex[:8]
 
 
+def _ids_from(body: str, limit=MAX_TRY):
+    """응답에서 번호 후보를 뽑는다 — JSON 의 *id 키가 먼저, 없으면 경로 안의 숫자."""
+    out = []
+    for m in list(ID_IN_JSON.finditer(body))[:40] + list(ID_IN_PATH.finditer(body))[:40]:
+        v = m.group(1)
+        if v not in out and v != "0":
+            out.append(v)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def path_ids(url: str, skip: str = ""):
+    """경로 틀의 {변수} 마다 **실제로 응답하는 번호** 를 찾는다 → {변수: 값}.
+
+    왼쪽부터 한 칸씩 채운다. 변수 앞까지의 경로가 그 변수의 '목록 주소' 다
+    (`/lectures/{lid}/qna/{qnaid}` 의 {qnaid} 라면 `/lectures/103/qna`).
+    목록을 읽어 번호를 거두고, 그 번호로 한 칸 더 간 주소가 2xx 면 그것을 쓴다.
+    skip 에 적은 변수는 모듈이 직접 넣으므로 비워 둔다.
+
+    한 실행 안에서는 같은 주소를 두 번 찾지 않는다(core.run_cache).
+    """
+    cache = core.run_cache()
+    key = ("path_ids", url, skip)
+    if key in cache:
+        return cache[key]
+    found, prefix = {}, ""
+    for seg in urlsplit(url).path.strip("/").split("/"):
+        if not (seg.startswith("{") and seg.endswith("}")):
+            prefix += "/" + seg
+            continue
+        name = seg[1:-1]
+        if name == skip:
+            found[name] = ""
+            prefix += "/{" + name + "}"
+            continue
+        base = f"{urlsplit(url).scheme}://{urlsplit(url).netloc}{prefix}"
+        guesses = []
+        try:
+            lst = core.fetch(base)
+            if 200 <= lst.status < 300:
+                guesses = _ids_from(lst.body)
+        except OSError:
+            pass
+        for g in guesses + [v for v in FALLBACK_IDS if v not in guesses]:
+            try:
+                r = core.fetch(base + "/" + g)
+            except OSError:
+                continue
+            if 200 <= r.status < 300:
+                found[name] = g
+                break
+        else:
+            found[name] = "1"
+        prefix += "/" + found[name]
+    cache[key] = found
+    return found
+
+
+def fill_path(url: str, param: str, value: str) -> str:
+    """경로 틀에서 param 자리에 value 를 넣고, 나머지 변수는 찾아낸 번호로 채운다."""
+    ids = path_ids(url, skip=param)
+    out = url.replace("{" + param + "}", quote(value, safe=""))
+    for name, got in ids.items():
+        out = out.replace("{" + name + "}", got or "1")
+    return re.sub(r"\{[^}/]+\}", "1", out)
+
+
 def send(point, value: str):
     """point.param 자리에 value 를 넣어 보낸다. 같은 요청의 다른 파라미터는 발견 당시 값으로 채운다."""
     if point.place == "header":
         return core.fetch(point.url, headers={point.param: value})
     if point.place == "path":
-        # /lectures/{id} 의 {id} 자리에 넣는다. 다른 경로 변수는 1 로 채운다
-        url = re.sub(r"\{[^}/]+\}", "1", point.url.replace("{" + point.param + "}", quote(value, safe="")))
-        return core.fetch(url)
+        # /lectures/{lid}/qna/{qnaid} 의 {qnaid} 자리에 넣는다. 다른 변수는 **실제로 응답하는 번호**
+        # 를 한 단계 위 목록에서 거둬 채운다 — 1 로 채우면 대개 404 라 점검이 ① 에서 끝난다
+        return core.fetch(fill_path(point.url, point.param, value))
     fields = {**point.fields, point.param: value}
     if point.place == "json":
         return core.fetch(point.url, method=point.method if point.method != "GET" else "POST",

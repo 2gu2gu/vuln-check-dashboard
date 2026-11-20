@@ -169,7 +169,7 @@ def run(target, params):
             except OSError:
                 continue
             doc = dv.load_json(r.body) if r.status == 200 else None
-            if doc and dv.parse_openapi(doc, origin + path, origin, reg):
+            if doc and dv.parse_openapi(doc, origin + path, origin, reg, get=get):
                 reg.add("GET", origin + path, "spec", evidence="API 명세 문서가 인증 없이 열림")
                 break
         for path in dv.ACTUATOR_PATHS:
