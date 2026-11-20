@@ -295,3 +295,73 @@ def test_endpoint_count_leaves_out_missing_paths(app, client):
     page = client.get(f"/targets?target={tid}").get_data(as_text=True)
     assert "<small>엔드포인트</small><strong>1</strong>" in page and "없는 경로 1개는 빼고 셈" in page
     assert "페이지 1 ·" in page
+
+
+# ── 주소 단위 점검(11-20): 정보 노출 · 보안 헤더 ──────────────────
+
+def _ep(url="https://sesacedu.store/api"):
+    return Point(method="GET", url=url, param="", place="path")
+
+
+def _hserver(monkeypatch, handler):
+    def fetch(url, method="GET", headers=None, **_kw):
+        status, hdrs, body = handler(url, method, headers or {})
+        return Response(url=url, status=status, headers=hdrs, body=body)
+    monkeypatch.setattr(core, "fetch", fetch)
+
+
+def test_info_leak_finds_stack_trace_in_deep_stage(monkeypatch):
+    from modules import info_leak_probe
+    def h(url, method, headers):
+        if "%7B" in url:
+            return 500, [], "java.lang.IllegalArgumentException at org.apache.catalina.Foo(Foo.java:1)"
+        return 200, [("Server", "nginx")], "<html>ok</html>"
+    _hserver(monkeypatch, h)
+    c = info_leak_probe.run(T, [_ep()], {})[0]
+    assert c.verdict == "vuln" and "스택 트레이스" in c.title and "③ 심화" in c.evidence
+
+
+def test_info_leak_version_header_is_potential(monkeypatch):
+    from modules import info_leak_probe
+    _hserver(monkeypatch, lambda url, method, h: (200, [("Server", "nginx/1.24.0")], "ok"))
+    c = info_leak_probe.run(T, [_ep()], {})[0]
+    assert c.verdict == "potential" and "Server" in c.title
+
+
+def test_header_probe_flags_cors_reflecting_any_origin(monkeypatch):
+    from modules import header_probe
+    full = [("Strict-Transport-Security", "max-age=1"), ("X-Content-Type-Options", "nosniff"),
+            ("Referrer-Policy", "no-referrer"), ("Content-Type", "application/json")]
+    def h(url, method, headers):
+        extra = [("Access-Control-Allow-Origin", headers["Origin"]), ("Access-Control-Allow-Credentials", "true")] \
+            if headers.get("Origin") else []
+        return 200, full + extra, "{}"
+    _hserver(monkeypatch, h)
+    c = header_probe.run(T, [_ep()], {})[0]
+    assert c.verdict == "vuln" and "CORS" in c.title and "④ 우회" in c.evidence
+
+
+def test_header_probe_all_good_is_safe(monkeypatch):
+    from modules import header_probe
+    full = [("Strict-Transport-Security", "max-age=1"), ("X-Content-Type-Options", "nosniff"),
+            ("Referrer-Policy", "no-referrer"), ("Content-Type", "application/json")]
+    _hserver(monkeypatch, lambda url, method, h: (200, full, "{}"))
+    assert header_probe.run(T, [_ep()], {})[0].verdict == "safe"
+
+
+def test_endpoint_module_runs_once_per_address_and_stores_on_it(app, client, monkeypatch):
+    tid = _seed_points(app, client)                     # /backend/lectures?keyword&size — 파라미터 둘, 주소 하나
+    _hserver(monkeypatch, lambda url, method, h: (200, [("Server", "nginx/1.24.0")], "ok"))
+    with app.app_context():
+        from dashboard.db import get_db
+        ids = [r["id"] for r in get_db().execute("SELECT id FROM points WHERE param != ''")]
+    r = client.post("/surface/probe", headers=FETCH, data={"target_id": tid, "module_id": "info_leak_probe",
+                                                           "point": ids, "confirm": "yes"})
+    assert r.json["ok"]
+    with app.app_context():
+        from dashboard.db import get_db
+        rows = get_db().execute("SELECT p.param, pc.verdict FROM point_checks pc JOIN points p ON p.id = pc.point_id "
+                                "WHERE pc.module_id = 'info_leak_probe'").fetchall()
+    assert [(r["param"], r["verdict"]) for r in rows] == [("", "potential")]    # 주소 하나에 한 번
+    html = client.get(f"/modules/info_leak_probe/panel?target={tid}&partial=1").get_data(as_text=True)
+    assert "모은 주소" in html and "/backend/lectures" in html

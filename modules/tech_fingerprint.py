@@ -6,6 +6,7 @@ from dashboard.core import Finding, fetch
 
 META = {
     "id": "tech_fingerprint",
+    "hidden": True,  # 주소마다 보는 info_leak_probe 로 바뀌었다(11-20) — 목록에서 뺀다. 주소로 부르면 그대로 돈다
     "name": "서버 정보 노출",
     "category": "정보 수집",
     "kisa": ["IL", "EP"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)

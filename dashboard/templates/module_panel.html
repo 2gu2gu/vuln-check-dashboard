@@ -49,7 +49,7 @@
     {% if is_probe %}
     <section class="mp-surface">
       <div class="mp-tools">
-        <b>{{ target.name }}</b> <span class="sub small">— 모은 지점 {{ totals.params or 0 }}개</span>
+        <b>{{ target.name }}</b> <span class="sub small">— {% if mod.unit == "endpoint" %}모은 주소 {{ totals.endpoints or 0 }}개{% else %}모은 지점 {{ totals.params or 0 }}개{% endif %}</span>
         <span class="mp-pick">
           <button type="button" class="btn ghost small-btn" data-pick="all">전체</button>
           <button type="button" class="btn ghost small-btn" data-pick="suggest" title="표면 수집이 이 모듈을 추천한 지점">추천 지점만</button>
@@ -60,6 +60,28 @@
         {{ empty("모은 지점이 없습니다", "모듈 탭의 표면 수집 모듈을 먼저 돌리세요.", url_for('dash.modules', target=target.id), "모듈로") }}
       {% else %}
       <div class="table-wrap mp-table">
+      {% if mod.unit == "endpoint" %}
+      {# 주소 단위 모듈(보안 헤더·정보 노출) — 주소 하나에 체크 하나, 판정도 주소에 붙는다 #}
+      <table class="grid surface">
+        <thead><tr><th><input type="checkbox" class="mp-all" aria-label="전체 선택" title="전체 선택"></th><th>메서드</th><th>주소</th><th>상태</th><th>이 모듈 판정</th><th>다른 점검</th></tr></thead>
+        <tbody>
+        {% for gr in groups %}
+          {% set mine = gr.checks | selectattr('module', 'equalto', mod.name) | list %}
+          <tr>
+            <td><input type="checkbox" name="point" value="{{ gr.any_id }}" form="mp-form" data-suggest="1" aria-label="{{ gr.path }} 선택"></td>
+            <td class="mono sub nowrap">{{ gr.methods | sort | join(" · ") }}</td>
+            <td class="mono">{{ gr.path }} <span class="sub small">{{ gr.params | length }}개 파라미터</span></td>
+            <td class="sub small">{% for e in gr.ends %}{{ e.state }}{% if e.status %} {{ e.status }}{% endif %}{{ " · " if not loop.last }}{% endfor %}</td>
+            <td>{% for c in mine %}
+              {% if c.exchange_id %}<a class="vchip" href="{{ url_for('dash.history_detail', xid=c.exchange_id) }}" title="{{ c.evidence }}">{{ verdict(c.verdict) }}</a>
+              {% else %}<span class="vchip" title="{{ c.evidence }}">{{ verdict(c.verdict) }}</span>{% endif %}
+            {% else %}<span class="sub small">미점검</span>{% endfor %}</td>
+            <td class="sub small">{% for c in gr.checks if c.module != mod.name %}<span title="{{ c.module }}&#10;{{ c.evidence }}">{{ verdict(c.verdict) }}</span>{% endfor %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
       <table class="grid surface">
         <thead><tr><th><input type="checkbox" class="mp-all" aria-label="전체 선택" title="전체 선택"></th><th>메서드</th><th>파라미터</th><th>위치</th><th>발견 값</th><th>이 모듈 판정</th><th>다른 점검</th></tr></thead>
         {% for gr in groups if gr.params %}{# 파라미터 없는 주소는 지점 점검을 걸 자리가 없다 #}
@@ -86,6 +108,7 @@
         </tbody>
         {% endfor %}
       </table>
+      {% endif %}
       </div>
       {% endif %}
     </section>

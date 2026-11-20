@@ -721,11 +721,16 @@ def _surface_of(target, sort="", state="", show_all=False):
     by_url = {}
     for p in db.execute("SELECT * FROM points WHERE target_id = ? ORDER BY url, method, place, param", [target["id"]]):
         grp = by_url.setdefault(p["url"], {"url": p["url"], "path": urlsplit(p["url"]).path or "/",
-                                           "methods": set(), "sources": set(), "params": [], "ends": [], "risk": 0})
+                                           "methods": set(), "sources": set(), "params": [], "ends": [], "risk": 0,
+                                           "any_id": p["id"], "checks": []})
         grp["methods"].add(p["method"])
         grp["sources"].update(s for s in p["source"].split(",") if s)
         grp["risk"] = max(grp["risk"], p["risk"] or 0)
         if not p["param"]:
+            # 주소 단위 점검(보안 헤더·정보 노출)의 판정은 파라미터 없는 줄에 붙는다
+            grp["checks"] += [{"module": _modules()[c["module_id"]].name if c["module_id"] in _modules() else c["module_id"],
+                               "verdict": c["verdict"], "evidence": c["evidence"], "exchange_id": c["exchange_id"]}
+                              for c in checks.get(p["id"], [])]
             if p["state"]:
                 grp["ends"].append({"method": p["method"], "state": p["state"], "status": p["status"],
                                     "risk": p["risk"], "ev": _evidence(p["evidence"])})
@@ -801,8 +806,20 @@ def surface_probe():
         return redirect(back)
 
     marks = ",".join("?" * len(ids))
-    rows = db.execute(f"SELECT * FROM points WHERE target_id = ? AND param != '' AND id IN ({marks})", [t["id"], *ids]).fetchall()
     points = []
+    if mod.unit == "endpoint":
+        # 주소 하나에 한 번. 판정은 그 주소의 파라미터 없는 줄(GET)에 남긴다 — 없으면 만든다
+        urls = sorted({r["url"] for r in db.execute(f"SELECT url FROM points WHERE target_id = ? AND id IN ({marks})",
+                                                      [t["id"], *ids])})
+        for url in urls:
+            db.execute("INSERT OR IGNORE INTO points (target_id, method, url, param, place, source, module_id, first_seen, last_seen) "
+                       "VALUES (?, 'GET', ?, '', 'path', '', ?, ?, ?)", [t["id"], url, mod.id, now_iso(), now_iso()])
+            pid = db.execute("SELECT id FROM points WHERE target_id = ? AND method = 'GET' AND url = ? AND param = '' AND place = 'path'",
+                             [t["id"], url]).fetchone()["id"]
+            points.append(Point(method="GET", url=url, param="", place="path", id=pid))
+        db.commit()
+    rows = [] if mod.unit == "endpoint" else db.execute(
+        f"SELECT * FROM points WHERE target_id = ? AND param != '' AND id IN ({marks})", [t["id"], *ids]).fetchall()
     for r in rows:
         siblings = db.execute("SELECT param, sample FROM points WHERE target_id = ? AND url = ? AND method = ? AND place = ? "
                               "AND param != ''", [t["id"], r["url"], r["method"], r["place"]])
@@ -828,7 +845,8 @@ def surface_probe():
                 p = c.point
                 _save_finding(mod, t["id"], Finding(
                     title=c.title or mod.name, severity=c.severity or mod.severity, evidence=c.evidence,
-                    location=f"{p.url} ({p.place}: {p.param})", recommendation=c.recommendation, response=c.response))
+                    location=f"{p.url} ({p.place}: {p.param})" if p.param else p.url,
+                    recommendation=c.recommendation, response=c.response))
         skipped = len(points) - len(checks)
         return (f"지점 {len(checks)}개 — " + " · ".join(f"{VERDICTS[v]} {n}" for v, n in counts.items())
                 + (f", 건너뜀 {skipped}" if skipped else ""))

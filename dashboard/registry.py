@@ -48,6 +48,7 @@ class ModuleInfo:
     vuln: str = "기타"  # 노션 '웹 서비스 취약점 목록' 의 취약점 유형
     kisa: list = field(default_factory=list)  # 주요정보통신기반시설 웹 항목 코드(standards.KISA)
     hidden: bool = False  # 모듈 목록에서 숨긴다 — 다른 모듈의 부품(11-20: 표면 수집을 하나로 묶으며)
+    unit: str = "param"  # 지점 점검이 받는 단위 — param(파라미터 하나) / endpoint(주소 하나, 헤더·오류 페이지 등)
 
     @property
     def owasp(self) -> list:
@@ -192,6 +193,7 @@ def discover(package_name: str = "modules", project: str = ""):
                 cvss=_check_cvss(meta.get("cvss", "")), vuln=_check_vuln(meta.get("vuln", "")),
                 kisa=standards.check_kisa(meta.get("kisa")),
                 hidden=bool(meta.get("hidden")),
+                unit=meta.get("unit", "param") if meta.get("unit", "param") in ("param", "endpoint") else "param",
             )
         except Exception as e:  # noqa: BLE001 — 깨진 모듈은 화면에 오류로 보여 준다
             errors.append((source, str(e)))
