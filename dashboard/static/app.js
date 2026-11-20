@@ -705,14 +705,38 @@
       });
     });
     document.getElementById("pick-all").addEventListener("change", function (e) {
-      boxes.forEach(function (b) { b.checked = e.target.checked; });
+      boxes.forEach(function (b) { if (!b.hidden) b.checked = e.target.checked; });
       count();
     });
     boxes.forEach(function (b) { b.addEventListener("change", count); });
     var sel = document.getElementById("probe-module");
-    if (sel) sel.addEventListener("change", function () {
-      probeForm.querySelectorAll(".probe-params").forEach(function (d) { d.hidden = d.dataset.for !== sel.value; });
-    });
+    var hint = document.getElementById("pick-hint");
+    // 고른 모듈이 받는 단위에 맞춰 고를 자리를 바꾼다 — 주소 단위(보안 헤더·정보 노출)는 주소 줄,
+    // 파라미터 단위는 파라미터 줄. 안 쓰는 쪽은 숨기고 선택도 지운다(0개 선택으로 멈추지 않게).
+    var unitSwitch = function () {
+      var opt = sel.options[sel.selectedIndex];
+      var unit = (opt && opt.dataset.unit) || "param";
+      var usable = 0;
+      boxes.forEach(function (b) {
+        b.hidden = b.dataset.unit !== unit;
+        if (b.hidden) { b.checked = false; } else { usable++; }
+      });
+      if (hint) {
+        hint.hidden = usable > 0 && unit === "param";
+        hint.textContent = usable === 0
+          ? (unit === "param" ? "고를 파라미터가 없습니다 — 표면 수집으로 더 모으거나 HAR 을 붙여 넣으세요"
+                              : "고를 주소가 없습니다 — 표면 수집을 먼저 돌리세요")
+          : "이 모듈은 주소마다 봅니다 — 주소 줄(굵은 경로)에서 고르세요";
+      }
+      count();
+    };
+    if (sel) {
+      sel.addEventListener("change", function () {
+        probeForm.querySelectorAll(".probe-params").forEach(function (d) { d.hidden = d.dataset.for !== sel.value; });
+        unitSwitch();
+      });
+      unitSwitch();
+    }
   }
 
   // 결과 표 → 오른쪽 상세 패널

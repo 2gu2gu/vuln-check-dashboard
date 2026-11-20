@@ -188,7 +188,7 @@
     </ol>
   </div>
   {% endif %}
-  <div class="panel probe-bar" {{ 'hidden' if not totals.params }}>
+  <div class="panel probe-bar" {{ 'hidden' if not groups }}>
     <label class="check"><input type="checkbox" id="pick-all"> 전체 선택</label>
     <span class="sub" id="picked">0개 선택</span>
     {% if probes %}
@@ -199,9 +199,11 @@
         <span class="req-mark req" title="비워 두면 안 됩니다">필수</span>
       </span>
       <select name="module_id" id="probe-module">
-        {% for m in probes.values() %}<option value="{{ m.id }}" data-kind="{{ m.kind }}">{{ m.name }}</option>{% endfor %}
+        {% for m in probes.values() %}<option value="{{ m.id }}" data-kind="{{ m.kind }}" data-unit="{{ m.unit }}">{{ m.name }}</option>{% endfor %}
       </select>
       <small class="sub">고른 지점마다 이 모듈이 값을 한 번씩 넣어 봅니다. 아래 칸은 <b>고른 모듈의 것</b>입니다.</small>
+      {# 주소 단위 모듈(보안 헤더·정보 노출)은 파라미터가 아니라 주소 줄을 고른다 — 고를 자리가 바뀐다 #}
+      <small class="sub" id="pick-hint" hidden></small>
     </label>
     {% for m in probes.values() %}
     <div class="probe-params" data-for="{{ m.id }}" {{ 'hidden' if not loop.first }}>
@@ -221,7 +223,8 @@
     {% for gr in groups %}
     <tbody>
       <tr class="ep">
-        <td></td>
+        <td><input type="checkbox" name="point" value="{{ gr.any_id }}" data-unit="endpoint"
+                   aria-label="{{ gr.path }} 주소 선택" hidden></td>
         <td class="mono nowrap">{{ gr.methods | sort | join(" · ") }}</td>
         <td colspan="6">
           <div class="ep-line">
@@ -251,7 +254,8 @@
       </tr>
       {% for p in gr.params %}
       <tr>
-        <td><input type="checkbox" name="point" value="{{ p.id }}" aria-label="{{ gr.path }} {{ p.param }} 선택"></td>
+        <td><input type="checkbox" name="point" value="{{ p.id }}" data-unit="param"
+                   aria-label="{{ gr.path }} {{ p.param }} 선택"></td>
         <td class="mono sub">{{ p.method }}</td>
         <td class="mono">{{ p.param }}</td>
         <td class="sub">{{ {"query": "쿼리", "form": "폼 본문", "path": "경로", "json": "JSON 본문", "header": "헤더"}.get(p.place, p.place) }}</td>

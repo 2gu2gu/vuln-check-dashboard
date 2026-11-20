@@ -364,7 +364,7 @@ def test_endpoint_module_runs_once_per_address_and_stores_on_it(app, client, mon
                                 "WHERE pc.module_id = 'info_leak_probe'").fetchall()
     assert [(r["param"], r["verdict"]) for r in rows] == [("", "potential")]    # 주소 하나에 한 번
     html = client.get(f"/modules/info_leak_probe/panel?target={tid}&partial=1").get_data(as_text=True)
-    assert "모은 주소" in html and "/backend/lectures" in html
+    assert "고를 주소" in html and "/backend/lectures" in html
 
 
 # ── 심화 모듈은 고른 지점에(11-20) ──────────────────────────────────
@@ -506,3 +506,44 @@ def test_old_point_modules_are_tidied(app, client):
     page = client.get(f"/modules?target={tid}").get_data(as_text=True)
     assert 'data-mod="reflection_check"' not in page            # XSS 점검 ① 이 같은 일을 한다
     assert "사전으로 입력값 넣어 보기 (심화)" in page and "새싹에듀 XSS 조합 넣어 보기 (심화)" in page
+
+
+# ── 파라미터가 없는 대상도 주소 단위로 점검(11-20, 관리자 웹 지적) ──────────
+
+def test_targets_page_lets_you_pick_addresses_for_endpoint_modules(app, client, monkeypatch):
+    """관리자 웹처럼 파라미터가 하나도 안 모인 대상에서도 보안 헤더·정보 노출은 돌아야 한다."""
+    from tests.test_app import add_target, target_id
+    add_target(client, "https://sesacedu.store", name="관리자 웹")
+    tid = target_id(app, "https://sesacedu.store")
+    client.post("/modules/surface_import/run", data={"target_id": tid,
+                "urls": "https://sesacedu.store/dashboard\nhttps://sesacedu.store/users"},
+                follow_redirects=True)
+    page = client.get(f"/targets?target={tid}").get_data(as_text=True)
+    bar = page.split('class="panel probe-bar"', 1)[-1].split("</div>", 1)[0]
+    assert "hidden" not in bar.split(">", 1)[0]                 # 파라미터가 없어도 점검 막대는 뜬다
+    assert 'data-unit="endpoint"' in page                       # 주소 줄에 고르는 칸이 있다
+    with app.app_context():
+        from dashboard.db import get_db
+        ids = [r["id"] for r in get_db().execute("SELECT id FROM points WHERE target_id = ?", [tid])]
+    _hserver(monkeypatch, lambda url, method, h: (200, [("Content-Type", "text/html")], "<html>"))
+    r = client.post("/surface/probe", headers=FETCH, data={"target_id": tid, "module_id": "header_probe",
+                                                           "point": ids, "confirm": "yes"})
+    assert r.json["ok"]
+    with app.app_context():
+        from dashboard.db import get_db
+        got = get_db().execute("SELECT COUNT(*) FROM point_checks WHERE module_id = 'header_probe'").fetchone()[0]
+    assert got == 2                                             # 주소 두 개에 판정이 하나씩
+
+
+def test_popup_says_why_there_is_nothing_to_pick(app, client):
+    """모은 주소는 있는데 파라미터가 없을 때(React·Next.js 화면) 빈 표 대신 이유를 적는다."""
+    from tests.test_app import add_target, target_id
+    add_target(client, "https://sesacedu.store", name="관리자 웹")
+    tid = target_id(app, "https://sesacedu.store")
+    client.post("/modules/surface_import/run", data={"target_id": tid, "urls": "https://sesacedu.store/dashboard"},
+                follow_redirects=True)
+    html = client.get(f"/modules/xss_probe/panel?target={tid}&partial=1").get_data(as_text=True)
+    assert "이 모듈이 고를 지점이 없습니다" in html and "HAR" in html
+    assert "고를 지점 0개" in html
+    head = client.get(f"/modules/header_probe/panel?target={tid}&partial=1").get_data(as_text=True)
+    assert "고를 주소 1개" in head and "/dashboard" in head       # 주소 단위 모듈은 그대로 고를 수 있다
