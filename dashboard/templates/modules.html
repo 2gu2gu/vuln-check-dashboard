@@ -121,7 +121,8 @@
       <td class="run-reqs" data-href="{{ url_for('dash.history', target=r.target_id, run=r.id) }}">{%- if r.reqs %}<a href="{{ url_for('dash.history', target=r.target_id, run=r.id) }}">{{ r.reqs }}개 보기</a>{% else %}<span class="sub">0</span>{% endif -%}</td>
       <td class="run-status">{% if r.status == "error" %}<span class="status st-error">실패</span>
           {% elif r.status == "done" %}<span class="status st-fixed">완료</span>
-          {% else %}<span class="status">{{ r.status }}</span>{% endif %}
+          {% elif r.status == "cancelled" %}<span class="status">멈춤</span>
+          {% else %}<span class="status">도는 중</span>{% endif %}
           {% if r.error %}<div class="sub small">{{ r.error }}</div>{% endif %}</td>
     </tr>
   {% endfor %}

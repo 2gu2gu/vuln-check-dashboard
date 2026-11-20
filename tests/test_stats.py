@@ -238,3 +238,26 @@ def test_sesacedu_worklog_matches_what_the_user_said():
     assert all(all(v >= 1 for v in r[:5]) for r in rows)          # 평일 전부
     assert all(r[5] <= 1 and r[6] <= 1 for r in rows)              # 주말은 연하게만
     assert sum(r[6] for r in rows) < sum(1 for _ in rows) / 2       # 일요일은 대개 비어 있다
+
+
+def test_status_badges_keep_their_own_colours():
+    """처리 상태 그림 색이 맨 .st-* 에 걸리면 상태 배지('완료' 등)가 파랗게 덮여 글자가 안 보인다(11-20)."""
+    import re
+    from pathlib import Path
+    css = (Path(__file__).resolve().parent.parent / "dashboard/static/style.css").read_text(encoding="utf-8")
+    # 처리 상태 이름만 본다 — 표면 수집 배지(.st-exists 등)는 원래 바탕이 있다
+    bare = [l for l in css.splitlines()
+            if re.match(r"\s*\.st-(open|confirmed|fixed|false_positive)\b[^{]*\{[^}]*background", l)]
+    assert not bare, bare
+
+
+def test_cancelled_run_reads_in_korean(app, client):
+    add_target(client, "https://sesacedu.store", name="사용자 웹")
+    tid = target_id(app, "https://sesacedu.store")
+    with app.app_context():
+        db = get_db()
+        db.execute("INSERT INTO runs (target_id, module_id, started_at, status, error) "
+                   "VALUES (?, 'http_security_headers', '2026-11-20', 'cancelled', '사람이 멈췄습니다')", [tid])
+        db.commit()
+    page = client.get(f"/modules?target={tid}").get_data(as_text=True)
+    assert '<span class="status">멈춤</span>' in page and ">cancelled<" not in page

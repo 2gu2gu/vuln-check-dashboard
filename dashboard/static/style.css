@@ -878,9 +878,12 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
 .mod-quick { min-height: 38px; }
 
 /* ── 결과 탭 진단 통계(11-20 추가): 전체 숫자 · 유형별 · KISA 21항목 · 상태별 · 모듈별 ── */
-.st-open { background: var(--st-open); } .st-confirmed { background: var(--st-confirmed); }
-.st-fixed { background: var(--st-fixed); }
-.st-false_positive { background: repeating-linear-gradient(45deg, var(--st-fp) 0 4px, var(--surface) 4px 7px); }
+/* 처리 상태 그림의 칸·범례에만 칠한다. 맨 .st-* 는 상태 배지(.status)가 이미 쓰는 이름이라
+   거기에 바탕을 주면 '완료' 배지가 파랗게 덮여 글자가 안 보였다(사용자 지적 11-20). */
+.hs-seg.st-open, .sw.st-open { background: var(--st-open); }
+.hs-seg.st-confirmed, .sw.st-confirmed { background: var(--st-confirmed); }
+.hs-seg.st-fixed, .sw.st-fixed { background: var(--st-fixed); }
+.hs-seg.st-false_positive, .sw.st-false_positive { background: repeating-linear-gradient(45deg, var(--st-fp) 0 4px, var(--surface) 4px 7px); text-decoration: none; }
 
 .totals { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
 @media (max-width: 1100px) { .totals { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
