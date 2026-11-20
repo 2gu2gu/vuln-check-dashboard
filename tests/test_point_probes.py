@@ -547,3 +547,21 @@ def test_popup_says_why_there_is_nothing_to_pick(app, client):
     assert "고를 지점 0개" in html
     head = client.get(f"/modules/header_probe/panel?target={tid}&partial=1").get_data(as_text=True)
     assert "고를 주소 1개" in head and "/dashboard" in head       # 주소 단위 모듈은 그대로 고를 수 있다
+
+
+def test_targets_page_shows_the_address_verdict_on_its_row(app, client, monkeypatch):
+    """주소 단위 점검 결과는 파라미터 줄이 아니라 그 주소 줄에 붙어 보인다(11-20)."""
+    from tests.test_app import add_target, target_id
+    add_target(client, "https://sesacedu.store", name="관리자 웹")
+    tid = target_id(app, "https://sesacedu.store")
+    client.post("/modules/surface_import/run", data={"target_id": tid, "urls": "https://sesacedu.store/dashboard"},
+                follow_redirects=True)
+    with app.app_context():
+        from dashboard.db import get_db
+        ids = [r["id"] for r in get_db().execute("SELECT id FROM points WHERE target_id = ?", [tid])]
+    _hserver(monkeypatch, lambda url, method, h: (200, [("Content-Type", "text/html")], "<html>"))
+    client.post("/surface/probe", headers=FETCH, data={"target_id": tid, "module_id": "header_probe",
+                                                       "point": ids, "confirm": "yes"})
+    page = client.get(f"/targets?target={tid}").get_data(as_text=True)
+    row = page.split("/dashboard", 1)[-1].split("</tr>", 1)[0]
+    assert "보안 헤더 점검" in row and "vchip" in row
