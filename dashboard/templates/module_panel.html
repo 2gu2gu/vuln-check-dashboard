@@ -61,10 +61,10 @@
       {% else %}
       <div class="table-wrap mp-table">
       <table class="grid surface">
-        <thead><tr><th></th><th>메서드</th><th>파라미터</th><th>위치</th><th>발견 값</th><th>이 모듈 판정</th><th>다른 점검</th></tr></thead>
+        <thead><tr><th><input type="checkbox" class="mp-all" aria-label="전체 선택" title="전체 선택"></th><th>메서드</th><th>파라미터</th><th>위치</th><th>발견 값</th><th>이 모듈 판정</th><th>다른 점검</th></tr></thead>
         {% for gr in groups if gr.params %}{# 파라미터 없는 주소는 지점 점검을 걸 자리가 없다 #}
         <tbody>
-          <tr class="ep"><td></td><td class="mono nowrap">{{ gr.methods | sort | join(" · ") }}</td>
+          <tr class="ep"><td><input type="checkbox" class="mp-group" aria-label="{{ gr.path }} 파라미터 전체 선택" title="이 주소의 파라미터 전체"></td><td class="mono nowrap">{{ gr.methods | sort | join(" · ") }}</td>
             <td colspan="5"><span class="mono">{{ gr.path }}</span> <span class="sub small">{{ gr.params | length }}개 파라미터</span></td></tr>
           {% for p in gr.params %}
           {% set sug = [] %}{% for sg in p.suggest %}{% for m in sg.modules %}{% if m[0] == mod.id %}{% set _ = sug.append(1) %}{% endif %}{% endfor %}{% endfor %}

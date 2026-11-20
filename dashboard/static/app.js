@@ -127,8 +127,10 @@
   (function () {
     var cards = document.querySelectorAll(".mod[data-mod]");
     if (!cards.length) return;
+    // 펼친 카드를 기억해 다시 펴던 것은 뺀다(11-20). 자세히는 이제 팝업에서 보는데, 기억된 카드가
+    // 펴진 채 뜨면 카드를 눌러도 팝업만 열리고 접히지 않았다(사용자 지적). 남아 있는 기억도 지운다.
     var open = {};
-    try { open = JSON.parse(localStorage.getItem("modOpen") || "{}"); } catch (e) {}
+    try { localStorage.removeItem("modOpen"); } catch (e) {}
 
     function set(card, on, animate) {
       var body = card.querySelector(".mod-body");
@@ -140,16 +142,17 @@
       body.hidden = !on;
       if (on && !animate) requestAnimationFrame(function () { body.style.animation = ""; });
       open[card.dataset.mod] = on;
-      try { localStorage.setItem("modOpen", JSON.stringify(open)); } catch (e) {}
     }
 
     cards.forEach(function (card) {
-      if (open[card.dataset.mod]) set(card, true, false);
       var btn = card.querySelector(".mod-open");
       if (btn) btn.addEventListener("click", function () {
+        var body = card.querySelector(".mod-body");
+        // 어쩌다 펴져 있으면 먼저 접는다 — 펴진 채 남지 않게
+        if (body && !body.hidden) { set(card, false, true); return; }
         // 모듈은 팝업으로 연다(11-20). 팝업을 못 여는 경우만 예전처럼 카드를 편다
         if (btn.dataset.panel && window.openModulePanel) { window.openModulePanel(btn.dataset.panel); return; }
-        set(card, card.querySelector(".mod-body").hidden, true);
+        set(card, true, true);
       });
       // 접힌 채로 누른 실행 버튼. 필수 칸이 비어 있으면 브라우저는 숨은 칸이라
       // 아무 말 없이 막는다 — 펴서 그 칸을 보여 준 뒤 알린다.
@@ -158,6 +161,8 @@
         var form = document.getElementById(quick.getAttribute("form"));
         if (form && !form.checkValidity()) {
           e.preventDefault();
+          // 칸을 채우는 자리는 이제 팝업이다 — 카드를 펴지 않고 팝업을 연다
+          if (btn && btn.dataset.panel && window.openModulePanel) { window.openModulePanel(btn.dataset.panel); return; }
           set(card, true, true);
           form.reportValidity();
         }
@@ -193,6 +198,25 @@
       el.classList.add("leaving");
       setTimeout(function () { el.remove(); }, 250);
     }
+    // 화면을 새로 그리지 않고도 알림을 띄운다(11-20) — 실행 시작·실패, 끝난 작업
+    window.showToast = function (kind, title, body, link) {
+      var el = document.createElement("div");
+      el.className = "toast " + (kind === "error" ? "error" : "ok");
+      el.setAttribute("role", "status");
+      el.innerHTML = '<span class="toast-dot" aria-hidden="true"></span><div><b></b><div class="toast-body"></div></div>'
+                   + '<button class="toast-x" type="button" aria-label="닫기">✕</button>';
+      el.querySelector("b").textContent = title;
+      el.querySelector(".toast-body").textContent = body || "";
+      if (link) {
+        var a = document.createElement("a");
+        a.href = link.href; a.textContent = link.text;
+        var d = document.createElement("div"); d.appendChild(a);
+        el.querySelector(".toast-body").after(d);
+      }
+      el.querySelector(".toast-x").addEventListener("click", function () { drop(el); });
+      box.appendChild(el);
+      if (kind !== "error") setTimeout(function () { drop(el); }, 6000);
+    };
     [].forEach.call(box.children, function (el) {
       el.querySelector(".toast-x").addEventListener("click", function () { drop(el); });
       if (!el.dataset.keep) setTimeout(function () { drop(el); }, 6000);
@@ -297,6 +321,32 @@
       var dest = document.getElementById("jobs-open");
       if (!dest || typeof form.submit !== "function") return;
 
+      // 화면을 넘기지 않고 보낸다(사용자 결정 11-20). 고른 지점·넣은 값·열린 팝업이 그대로 남는다.
+      e.preventDefault();
+      var go = form.querySelector("button[type=submit]");
+      var data = new FormData(form);
+      if (e.submitter && e.submitter.name) data.append(e.submitter.name, e.submitter.value);
+      form.dataset.sending = "1";
+      if (go) { go.disabled = true; }
+      var title = (card.querySelector("h3") || card.querySelector("h2") || {}).textContent || "실행";
+      fetch(form.action, { method: "POST", body: data, credentials: "same-origin",
+                           headers: { "X-Requested-With": "fetch" } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var msgs = (d.messages || []).map(function (m) { return m.message; });
+          if (d.ok) {
+            if (window.showToast) window.showToast("ok", title.trim() + " — 시작", msgs.join(" ") || "뒤에서 돕니다. 오른쪽 위 '도는 중' 에서 봅니다.");
+          } else if (window.showToast) {
+            window.showToast("error", title.trim() + " — 못 돌림", msgs.join(" "));
+          }
+          if (window.pollJobs) window.pollJobs();
+        })
+        .catch(function () { if (window.showToast) window.showToast("error", "보내지 못했습니다", "서버에 닿지 않았습니다. 다시 눌러 보세요."); })
+        .then(function () {
+          delete form.dataset.sending;
+          if (go) { go.disabled = false; }
+        });
+
       if (still) {                       // 움직임을 줄이는 설정이면 테두리만 잠깐 남긴다
         card.classList.add("sent-still");
         setTimeout(function () { card.classList.remove("sent-still"); }, 1200);
@@ -329,8 +379,7 @@
       ghost.style.height = box.height + "px";
       ghost.style.transitionDuration = FLY + "ms";
       ghost.innerHTML = '<span class="flyer-go">\u25b6</span><span class="flyer-name"></span>';
-      var title = card.querySelector("h3") || card.querySelector("h2");
-      ghost.querySelector(".flyer-name").textContent = title ? title.textContent.trim() : "실행";
+      ghost.querySelector(".flyer-name").textContent = title.trim();
       document.body.appendChild(ghost);
 
       // 붙인 자세를 한 번 굳히고(강제 리플로우) 바로 목표 자세를 준다.
@@ -347,29 +396,6 @@
       setTimeout(function () { dest.classList.add("bump"); }, FLY - 140);
       setTimeout(function () { ghost.remove(); }, WAIT + 1500);   // 화면이 안 넘어가도 치운다
 
-      // 다 날아간 다음에 넘긴다 — 바로 넘기면 눈에 띄기 전에 잘린다.
-      // form.submit() 은 누른 버튼의 name/value 를 싣지 않는다. 도구 표의
-      // '이어서 보기'(_drill) 가 그 값으로 움직이므로 숨은 칸으로 옮겨 싣는다.
-      e.preventDefault();
-      var sub = e.submitter;
-      if (sub && sub.name) {
-        var carry = document.createElement("input");
-        carry.type = "hidden";
-        carry.name = sub.name;
-        carry.value = sub.value;
-        form.appendChild(carry);
-      }
-      form.dataset.sending = "1";
-      var go = form.querySelector("button[type=submit]");
-      if (go) { go.disabled = true; }
-      setTimeout(function () {
-        try {
-          form.submit();
-        } catch (err) {                      // 못 보내면 묶어 두지 않는다
-          delete form.dataset.sending;
-          if (go) { go.disabled = false; }
-        }
-      }, WAIT);
     }, true);
   })();
 
@@ -470,6 +496,14 @@
         }
         d.jobs.forEach(function (j) { list.appendChild(row(j)); });
         d.jobs.forEach(freshenRunRow);
+        (d.done || []).forEach(function (j) {
+          if (!window.showToast) return;
+          var bad = j.status === "error";
+          window.showToast(bad ? "error" : "ok", j.module + (bad ? " — 실패" : j.status === "cancelled" ? " — 멈춤" : " — 끝"),
+                           bad ? j.error : (j.message || ("요청 " + j.sent + "개 · " + j.seconds + "초")),
+                           j.result_url ? { href: j.result_url, text: "결과 표 보기 →" } : null);
+        });
+        if ((d.done || []).length && window.refreshModulePanel) window.refreshModulePanel();
         return d;
       }).catch(function () {});
     }
@@ -601,6 +635,7 @@
     // 닫혀 있어도 머리의 숫자는 가끔 갱신한다 — 끝난 줄 모르고 기다리지 않게
     poll();
     setInterval(function () { if (drawer.hidden) poll(); }, 4000);
+    window.pollJobs = poll;   // 실행을 보낸 직후 바로 한 번 묻게
   })();
 
   // 고르면 바로 적용되는 필터
@@ -882,21 +917,53 @@
   if (!dlg || typeof dlg.showModal !== "function") return;
 
   function count() {
+    var boxes = dlg.querySelectorAll('input[name=point][form="mp-form"]');
     var n = dlg.querySelectorAll('input[name=point][form="mp-form"]:checked').length;
     var c = dlg.querySelector(".mp-count");
     if (c) c.textContent = n;
+    // 머리글 '전체 선택'·주소별 선택 칸을 아래 칸들과 맞춘다(일부만 고르면 반쯤 찬 표시)
+    function sync(box, list) {
+      if (!box) return;
+      var on = Array.prototype.filter.call(list, function (b) { return b.checked; }).length;
+      box.checked = list.length > 0 && on === list.length;
+      box.indeterminate = on > 0 && on < list.length;
+    }
+    sync(dlg.querySelector(".mp-all"), boxes);
+    dlg.querySelectorAll(".mp-group").forEach(function (g) {
+      sync(g, g.closest("tbody").querySelectorAll('input[name=point]'));
+    });
   }
 
-  window.openModulePanel = function (url) {
+  var current = "";
+  window.openModulePanel = function (url, keep) {
+    current = url;
+    // 다시 받아 올 때 고른 지점·넣은 값을 지키려고 미리 적어 둔다
+    var picked = keep ? Array.prototype.map.call(dlg.querySelectorAll('input[name=point]:checked'), function (b) { return b.value; }) : [];
+    var vals = {};
+    if (keep) dlg.querySelectorAll("#mp-form input:not([type=hidden]):not([type=checkbox]), #mp-form select, #mp-form textarea, #mp-form input[type=checkbox]")
+      .forEach(function (el) { vals[el.name] = el.type === "checkbox" ? el.checked : el.value; });
+    var scroll = (dlg.querySelector(".mp-table") || {}).scrollTop || 0;
     fetch(url, { headers: { "X-Requested-With": "fetch" } })
       .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
       .then(function (html) {
         dlg.innerHTML = html;
+        if (keep) {
+          dlg.querySelectorAll("input[name=point]").forEach(function (b) { b.checked = picked.indexOf(b.value) >= 0; });
+          Object.keys(vals).forEach(function (n) {
+            var el = dlg.querySelector('#mp-form [name="' + n + '"]');
+            if (!el) return;
+            if (el.type === "checkbox") el.checked = vals[n]; else el.value = vals[n];
+          });
+          var t = dlg.querySelector(".mp-table"); if (t) t.scrollTop = scroll;
+        }
         if (!dlg.open) dlg.showModal();
         count();
       })
       .catch(function () { location.href = url.replace(/([?&])partial=1&?/, "$1"); });
   };
+
+  // 실행이 끝나면(드로어가 알려 줌) 열린 팝업의 판정만 새로 받아 온다
+  window.refreshModulePanel = function () { if (dlg.open && current) window.openModulePanel(current, true); };
 
   dlg.addEventListener("click", function (e) {
     if (e.target === dlg || e.target.closest(".mp-close")) { dlg.close(); return; }
@@ -909,7 +976,15 @@
       count();
     }
   });
-  dlg.addEventListener("change", function (e) { if (e.target.name === "point") count(); });
+  dlg.addEventListener("change", function (e) {
+    var t = e.target;
+    if (t.classList.contains("mp-all")) {
+      dlg.querySelectorAll('input[name=point][form="mp-form"]').forEach(function (b) { b.checked = t.checked; });
+    } else if (t.classList.contains("mp-group")) {
+      t.closest("tbody").querySelectorAll('input[name=point]').forEach(function (b) { b.checked = t.checked; });
+    }
+    if (t.name === "point" || t.classList.contains("mp-all") || t.classList.contains("mp-group")) count();
+  });
   dlg.addEventListener("submit", function (e) {
     var form = e.target;
     if (form.id === "mp-form" && form.querySelector('input[name=module_id]') &&
