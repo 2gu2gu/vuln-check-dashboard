@@ -172,7 +172,7 @@ def _work(runs, requests, found, touched=0):
     return runs + found + requests / 100 + touched / 10
 
 
-WEEKEND_LEVEL = 2  # 주말은 '했다' 한 단계로만 칠한다
+WEEKEND_LEVEL = 1  # 주말은 '했다' 를 연한 한 단계로만 칠한다(사용자 결정 11-20)
 
 
 def _levels(scores, weekend=()):
@@ -214,6 +214,12 @@ def calendar(db, targets, schedule=None, today=None, weeks_n=None):
                                    seen.get(d.isoformat(), 0) + checked.get(d.isoformat(), 0))
               for d in days}
     level = _levels(scores, weekend={d.isoformat() for d in days if d.weekday() >= 5})
+    # 팀 작업 기록(프로젝트 팩 schedule.worklog) — 진단 기록과 진한 쪽을 쓴다
+    declared = {}
+    for monday, row in (schedule.get("worklog") or {}).items():
+        base = date.fromisoformat(monday)
+        for i, v in enumerate(row[:7]):
+            declared[(base + timedelta(days=i)).isoformat()] = max(0, min(4, int(v)))
 
     marks = {m["date"]: m for m in schedule.get("marks", [])}
     weeks = []
@@ -225,7 +231,8 @@ def calendar(db, targets, schedule=None, today=None, weeks_n=None):
             cells.append({
                 "date": key, "md": d.strftime("%m-%d"), "wd": WEEKDAYS[d.weekday()],
                 "runs": runs.get(key, 0), "requests": reqs.get(key, 0), "found": found.get(key, 0),
-                "level": level.get(key, 0), "in_period": start <= d <= end, "future": d > today,
+                "level": 0 if d > today else max(level.get(key, 0), declared.get(key, 0)),
+                "declared": declared.get(key, 0), "in_period": start <= d <= end, "future": d > today,
                 "mark": mk.get("label", ""), "kind": mk.get("kind", ""), "short": mk.get("short", ""),
                 "today": d == today,
             })
@@ -234,7 +241,7 @@ def calendar(db, targets, schedule=None, today=None, weeks_n=None):
                       "now": first <= today < first + timedelta(days=7)})
 
     active = [c for w in weeks for c in w["cells"] if c["level"]]
-    top = max(active, key=lambda c: scores[c["date"]], default=None)
+    top = max(active, key=lambda c: (scores[c["date"]], c["level"]), default=None)
     upcoming = sorted((k, v["label"]) for k, v in marks.items() if k >= today.isoformat())
     nxt = None
     if upcoming:

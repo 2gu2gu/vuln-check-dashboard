@@ -214,3 +214,27 @@ def test_weekends_are_only_done_or_not():
     lv = stats._levels({"mon": 1, "tue": 5, "wed": 9, "sat": 100, "sun": 0.5, "thu": 0}, weekend={"sat", "sun"})
     assert lv["sat"] == lv["sun"] == stats.WEEKEND_LEVEL and lv["thu"] == 0
     assert lv["mon"] < lv["tue"] < lv["wed"] == 4
+
+
+def test_team_worklog_fills_days_without_diagnosis(app, typed):
+    """팀 작업 기록은 진단 기록이 없는 날을 채우고, 둘 중 진한 쪽으로 칠한다. 앞으로 올 날은 비운다."""
+    from datetime import date
+    sched = {"start": "2026-10-12", "end": "2026-11-23", "weeks": 7,
+             "worklog": {"2026-11-16": [1, 2, 3, 0, 0, 1, 0]}}
+    with app.app_context():
+        db = get_db()
+        cal = stats.calendar(db, db.execute("SELECT * FROM targets").fetchall(), sched, today=date(2026, 11, 20))
+    days = {c["date"]: c for w in cal["weeks"] for c in w["cells"]}
+    assert days["2026-11-17"]["level"] == 2 and days["2026-11-17"]["declared"] == 2
+    assert days["2026-11-19"]["level"] == 0                       # 기록 0, 진단도 없음
+    assert days["2026-11-20"]["level"] >= 1 and days["2026-11-20"]["declared"] == 0  # 기록이 0 이어도 진단한 날은 칠한다
+    assert days["2026-11-21"]["level"] == 0 and days["2026-11-21"]["future"]  # 내일 이후는 칠하지 않는다
+
+
+def test_sesacedu_worklog_matches_what_the_user_said():
+    """사용자 진술(11-20): 평일은 전부 작업, 토요일은 연하게 한 주 걸러, 일요일은 대개 안 함."""
+    from projects.sesacedu import PROJECT
+    rows = PROJECT["schedule"]["worklog"].values()
+    assert all(all(v >= 1 for v in r[:5]) for r in rows)          # 평일 전부
+    assert all(r[5] <= 1 and r[6] <= 1 for r in rows)              # 주말은 연하게만
+    assert sum(r[6] for r in rows) < sum(1 for _ in rows) / 2       # 일요일은 대개 비어 있다
