@@ -640,3 +640,24 @@ html { scroll-behavior: smooth; }
 .mod-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .mod-quick label.check { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .mod-quick .btn[disabled] { opacity: .45; cursor: not-allowed; }
+
+/* ── 대상 탭: 한 줄에 대상 하나, 누르면 아래에 펼친다(11-20) ── */
+.tlist { list-style: none; margin: 0 0 12px; padding: 0; background: var(--surface);
+         border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.tlist li + li { border-top: 1px solid var(--line); }
+.tlist a { display: flex; align-items: baseline; gap: 14px; padding: 12px 16px; color: var(--text); }
+.tlist a:hover { background: var(--surface-2); text-decoration: none; }
+.tlist li.on a { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.tlist .t-name { min-width: 120px; }
+.tlist .t-url { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tlist .t-meta { white-space: nowrap; }
+.tlist .chev { color: var(--sub); }
+.add-target summary { cursor: pointer; }
+.add-target[open] summary { margin-bottom: 12px; }
+.add-target .form-row { border: 0; padding: 0; margin: 0; box-shadow: none; background: none; }
+.t-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.t-head h2 { margin: 0; }
+.t-head h2 .mono { font-size: 13px; font-weight: 400; margin-left: 8px; }
+.t-tools { display: flex; align-items: flex-start; gap: 10px; }
+.t-tools .hdr-edit[open] { min-width: 360px; }
+@media (max-width: 700px) { .tlist a { flex-wrap: wrap; gap: 4px 12px; } .tlist .t-name { min-width: 0; } }
