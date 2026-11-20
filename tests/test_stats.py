@@ -261,3 +261,28 @@ def test_cancelled_run_reads_in_korean(app, client):
         db.commit()
     page = client.get(f"/modules?target={tid}").get_data(as_text=True)
     assert '<span class="status">멈춤</span>' in page and ">cancelled<" not in page
+
+
+# ── 결과 추이·주간 변화(11-20, 대시보드 레퍼런스 반영) ───────────────
+
+def test_trend_counts_cumulative_findings_and_week_over_week(app, typed):
+    from datetime import date
+    sched = {"start": "2026-10-12", "end": "2026-11-23",
+             "marks": [{"date": "2026-11-02", "label": "중간보고", "kind": "mid"},
+                       {"date": "2026-11-23", "label": "최종보고회", "kind": "final"}]}
+    with app.app_context():
+        db = get_db()
+        tr = stats.trend(db, db.execute("SELECT * FROM targets").fetchall(), sched, today=date(2026, 11, 20))
+    # typed: 11-20 에 결과 5건 — 누적은 그날 5, 기간 끝(11-23)까지 축은 그리되 값은 오늘까지만
+    assert tr["total"] == 5 and tr["rows"][-1] == {"md": "11/20", "new": 5, "cum": 5}
+    assert tr["delta"]["findings"] == {"now": 5, "before": 0, "diff": 5}
+    assert [m["label"] for m in tr["marks"]] == ["중간보고", "최종보고회"] and tr["marks"][-1]["pct"] == 100
+    assert 0 < tr["today_pct"] < 100 and tr["line"] and tr["area"].startswith("M0,")
+    assert len(tr["spark"]["findings"].split()) == 14
+
+
+def test_results_page_shows_status_sentence_trend_and_donut(client, typed):
+    page = client.get(f"/?target={typed}").get_data(as_text=True)
+    assert 'class="ov-status ov-alert"' in page and "주의 필요" in page        # Critical 이 있으면 '주의 필요'
+    assert "결과 누적 추이" in page and 'class="spark"' in page and "지난주 대비" in page
+    assert 'class="donut"' in page and "conic-gradient(var(--st-open)" in page

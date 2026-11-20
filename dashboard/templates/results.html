@@ -11,24 +11,64 @@
    연습용 대상은 실서버가 아니라 빼고 센다. 막대·칸을 누르면 아래 표가 그 대상·심각도로 걸러진다. #}
 {% set ov = charts %}
 <section class="overview" aria-labelledby="ov-title">
-  <div class="ov-head">
-    <h2 id="ov-title">점검 현황 <span class="sub small">— 대상 {{ act.targets }}곳 합계, 연습용 제외</span></h2>
+  {# ── 맨 위: 지금 상태를 한 문장으로(레퍼런스 Security Watch 'A routine day'). 색 막대 하나로 무게만 보인다 ── #}
+  {% set crit, high = ov.totals.critical, ov.totals.high %}
+  {% set level = 'alert' if crit else ('warn' if high else 'calm') %}
+  <div class="ov-status ov-{{ level }}">
+    <h2 id="ov-title">{{ {'alert': '주의 필요', 'warn': '확인 필요', 'calm': '조용함'}[level] }}</h2>
+    <p>미조치 Critical <b>{{ crit }}</b>건 · High <b>{{ high }}</b>건, 검토 <b>{{ ov.reviewed_pct }}%</b>
+      {%- if cal and cal.next %} — {{ cal.next.label }}까지 <b>{% if cal.next.days == 0 %}D-DAY{% else %}D-{{ cal.next.days }}{% endif %}</b>{% endif %}
+      <span class="sub small">· 대상 {{ act.targets }}곳 합계, 연습용 제외</span></p>
   </div>
-  {# 맨 위 전체 숫자(11-20 사용자 요청). 왼쪽 셋은 '무엇이 남았나', 오른쪽 넷은 '얼마나 진단했나' #}
+  {# 숫자 칸(레퍼런스 Mosaic·Creator Dashboard): 큰 숫자 + 이번 주 vs 지난주 + 최근 14일 스파크라인 #}
+  {% macro delta(d, unit='') -%}
+    {%- if d.diff > 0 %}<span class="dpill up">▲ {{ "{:,}".format(d.diff) }}{{ unit }}</span>
+    {%- elif d.diff < 0 %}<span class="dpill down">▼ {{ "{:,}".format(-d.diff) }}{{ unit }}</span>
+    {%- else %}<span class="dpill">변화 없음</span>{% endif %}
+    <span class="sub small">지난주 대비</span>
+  {%- endmacro %}
+  {% macro spark(points) -%}
+    <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><polyline points="{{ points }}"/></svg>
+  {%- endmacro %}
   <div class="totals">
     <div class="tot tot-main"><small>전체 결과</small><strong>{{ act.findings }}</strong>
-      <span class="sub small">미조치 {{ act.open }} · 검토 {{ ov.reviewed_pct }}%</span></div>
-    <div class="tot"><small>Critical · High</small><strong>{{ ov.totals.critical + ov.totals.high }}</strong>
-      <span class="sub small">Critical {{ ov.totals.critical }} · High {{ ov.totals.high }}</span></div>
+      <span class="tot-line">{{ delta(tr.delta.findings, '건') }}</span>{{ spark(tr.spark.findings) }}</div>
+    <div class="tot"><small>Critical · High</small><strong>{{ crit + high }}</strong>
+      <span class="sub small">Critical {{ crit }} · High {{ high }}</span>
+      <span class="ratio"><i style="width: {{ ((crit + high) * 100 / (ov.total or 1)) | round(1) }}%"></i></span>
+      <span class="sub small">미조치 {{ ov.total }}건 중 {{ ((crit + high) * 100 / (ov.total or 1)) | round | int }}%</span></div>
     <div class="tot"><small>KISA 21항목 중 발견</small><strong>{{ bd.kisa_cover["found"] }}<span class="unit"> / 21</span></strong>
+      <span class="ratio"><i style="width: {{ (bd.kisa_cover['found'] * 100 / 21) | round(1) }}%"></i><i class="r2" style="width: {{ (bd.kisa_cover['clear'] * 100 / 21) | round(1) }}%"></i></span>
       <span class="sub small">점검·없음 {{ bd.kisa_cover["clear"] }} · 모듈 없음 {{ bd.kisa_cover["none"] }}</span></div>
     <div class="tot tot-act"><small>모듈 실행</small><strong>{{ act.runs }}</strong>
-      <span class="sub small">모듈 {{ act.modules_used }}종</span></div>
+      <span class="tot-line">{{ delta(tr.delta.runs, '번') }}</span>{{ spark(tr.spark.runs) }}</div>
     <div class="tot tot-act"><small>보낸 요청</small><strong>{{ "{:,}".format(act.requests) }}</strong>
-      <span class="sub small">요청 기록에 남은 것</span></div>
+      <span class="tot-line">{{ delta(tr.delta.requests) }}</span>{{ spark(tr.spark.requests) }}</div>
     <div class="tot tot-act"><small>모은 엔드포인트</small><strong>{{ act.endpoints }}</strong>
-      <span class="sub small">파라미터 {{ act.params }}</span></div>
+      <span class="sub small">파라미터 {{ act.params }} · 모듈 {{ act.modules_used }}종 사용</span></div>
   </div>
+
+  {# 결과 누적 추이(레퍼런스 Security Watch 'Exposure over 90 days'): 보고회 날과 오늘을 세로선으로 #}
+  <figure class="panel chart trend">
+    <figcaption>결과 누적 추이 <span class="sub">— {{ tr.start }} ~ {{ tr.end }}, 지금까지 {{ tr.total }}건</span></figcaption>
+    <div class="trend-box">
+      <svg viewBox="0 0 {{ tr.w }} {{ tr.h }}" preserveAspectRatio="none" class="trend-svg" role="img" aria-label="결과 누적 추이">
+        <line class="grid" x1="0" x2="{{ tr.w }}" y1="{{ tr.h - 6 }}" y2="{{ tr.h - 6 }}"/>
+        <line class="grid" x1="0" x2="{{ tr.w }}" y1="12" y2="12"/>
+        {% if tr.area %}<path class="area" d="{{ tr.area }}"/><polyline class="line" points="{{ tr.line }}"/>{% endif %}
+      </svg>
+      {% for m in tr.marks %}<span class="tmark tmark-{{ m.kind }}" style="left: {{ m.pct }}%"><span>{{ m.label }}</span></span>{% endfor %}
+      {% if tr.today_pct is not none %}<span class="tmark tmark-today" style="left: {{ tr.today_pct }}%"><span>오늘</span></span>{% endif %}
+      <span class="tval">{{ tr.top }}</span>
+    </div>
+    <div class="trend-axis"><span>{{ tr.start }}</span><span>{{ tr.end }}</span></div>
+    <details class="as-table"><summary class="sub small">표로 보기</summary>
+      <div class="table-wrap"><table class="grid">
+        <thead><tr><th>날짜</th><th class="num">새 결과</th><th class="num">누적</th></tr></thead>
+        <tbody>{% for r in tr.rows if r.new %}<tr><td>{{ r.md }}</td><td class="num">{{ r.new }}</td><td class="num">{{ r.cum }}</td></tr>{% else %}<tr><td colspan="3" class="sub">기간 안에 새 결과가 없습니다</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </details>
+  </figure>
 
   <div class="chart-row">
     <figure class="panel chart">
@@ -105,15 +145,21 @@
     <div class="chart-stack">
       <figure class="panel chart">
         <figcaption>처리 상태별 <span class="sub">— 전체 결과</span></figcaption>
-        <div class="hs-track hs-thick">
-          {% for g in bd.status if g.n %}
-          <a class="hs-seg st-{{ g.status }}" style="width: {{ g.pct }}%" href="{{ url_for('dash.results', target=target.id, status=g.status) }}"
-             title="{{ g.label }} {{ g.n }}건">{{ g.n }}</a>
-          {% endfor %}
+        {# 도넛(레퍼런스 Mosaic 'Top Countries'): 가운데에 검토한 비율 #}
+        {% set ns = namespace(acc=0, stops=[]) %}
+        {% set st_total = bd.status | sum(attribute='n') %}
+        {% for g in bd.status %}{% if g.n %}
+          {% set ns.stops = ns.stops + ['var(--st-' ~ (g.status | replace('false_positive', 'fp')) ~ ') ' ~ ns.acc ~ '% ' ~ (ns.acc + g.pct) ~ '%'] %}
+          {% set ns.acc = ns.acc + g.pct %}
+        {% endif %}{% endfor %}
+        <div class="donut-row">
+          <div class="donut" style="background: conic-gradient({{ ns.stops | join(', ') if ns.stops else 'var(--st-open) 0 100%' }});">
+            <div class="donut-hole"><strong>{{ ov.reviewed_pct }}%</strong><small>검토</small></div>
+          </div>
+          <ul class="legend legend-list">
+            {% for g in bd.status %}<li><a href="{{ url_for('dash.results', target=target.id, status=g.status) }}"><i class="sw st-{{ g.status }}" aria-hidden="true"></i>{{ g.label }} <b>{{ g.n }}</b> <span class="sub small">{{ g.pct | round | int }}%</span></a></li>{% endfor %}
+          </ul>
         </div>
-        <ul class="legend">
-          {% for g in bd.status %}<li><i class="sw st-{{ g.status }}" aria-hidden="true"></i>{{ g.label }} <b>{{ g.n }}</b></li>{% endfor %}
-        </ul>
       </figure>
       {# ── 진단 일정(11-20 사용자 요청): 프로젝트 주차 × 요일, 그날 작업량을 색 농도로.
          평일은 네 단계로 강약을, 주말은 했다/안 했다만 보인다. ── #}
