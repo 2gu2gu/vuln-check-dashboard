@@ -11,9 +11,9 @@
 
 판정: 신호가 전혀 없음 → 취약. 느려지기만 함 → 잠재. 429·락아웃 → 안전(단 ④ 로 풀리면 취약).
 
-**요청을 여러 번 보낸다.** 로그인·쿠폰처럼 실패 횟수를 세는 주소에 돌리면 **테스트 계정이 잠길 수
-있다.** 그래서 쓰기 메서드는 확인 칸에 SEND 를 적어야 돌아간다. 비밀번호 자리에는 틀린 값을 넣는다 —
-맞히려는 것이 아니라 막는 장치가 있는지 보는 것이다.
+**요청을 여러 번 보낸다.** 로그인·쿠폰처럼 실패 횟수를 세는 주소에 POST 로 돌리면 **테스트 계정이
+잠길 수 있다.** 비밀번호 자리에는 틀린 값을 넣는다 — 맞히려는 것이 아니라 막는 장치가 있는지 보는
+것이다.
 """
 import time
 
@@ -36,7 +36,7 @@ META = {
     "description": "고른 **주소마다** 정한 횟수만큼 잇달아 보내 **막는 장치가 있는지** 봅니다. "
                    "429·Retry-After·락아웃 신호가 전혀 없으면 취약, 응답만 느려지면 잠재입니다. "
                    "막혔으면 ④ X-Forwarded-For 를 바꿔 지나가는지도 봅니다. "
-                   "**쓰기 메서드는 확인 칸에 SEND 를 적어야 돌아갑니다 — 테스트 계정이 잠길 수 있습니다.**",
+                   "**POST 로 돌리면 테스트 계정이 잠길 수 있습니다** — 비밀번호 자리에는 틀린 값을 넣으세요.",
     "params": [
         {"name": "tries", "need": "required", "label": "보낼 횟수", "default": "20", "type": "int",
          "help": "20 회면 보통 레이트리밋이 걸립니다. 너무 크게 두지 마세요."},
@@ -46,8 +46,6 @@ META = {
         {"name": "body", "need": "optional", "label": "POST 본문(이름=값, 줄마다 하나)", "type": "textarea", "default": "",
          "placeholder": "email=test@example.com\npassword=wrong-on-purpose",
          "help": "비밀번호 자리에는 **틀린 값** 을 넣으세요. 맞히려는 점검이 아닙니다."},
-        {"name": "send_ack", "need": "conditional", "when": "POST 를 고를 때만", "label": "보내기 확인", "default": "",
-         "help": "같은 주소에 여러 번 보냅니다. 계정이 잠길 수 있습니다. SEND 를 적어야 실행됩니다."},
     ],
 }
 _REC = ("주소마다 **IP 와 계정 양쪽으로** 짧은 시간 안의 횟수를 세어 막습니다(실패 5회면 잠금, 429 와 Retry-After 반환). "
@@ -89,8 +87,6 @@ def run(target, points, params):
     tries = max(2, min(int(params.get("tries") or 20), MAX_TRIES))
     method = (params.get("method") or "GET").upper()
     data = _body(params.get("body"))
-    if method != "GET" and (params.get("send_ack") or "").strip().upper() != "SEND":
-        raise ValueError("보내기 확인 칸에 SEND 를 적어야 실행됩니다 (같은 주소에 여러 번 보내 계정이 잠길 수 있습니다)")
     out = []
     for p in points:
         lines, verdict, keep, title = [], "safe", None, ""

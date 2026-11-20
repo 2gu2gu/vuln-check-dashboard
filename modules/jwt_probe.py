@@ -141,7 +141,16 @@ def run(target, params):
                            recommendation=SIGN, technique="T1606.002"))
     elif isinstance(exp, (int, float)):
         left = int(exp - time.time())
-        if left > 86400:
+        if left <= 0:
+            # 11-20 실측: 대상에 넣어 둔 토큰이 5시간 전에 끝나 있어 인증이 필요한 점검이 전부 ① 에서 멈췄다.
+            # 그때 아무 말이 없으면 '왜 안 되는지' 를 사람이 알 수 없다. 가장 먼저 말해 준다.
+            out.append(Finding(
+                title=f"대상에 넣어 둔 JWT 가 이미 만료됐습니다({-left // 60}분 전)", severity="info", location=where,
+                evidence=shown + f"\n\nexp = {int(exp)} · 지금보다 {-left}초 전입니다.\n"
+                                 "이 토큰으로는 인증이 필요한 점검(인증·인가, IDOR, 업로드)이 모두 ① 단계에서 "
+                                 "멈춥니다. 대상 탭 '2. 인증' 에서 토큰을 새로 받으세요.",
+                recommendation=""))
+        elif left > 86400:
             out.append(Finding(title=f"JWT 만료가 너무 깁니다({left // 3600}시간 남음)", severity="low", location=where,
                                evidence=shown, recommendation=SIGN, technique="T1606.002"))
     leaked = [k for k in body if any(s in k.lower() for s in SENSITIVE)]

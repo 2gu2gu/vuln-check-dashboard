@@ -13,8 +13,8 @@
 판정: 쉘로 돌 수 있는 확장자나 경로 섞은 이름을 받아 주면 취약, 2xx 지만 돌려준 이름·경로를 알 수 없으면
 잠재(올라간 파일을 직접 찾아봐야 한다).
 
-**파일이 올라가 남는다.** 그래서 확인 칸에 UPLOAD 를 적어야 돌아간다. 올리는 내용은 표식 한 줄뿐이고
-명령을 돌리는 코드가 아니다 — 받아 주는지만 보는 점검이다. 끝난 뒤 남은 파일은 직접 지운다.
+**파일이 올라가 남는다.** 올리는 내용은 표식 한 줄뿐이고 명령을 돌리는 코드가 아니다 — 받아 주는지만
+보는 점검이다. 끝난 뒤 남은 파일은 직접 지운다(근거에 적힌 표식으로 찾는다).
 """
 import uuid
 
@@ -36,15 +36,13 @@ META = {
                {"tactic": "TA0002", "technique": "T1059", "name": "Command and Scripting Interpreter"}],
     "description": "고른 **주소마다** 파일을 올려 ② 그냥 .jsp·.php 를 받아 주는지, ③ 이름에 섞은 경로(`../`·역슬래시)를 "
                    "따르는지, ④ 겹친 확장자·대소문자·널바이트로 검증을 지나가는지 봅니다. "
-                   "**파일이 올라가 남습니다 — 확인 칸에 UPLOAD 를 적어야 돌아가고, 끝난 뒤 직접 지우세요.**",
+                   "**파일이 올라가 남습니다 — 끝난 뒤 직접 지우세요.** 표식으로 찾을 수 있게 근거에 적어 둡니다.",
     "needs": [
         {"kind": "account", "required": False,
          "why": "업로드는 보통 로그인해야 열리고, 올라간 파일은 그 계정 이름으로 남습니다",
          "how": "대상 탭의 **2. 인증** 에 테스트 계정 토큰을 넣습니다"},
     ],
     "params": [
-        {"name": "upload_ack", "need": "required", "label": "업로드 허용 확인", "default": "",
-         "help": "파일이 서버에 남습니다. UPLOAD 를 적어야 실행됩니다."},
         {"name": "field", "need": "required", "label": "파일 칸 이름", "default": "file",
          "help": "HAR 에서 본 multipart 의 파일 칸 이름입니다(file·upload·attachment 등)."},
         {"name": "extra", "need": "optional", "label": "같이 보낼 값(이름=값, 줄마다 하나)", "type": "textarea", "default": "",
@@ -99,8 +97,6 @@ def multipart(field: str, filename: str, content_type: str, body: bytes, extra=(
 
 
 def run(target, points, params):
-    if (params.get("upload_ack") or "").strip().upper() != "UPLOAD":
-        raise ValueError("업로드 허용 확인 칸에 UPLOAD 를 적어야 실행됩니다 (파일이 서버에 남습니다)")
     field = (params.get("field") or "file").strip()
     extra = _extra(params.get("extra"))
     out = []

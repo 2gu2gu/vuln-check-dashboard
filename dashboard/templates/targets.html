@@ -206,7 +206,10 @@
       {# 주소 단위 모듈(보안 헤더·정보 노출)은 파라미터가 아니라 주소 줄을 고른다 — 고를 자리가 바뀐다 #}
       <small class="sub" id="pick-hint" hidden></small>
       {# 모은 파라미터가 '없는 경로' 묶음 안에만 있을 때. 경로 틀(/users/{userId})이 여기 들어온다(11-20 지적) #}
-      {% if totals.hidden_params %}
+      {% if totals.opened_for_params %}
+      <small class="sub">고를 파라미터 {{ totals.hidden_params }}개가 모두 <b>없는 경로</b>(경로 틀 등) 안에 있어
+        <b>펴서 보여 주고 있습니다</b> — 아래에서 바로 고르면 됩니다.</small>
+      {% elif totals.hidden_params %}
       <small class="sub">고를 파라미터 {{ totals.hidden_params }}개가 <b>없는 경로</b> 안에 있습니다 —
         <a href="{{ surl({'show': 'all'}) }}">보이기</a> 를 누르면 고를 수 있습니다.</small>
       {% endif %}

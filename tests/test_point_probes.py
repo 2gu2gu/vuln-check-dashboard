@@ -467,18 +467,16 @@ def _write_point(param="content"):
                  sample="hi", fields={param: "hi"})
 
 
-def test_stored_xss_needs_write_ack():
-    try:
-        stored_xss_probe.run(T, [_write_point()], {"write_ack": ""})
-    except ValueError as e:
-        assert "WRITE" in str(e)
-    else:
-        raise AssertionError("쓰기 허용 없이 돌면 안 된다")
+def test_stored_xss_runs_without_a_write_confirm_box():
+    """확인 칸은 뺐다(11-20 사용자 지시) — 글이 남는다는 경고는 설명에 그대로 있다."""
+    assert "남습니다" in stored_xss_probe.META["description"]
+    assert "직접 지우세요" in stored_xss_probe.META["description"]
+    assert not any(p["name"] == "write_ack" for p in stored_xss_probe.META["params"])
 
 
 def test_stored_xss_stops_when_nothing_is_stored(monkeypatch):
     sent = _server(monkeypatch, lambda url: (200, "아무것도 남지 않음"))
-    c = stored_xss_probe.run(T, [_write_point()], {"write_ack": "WRITE"})[0]
+    c = stored_xss_probe.run(T, [_write_point()], {})[0]
     assert c.verdict == "safe" and "후보 제외" in c.evidence
     assert len(sent) == 2                                   # 쓰기 한 번 + 다시 읽기 한 번
 
@@ -500,7 +498,7 @@ def test_stored_xss_found_when_payload_survives_the_read(monkeypatch):
         status, body = handler(url)
         return Response(url=url, status=status, body=body)
     monkeypatch.setattr(core, "fetch", fetch)
-    c = stored_xss_probe.run(T, [_write_point()], {"write_ack": "WRITE"})[0]
+    c = stored_xss_probe.run(T, [_write_point()], {})[0]
     assert c.verdict == "vuln" and "저장형 XSS 후보" in c.title
     assert "② 기본" in c.evidence and "③ 심화" not in c.evidence
 
@@ -626,6 +624,27 @@ def test_hidden_paths_params_can_still_be_picked(app, client):
         db.execute("UPDATE points SET state = 'exists', status = 200 WHERE param = '' AND url LIKE '%/dashboard'", [])
         db.commit()
     page = client.get(f"/targets?target={tid}").get_data(as_text=True)
-    assert "그 안에 고를 파라미터 1개" in page and "show=all" in page       # 어디에 있는지 알려 준다
+    # 고를 파라미터가 전부 '없는 경로' 안에 있으면 처음부터 펴서 보여 준다(11-20 사용자 지적)
+    assert "펴서 보여 주고 있습니다" in page
+    assert f'name="point" value="{pid}"' in page or f'value="{pid}"' in page
     panel = client.get(f"/modules/xss_probe/panel?target={tid}&partial=1").get_data(as_text=True)
     assert f'value="{pid}"' in panel                                        # 팝업에서는 그냥 고를 수 있다
+
+
+def test_surface_opens_hidden_rows_when_every_pickable_param_is_hidden(app, client):
+    """관리자 웹처럼 고를 파라미터가 전부 '없는 경로' 안에 있으면 처음부터 펴서 보여 준다.
+
+    11-20 사용자 지적: 안내만 띄우고 '보이기' 를 한 번 더 누르게 하면 전체 선택이 0개가 된다.
+    """
+    tid = _seed_points(app, client)
+    with app.app_context():
+        from dashboard.db import get_db
+        db = get_db()
+        urls = [r[0] for r in db.execute(
+            "SELECT DISTINCT url FROM points WHERE target_id = ? AND param != ''", [tid])]
+        for u in urls:                     # 파라미터가 있는 주소를 통째로 '없는 경로' 로 만든다
+            db.execute("UPDATE points SET state = 'not_found' WHERE target_id = ? AND url = ?", [tid, u])
+        db.commit()
+    html = client.get(f"/targets?target={tid}").get_data(as_text=True)
+    assert "펴서 보여 주고 있습니다" in html
+    assert 'name="point"' in html          # 숨긴 채였다면 고를 칸이 하나도 없다
