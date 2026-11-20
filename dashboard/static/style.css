@@ -717,17 +717,40 @@ html { scroll-behavior: smooth; }
 .cp-st[data-st="확인"] { border-style: solid; border-color: var(--sev-low); background: var(--sev-low); color: var(--surface); }
 .cp-st[data-st="코드 확인"] { border-style: solid; border-color: var(--sev-low); color: var(--sev-low); }
 .cp-manual { display: flex; flex-direction: column; gap: 6px; }
+/* 후보 탭 — 용도로 나눔(단서 · 침투 수단 · 다음 시도 · 직접 추가) */
+.cp-find input { width: 100%; }
+.cp-ctabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.cp-ctabs button { border: 1px solid var(--line); background: var(--surface); color: var(--sub); border-radius: 6px;
+                   padding: 6px 4px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.cp-ctabs button span { font-weight: 400; }
+.cp-ctabs button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.cp-cpanel { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 4px 10px 10px; }
+.cp-sub-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cp-sub-row .cp-nvd { margin: 0; }
+.cp-chips { display: flex; gap: 4px; margin: 2px 0 6px; }
+.cp-chips button { border: 1px solid var(--line); background: transparent; color: var(--sub); border-radius: 999px;
+                   padding: 2px 10px; font: inherit; font-size: 11.5px; cursor: pointer; }
+.cp-chips button.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.cp-hidden-note:empty { display: none; }
+.cp-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.cp-preset { border: 1px dashed var(--line); background: var(--surface-2); color: var(--text); border-radius: 999px;
+             padding: 3px 9px; font: inherit; font-size: 11.5px; cursor: pointer; }
+.cp-preset:hover { border-color: var(--accent); color: var(--accent); }
+.cp-cand.on-board { opacity: .5; }
+.cp-cand.on-board::after { content: "보드에 있음"; display: inline-block; margin-left: 6px; font-size: 10.5px; color: var(--accent); }
 
 .cp-main { min-width: 0; }
 .cp-scroll { overflow-x: auto; padding-bottom: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
 .cp-canvas { position: relative; display: flex; gap: 10px; padding: 10px; min-height: 420px; width: max-content; min-width: 100%; }
-.cp-col { flex: 0 0 44px; display: flex; flex-direction: column; border: 1px dashed var(--line); border-radius: var(--radius);
-          background: var(--surface); transition: flex-basis .15s ease; overflow: hidden; }
-.cp-col > header { display: flex; flex-direction: column; gap: 2px; padding: 8px 6px; font-size: 12px; white-space: nowrap; }
-.cp-col:not(.used) > header { writing-mode: vertical-rl; padding: 10px 0; align-items: center; color: var(--sub); }
-.cp-col:not(.used) > header small { display: none; }
-.cp-col.used, body.cp-dragging .cp-col { flex-basis: 220px; }
-body.cp-dragging .cp-col > header { writing-mode: horizontal-tb; padding: 8px 6px; align-items: stretch; }
+/* 모든 열을 같은 모양(가로 글자, 150px)으로 둔다. 빈 열을 세로 글자로 접어 두었더니 찌그러져 보였다(사용자 피드백).
+   빈 열은 흐리게만, 올린 열은 넓고 진하게. 길어진 보드는 끄는 동안 가장자리에서 밀린다. */
+.cp-col { flex: 0 0 150px; display: flex; flex-direction: column; border: 1px dashed var(--line); border-radius: var(--radius);
+          background: var(--surface); transition: flex-basis .15s ease, background .15s ease; overflow: hidden; }
+.cp-col > header { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; font-size: 12px; white-space: nowrap; }
+.cp-col:not(.used) { background: transparent; }
+.cp-col:not(.used) > header { color: var(--sub); }
+.cp-col:not(.used) .cp-drop::before { content: "여기에 놓기"; margin: auto; font-size: 11px; color: var(--sub); opacity: .55; }
+.cp-col.used { flex-basis: 220px; }
 .cp-col.used { border-style: solid; margin-right: 64px; }  /* 선과 선 위 글자가 들어갈 자리 */
 .cp-col.home { border-color: var(--accent); }
 .cp-col.over { border-color: var(--accent); background: var(--accent-soft); }

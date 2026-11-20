@@ -119,8 +119,9 @@ def test_board_page(app, client, monkeypatch, fake_fetch):
     client.post("/modules/http_security_headers/run", data={"target_id": tid, "path": "/"})
     html = client.get(f"/scenario?target={tid}").get_data(as_text=True)
     assert "수사보드" in html
-    # 후보 목록: 확인된 결과와 아직 안 돌린 모듈을 따로 담는다
-    assert "확인된 결과" in html and "아직 안 돌린 모듈" in html
+    # 후보는 용도별 탭: 단서(정찰 결과) · 침투 수단 · 다음 시도(안 돌린 모듈) · 직접 추가
+    for tab in ("단서", "침투 수단", "다음 시도", "직접 추가"):
+        assert tab in html
     assert 'data-kind="finding"' in html and 'data-kind="module"' in html
     assert "지어내지 않습니다" in html or "캠페인을 만들면" in html
 

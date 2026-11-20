@@ -104,7 +104,7 @@ def test_nvd_button_uses_cache_and_page_shows_candidates(app, client):
          "published": "2024-12-17", "summary": "TOCTOU"}]
     app.config["NVD_PAUSE_S"] = 0
     html = client.get(f"/scenario?target={tid}").get_data(as_text=True)
-    assert "NVD 에서 CVE 찾기" in html and "CVE-2024-50379" not in html   # 열기만 해서는 안 묻는다
+    assert "NVD 에서 찾기" in html and "CVE-2024-50379" not in html   # 열기만 해서는 안 묻는다
     assert not sent
     r = client.post("/cve/nvd", data={"target_id": tid})
     assert r.status_code == 302 and sent == ["cpe:2.3:a:apache:tomcat:10.1.1"]
@@ -204,6 +204,36 @@ def test_campaign_delete_and_empty_name(app, client):
         db = get_db()
         assert db.execute("SELECT COUNT(*) FROM campaigns").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM campaign_nodes").fetchone()[0] == 0
+
+
+def test_same_title_findings_become_one_candidate(app, client):
+    """오류 페이지 결과가 경로마다 하나씩 쌓인다 — 후보에서는 한 줄로, 몇 곳인지 적는다."""
+    tid = _target(app)
+    for _ in range(3):
+        _finding(app, tid, "본문: …Apache Tomcat/10.1.1…")
+    html = client.get(f"/scenario?target={tid}").get_data(as_text=True)
+    assert html.count('data-title="오류 페이지에 서버 버전 노출"') == 1
+    assert "3곳" in html and "외 2곳" in html
+
+
+def test_cve_candidates_mark_what_to_show_first(app, client):
+    """NVD 후보가 많아 단계로 거른다(data-hot 2 팀·실제 악용, 1 9.0 이상, 0 나머지). 기본은 2 만."""
+    tid = _target(app)
+    _finding(app, tid, "본문: …Apache Tomcat/10.1.1…")
+    app.config["NVD_FETCH"] = lambda name: [
+        {"id": "CVE-2025-24813", "score": 9.8, "severity": "critical", "vector": "", "kev": True, "published": "", "summary": ""},
+        {"id": "CVE-2024-0002", "score": 9.1, "severity": "critical", "vector": "", "kev": False, "published": "", "summary": ""},
+        {"id": "CVE-2024-0003", "score": 4.3, "severity": "medium", "vector": "", "kev": False, "published": "", "summary": ""}]
+    app.config["NVD_PAUSE_S"] = 0
+    client.post("/cve/nvd", data={"target_id": tid})
+    html = client.get(f"/scenario?target={tid}").get_data(as_text=True)
+
+    def hot(cid):
+        return html.split(f'data-ref="{cid}"', 1)[1].split('data-hot="', 1)[1][0]
+    assert hot("CVE-2024-0002") == "1" and hot("CVE-2024-0003") == "0"
+    nvd_part = html.split("버전으로 찾은 CVE", 1)[1]
+    assert nvd_part.split('data-ref="CVE-2025-24813"', 1)[1].split('data-hot="', 1)[1][0] == "2"   # 팀·KEV
+    assert 'data-cvefilter="0"' in html
 
 
 def test_board_without_campaign_invites_one(app, client):
