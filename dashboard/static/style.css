@@ -742,16 +742,15 @@ html { scroll-behavior: smooth; }
 .cp-main { min-width: 0; }
 .cp-scroll { overflow-x: auto; padding-bottom: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
 .cp-canvas { position: relative; display: flex; gap: 10px; padding: 10px; min-height: 420px; width: max-content; min-width: 100%; }
-.cp-col { flex: 0 0 44px; display: flex; flex-direction: column; border: 1px dashed var(--line); border-radius: var(--radius);
-          background: var(--surface); transition: flex-basis .15s ease; overflow: hidden; }
-.cp-col > header { display: flex; flex-direction: column; gap: 2px; padding: 8px 6px; font-size: 12px; white-space: nowrap; }
-.cp-col:not(.used) > header { writing-mode: vertical-rl; padding: 10px 0; align-items: center; color: var(--sub); }
-.cp-col:not(.used) > header small { display: none; }
+/* 모든 열을 같은 모양(가로 글자, 150px)으로 둔다. 빈 열을 세로 글자로 접어 두었더니 찌그러져 보였다(사용자 피드백).
+   빈 열은 흐리게만, 올린 열은 넓고 진하게. 길어진 보드는 끄는 동안 가장자리에서 밀린다. */
+.cp-col { flex: 0 0 150px; display: flex; flex-direction: column; border: 1px dashed var(--line); border-radius: var(--radius);
+          background: var(--surface); transition: flex-basis .15s ease, background .15s ease; overflow: hidden; }
+.cp-col > header { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; font-size: 12px; white-space: nowrap; }
+.cp-col:not(.used) { background: transparent; }
+.cp-col:not(.used) > header { color: var(--sub); }
+.cp-col:not(.used) .cp-drop::before { content: "여기에 놓기"; margin: auto; font-size: 11px; color: var(--sub); opacity: .55; }
 .cp-col.used { flex-basis: 220px; }
-/* 끄는 동안 빈 열은 조금만 편다 — 전부 220px 로 펴면 보드가 3배로 늘어 놓을 열이 화면 밖으로 밀려난다 */
-body.cp-dragging .cp-col:not(.used) { flex-basis: 96px; }
-body.cp-dragging .cp-col.over:not(.used) { flex-basis: 160px; }
-body.cp-dragging .cp-col > header { writing-mode: horizontal-tb; padding: 8px 6px; align-items: stretch; }
 .cp-col.used { border-style: solid; margin-right: 64px; }  /* 선과 선 위 글자가 들어갈 자리 */
 .cp-col.home { border-color: var(--accent); }
 .cp-col.over { border-color: var(--accent); background: var(--accent-soft); }
