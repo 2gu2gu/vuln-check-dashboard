@@ -87,12 +87,12 @@
     {% if target %}{{ needs_block(module_needs(m, target), target) }}{% endif %}
     {% if target and m.stage != "probe" %}
     {# 탐색 모듈도 이 자리에서 뒤로 보낸다 — 결과 표는 끝난 뒤 탐색 탭에서 연다.
-       누르는 버튼과 '자체 환경 확인' 은 위 .mod-quick 에 있다. #}
+       누르는 버튼과 '자체 환경 확인' 은 .mod-quick 에 있다 — 접혔을 때는 위, 펴면 맨 아래로 내려간다. #}
     <form method="post" action="{{ url_for('dash.module_run', mid=m.id) }}" class="run" id="run-{{ m.id }}" data-run="bg">
       {{ csrf_field() }}
       <input type="hidden" name="target_id" value="{{ target.id }}">
       {% for p in m.params %}{{ param_input(p) }}{% endfor %}
-      {% if m.params %}<small class="sub">값을 바꾼 뒤 위의 <b>{{ RUN_VERB[m.stage] }}</b> 을 누르세요.</small>{% endif %}
+      {% if m.params %}<small class="sub">값을 바꾼 뒤 아래의 <b>{{ RUN_VERB[m.stage] }}</b> 을 누르세요.</small>{% endif %}
     </form>
     {% endif %}
     <footer class="sub mono small">{{ m.source }}</footer>
@@ -121,7 +121,8 @@
       <td class="run-reqs" data-href="{{ url_for('dash.history', target=r.target_id, run=r.id) }}">{%- if r.reqs %}<a href="{{ url_for('dash.history', target=r.target_id, run=r.id) }}">{{ r.reqs }}개 보기</a>{% else %}<span class="sub">0</span>{% endif -%}</td>
       <td class="run-status">{% if r.status == "error" %}<span class="status st-error">실패</span>
           {% elif r.status == "done" %}<span class="status st-fixed">완료</span>
-          {% else %}<span class="status">{{ r.status }}</span>{% endif %}
+          {% elif r.status == "cancelled" %}<span class="status">멈춤</span>
+          {% else %}<span class="status">도는 중</span>{% endif %}
           {% if r.error %}<div class="sub small">{{ r.error }}</div>{% endif %}</td>
     </tr>
   {% endfor %}

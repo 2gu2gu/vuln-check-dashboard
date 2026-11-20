@@ -488,7 +488,8 @@
       var st = tr.querySelector(".run-status");
       if (st) {
         var cls = j.status === "error" ? "status st-error" : j.status === "done" ? "status st-fixed" : "status";
-        var txt = j.status === "error" ? "실패" : j.status === "done" ? "완료" : j.status;
+        var txt = j.status === "error" ? "실패" : j.status === "done" ? "완료"
+                : j.status === "cancelled" ? "멈춤" : "도는 중";
         var want2 = '<span class="' + cls + '">' + txt + "</span>"
                   + (j.error ? '<div class="sub small">' + j.error + "</div>" : "");
         if (st.innerHTML !== want2) { st.innerHTML = want2; }
