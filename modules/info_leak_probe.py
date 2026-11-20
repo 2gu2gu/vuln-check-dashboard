@@ -117,7 +117,7 @@ def run(target, points, params):
         opened = [m for m in DANGER if m in allow]
         note("bypass", f"OPTIONS → {o.status}" + (f" · Allow: {allow}" if allow else ""))
         if opened and verdict == "safe":
-            verdict, keep, title = "potential", o, f"위험한 메서드 허용({', '.join(opened)})"
+            verdict, keep, title = "potential", o, "위험한 메서드 허용"   # 어떤 메서드인지는 근거에
         t = core.fetch(p.url, method="TRACE", headers={"X-Probe-" + tag: tag})
         note("bypass", f"TRACE → {t.status}")
         if t.status == 200 and tag in t.body:

@@ -162,7 +162,7 @@ def test_activity_totals(app, typed):
 
 def test_results_page_shows_totals_and_breakdowns(client, typed):
     page = client.get(f"/?target={typed}").get_data(as_text=True)
-    for word in ("전체 결과", "Critical · High", "KISA 21항목 중 발견", "모은 엔드포인트",
+    for word in ("문제 종류", "Critical · High", "KISA 21항목 중 발견", "모은 엔드포인트",
                  "취약점 유형별", "처리 상태별", "진단 일정", "21항목 점검 현황"):
         assert word in page, word
     assert 'class="kisa-cell cov-found"' in page and 'class="kisa-cell cov-none"' in page

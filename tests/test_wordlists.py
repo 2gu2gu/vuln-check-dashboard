@@ -121,7 +121,9 @@ def test_payload_probe_flags_error_leak(monkeypatch):
     monkeypatch.setattr(payload_probe.probe.core, "fetch",
                         echo(transform=lambda v: "", extra="ORA-00933: SQL command not properly ended"))
     out = payload_probe.run(T, [POINT], {"wordlist": pick("payload-sql-error.txt"), "limit": "3", "methods": "GET"})
-    assert out[0].verdict == "vuln" and "Oracle" in out[0].title
+    # 제목은 종류를 가르는 열쇠라 DB 이름을 넣지 않는다 — 어느 DB 였는지는 근거에 남는다(11-21)
+    assert out[0].verdict == "vuln" and out[0].title == "오류 메시지가 새어 나옴"
+    assert "Oracle" in out[0].evidence
     assert "ORA-00933" in out[0].evidence
 
 

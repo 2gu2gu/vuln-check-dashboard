@@ -88,7 +88,7 @@ def run(target, points, params):
             engine, sign = _error_sign(r.body)
 
             if engine:
-                verdict, title = "vuln", f"오류 메시지가 새어 나옴({engine})"
+                verdict, title = "vuln", "오류 메시지가 새어 나옴"   # 어느 DB·언어인지는 근거에
                 lines = [f"{probe.request_line(point, sent)} → {r.status}", f"응답에 {engine} 오류: {sign}"]
                 best = r
                 break

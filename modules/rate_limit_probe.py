@@ -123,7 +123,7 @@ def run(target, points, params):
             note("basic", f"{blocked_at[0]} 번째에 막힘({blocked_at[1]}) — 제한이 있다")
         else:
             note("basic", "끝까지 같은 응답 — 429·Retry-After·락아웃 신호가 전혀 없다")
-            verdict, title = "vuln", f"요청 수 제한 없음({tries}회 연속 통과)"
+            verdict, title = "vuln", "요청 수 제한 없음"   # 몇 회 보냈는지는 근거에
             # ③ 심화 — 느려지기라도 하는가
             note("deep", f"첫 응답 {int(first * 1000)}ms → 마지막 {int(last * 1000)}ms")
             if first and last / first >= SLOW:

@@ -121,7 +121,7 @@
 
     <div class="chart-stack">
       <figure class="panel chart">
-        <figcaption>처리 상태별 <span class="sub">— 전체 결과</span></figcaption>
+        <figcaption>처리 상태별 <span class="sub">— 참고까지 포함한 모든 건수</span></figcaption>
         {# 도넛(레퍼런스 Mosaic 'Top Countries'): 가운데에 검토한 비율 #}
         {% set ns = namespace(acc=0, stops=[]) %}
         {% set st_total = bd.status | sum(attribute='n') %}
