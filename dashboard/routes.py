@@ -701,7 +701,7 @@ def module_panel(mid):
     mod = _modules_for(target).get(mid) if target else _modules().get(mid)
     if not mod:
         abort(404)
-    groups, totals = _surface_of(target) if (target and (mod.stage == "probe" or mod.takes_point)) else ([], {})
+    groups, totals = _surface_of(target, show_all=True) if (target and (mod.stage == "probe" or mod.takes_point)) else ([], {})
     back = url_for("dash.modules", target=target["id"] if target else None, open=mid)
     return render_template("module_panel.html", mod=mod, target=target, groups=groups, totals=totals,
                            verdicts=VERDICTS, source_label=dv.SOURCE_LABEL, tactic_name=TACTIC_NAME, back=back,
@@ -739,7 +739,7 @@ def _surface_of(target, sort="", state="", show_all=False):
     표면 자동 수집이 남긴 상태·점수·근거를 묶음마다 붙이고(11-20 2단계), 고른 대로 거르고 줄 세운다.
     없는 경로(404·가짜 200)는 기본으로 숨긴다 — 보이면 '찔러 볼 곳' 처럼 읽힌다.
     """
-    groups, totals = [], {"endpoints": 0, "params": 0, "hidden": 0, **{v: 0 for v in VERDICTS}}
+    groups, totals = [], {"endpoints": 0, "params": 0, "hidden": 0, "hidden_params": 0, **{v: 0 for v in VERDICTS}}
     if not target:
         return groups, totals
     suggest_mods = _suggest_modules(target)
@@ -787,6 +787,7 @@ def _surface_of(target, sort="", state="", show_all=False):
             continue
         if gr["missing"] and not show_all and state not in MISSING:
             totals["hidden"] += 1
+            totals["hidden_params"] = totals.get("hidden_params", 0) + len(gr["params"])
             continue
         keep.append(gr)
     totals["states"] = sorted({e["state"] for gr in groups for e in gr["ends"]}, key=list(dv.STATES).index)

@@ -565,3 +565,25 @@ def test_targets_page_shows_the_address_verdict_on_its_row(app, client, monkeypa
     page = client.get(f"/targets?target={tid}").get_data(as_text=True)
     row = page.split("/dashboard", 1)[-1].split("</tr>", 1)[0]
     assert "보안 헤더 점검" in row and "vchip" in row
+
+
+def test_hidden_paths_params_can_still_be_picked(app, client):
+    """없는 경로로 판정된 주소 안의 파라미터(경로 틀 /users/{userId})도 고를 수 있어야 한다(11-20 지적)."""
+    from tests.test_app import add_target, target_id
+    add_target(client, "https://sesacedu.store", name="관리자 웹")
+    tid = target_id(app, "https://sesacedu.store")
+    client.post("/modules/surface_import/run", data={"target_id": tid,
+                "urls": "https://sesacedu.store/users?userId=1\nhttps://sesacedu.store/dashboard"},
+                follow_redirects=True)
+    with app.app_context():
+        from dashboard.db import get_db
+        db = get_db()
+        pid = db.execute("SELECT id FROM points WHERE param = 'userId'").fetchone()["id"]
+        # 표면 수집이 '없는 경로' 로 판정한 모습 — 주소 줄(파라미터 없는 행)에 상태가 붙는다
+        db.execute("UPDATE points SET state = 'not_found', status = 404 WHERE param = '' AND url LIKE '%/users'", [])
+        db.execute("UPDATE points SET state = 'exists', status = 200 WHERE param = '' AND url LIKE '%/dashboard'", [])
+        db.commit()
+    page = client.get(f"/targets?target={tid}").get_data(as_text=True)
+    assert "그 안에 고를 파라미터 1개" in page and "show=all" in page       # 어디에 있는지 알려 준다
+    panel = client.get(f"/modules/xss_probe/panel?target={tid}&partial=1").get_data(as_text=True)
+    assert f'value="{pid}"' in panel                                        # 팝업에서는 그냥 고를 수 있다
