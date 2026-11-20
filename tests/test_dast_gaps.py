@@ -458,8 +458,8 @@ def test_the_headline_number_says_what_it_counts(app, client):
     from tests.test_app import add_target
     add_target(client, "https://sesacedu.store", name="t")
     html = client.get("/").get_data(as_text=True)
-    assert "점검에서 나온 건수" in html
-    assert "한 주소·한 항목이 1건" in html
+    assert "문제 종류" in html and "가지" in html
+    assert "같은 문제도 자리마다 1건으로 셉니다" in html
     assert "전체 결과</small>" not in html
 
 
@@ -483,3 +483,47 @@ def test_false_positives_are_not_counted_as_vulnerabilities(app, client):
         act = stats.activity(db, [t])
     assert act["findings"] == 3 and act["info"] == 1 and act["false"] == 1
     assert act["findings"] - act["info"] - act["false"] == 1       # 진짜 취약점은 하나다
+    assert act["kinds"] == 1                                       # 종류로도 하나
+
+
+def test_false_positives_can_be_purged(app, client):
+    """오탐은 표시만 해 두면 표가 계속 길어진다 — 지울 수 있어야 한다(11-21 사용자 지시)."""
+    from dashboard.db import get_db
+    from tests.test_app import add_target
+    add_target(client, "https://sesacedu.store", name="t")
+    with app.app_context():
+        db = get_db()
+        tid = db.execute("SELECT id FROM targets").fetchone()["id"]
+        rid = db.execute("INSERT INTO runs (target_id, module_id, started_at, status) VALUES (?,?,?,?)",
+                         [tid, "m", "2026-11-21", "done"]).lastrowid
+        for i, st in enumerate(["open", "false_positive", "false_positive"]):
+            db.execute("INSERT INTO findings (run_id, target_id, module_id, title, severity, location, evidence, "
+                       "recommendation, technique, status, created_at, last_seen) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                       [rid, tid, "m", f"t{i}", "high", f"/p{i}", "", "", "T1190", st, "2026-11-21", "2026-11-21"])
+        db.commit()
+    r = client.post("/findings/purge-false", data={"target_id": tid}, follow_redirects=True)
+    assert "오탐으로 표시한 결과 2건을 지웠습니다" in r.get_data(as_text=True)
+    with app.app_context():
+        rows = get_db().execute("SELECT status FROM findings").fetchall()
+    assert [r["status"] for r in rows] == ["open"]          # 오탐이 아닌 것은 그대로
+
+
+def test_kinds_and_places_are_counted_apart(app, client):
+    """같은 문제가 주소 52곳에서 나오면 건수는 52, 종류는 1이다 — 섞으면 숫자를 잘못 읽는다."""
+    from dashboard import stats
+    from dashboard.db import get_db
+    from tests.test_app import add_target
+    add_target(client, "https://sesacedu.store", name="t")
+    with app.app_context():
+        db = get_db()
+        t = db.execute("SELECT * FROM targets").fetchone()
+        rid = db.execute("INSERT INTO runs (target_id, module_id, started_at, status) VALUES (?,?,?,?)",
+                         [t["id"], "header_probe", "2026-11-21", "done"]).lastrowid
+        for i in range(5):                       # 같은 제목·같은 모듈, 자리만 다르다
+            db.execute("INSERT INTO findings (run_id, target_id, module_id, title, severity, location, evidence, "
+                       "recommendation, technique, status, created_at, last_seen) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                       [rid, t["id"], "header_probe", "보안 설정 미흡", "medium", f"/p{i}", "", "", "T1595.002",
+                        "open", "2026-11-21", "2026-11-21"])
+        db.commit()
+        act = stats.activity(db, [t])
+    assert act["findings"] == 5 and act["kinds"] == 1

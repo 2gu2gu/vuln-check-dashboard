@@ -136,6 +136,27 @@ def _rate(vector, mod=None):
     return None
 
 
+@bp.post("/findings/purge-false")
+def findings_purge_false():
+    """오탐으로 표시한 결과를 지운다.
+
+    틀린 줄을 표시만 해 두면 표가 계속 그만큼 길어지고, 보고서에 쓸 때마다 다시 걸러야 한다.
+    왜 틀렸는지는 모듈 코드와 테스트에 남아 있으니(11-21 의 SPA 껍데기 건들이 그랬다) 표에서는
+    치운다. 지우는 것은 **오탐으로 표시한 것만** 이다.
+    """
+    tid = request.form.get("target_id", type=int)
+    db = get_db()
+    where, args = "status = 'false_positive'", []
+    if tid:
+        where += " AND target_id = ?"
+        args = [tid]
+    n = db.execute(f"SELECT COUNT(*) FROM findings WHERE {where}", args).fetchone()[0]
+    db.execute(f"DELETE FROM findings WHERE {where}", args)
+    db.commit()
+    flash(f"오탐으로 표시한 결과 {n}건을 지웠습니다" if n else "지울 오탐이 없습니다", "ok")
+    return redirect(request.form.get("back") or url_for("dash.results", target=tid or None))
+
+
 @bp.post("/findings/<int:fid>/status")
 def finding_status(fid):
     status = request.form.get("status")

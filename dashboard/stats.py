@@ -75,6 +75,9 @@ def activity(db, targets):
         # 참고(info)는 '여기 이런 게 있다' 는 메모다 — 취약점 수에 섞으면 숫자가 부풀어 보인다
         "info": one("SELECT COUNT(*) FROM findings WHERE target_id IN ({m}) AND severity = 'info'"),
         "false": one("SELECT COUNT(*) FROM findings WHERE target_id IN ({m}) AND status = 'false_positive'"),
+        # 같은 문제가 주소 52곳에서 나오면 건수는 52, 종류는 1이다. 이 둘을 섞으면 숫자를 잘못 읽는다
+        "kinds": one("SELECT COUNT(DISTINCT module_id || '|' || title) FROM findings WHERE target_id IN ({m}) "
+                     "AND severity != 'info' AND status != 'false_positive'"),
         "open": one("SELECT COUNT(*) FROM findings WHERE target_id IN ({m}) AND status NOT IN ('fixed', 'false_positive')"),
         "runs": one("SELECT COUNT(*) FROM runs WHERE target_id IN ({m})"),
         "modules_used": one("SELECT COUNT(DISTINCT module_id) FROM runs WHERE target_id IN ({m})"),
