@@ -146,7 +146,8 @@ def test_idor_reads_the_other_account_header_line():
 def test_rate_limit_no_block_at_all_is_vuln(monkeypatch):
     sent = _server(monkeypatch, lambda url, h: (200, "로그인 실패"))
     c = rate_limit_probe.run(T, [_end("https://sesacedu.store/login")], {"tries": "6"})[0]
-    assert c.verdict == "vuln" and "6회 연속 통과" in c.title and len(sent) == 6
+    assert c.verdict == "vuln" and c.title == "요청 수 제한 없음" and len(sent) == 6
+    assert "6 회까지 보냄" in c.evidence          # 몇 회였는지는 근거에 남는다
 
 
 def test_rate_limit_429_is_safe(monkeypatch):

@@ -140,7 +140,8 @@ def test_jwt_an_already_expired_token_is_said_out_loud(monkeypatch):
     _ctx(monkeypatch, {"Authorization": "Bearer " + token(body={"exp": int(time.time()) - 3600})})
     out = jwt_probe.run(T, {})
     hit = [f for f in out if "이미 만료됐습니다" in f.title]
-    assert hit and "60분 전" in hit[0].title
+    assert hit and "분 전에 끝났습니다" in hit[0].evidence     # 분은 제목이 아니라 근거에
+    assert "(" not in hit[0].title                            # 돌릴 때마다 새 줄이 쌓이면 안 된다
     assert "2. 인증" in hit[0].evidence and "IDOR" in hit[0].evidence
 
 
@@ -165,7 +166,8 @@ def test_upload_runnable_extension_accepted_is_vuln(monkeypatch):
     _ctx(monkeypatch)
     _server(monkeypatch, lambda url, m, h, b: (200, "올렸습니다"))
     c = upload_probe.run(T, [_end()], {})[0]
-    assert c.verdict == "vuln" and ".jsp" in c.title and c.severity == "critical"
+    assert c.verdict == "vuln" and c.title == "업로드 확장자 검증 없음" and c.severity == "critical"
+    assert ".jsp" in c.evidence                   # 어떤 확장자였는지는 근거에
 
 
 def test_upload_path_in_the_name_accepted_is_vuln(monkeypatch):
@@ -341,7 +343,8 @@ def test_jndi_tries_every_header_not_just_the_first(monkeypatch):
         return 200, "ok"
     _server(monkeypatch, h)
     c = jndi_probe.run(T, [_end("https://sesacedu.store/login")], {})[0]
-    assert c.verdict == "vuln" and "X-Api-Version" in c.title
+    assert c.verdict == "vuln" and c.title == "jndi 조회로 응답이 끊김(바깥 연결 시도)"
+    assert "X-Api-Version" in c.evidence          # 어느 헤더였는지는 근거에
 
 
 # ── 표면 품질(11-21 실측에서 드러난 것) ─────────────────────
@@ -527,3 +530,27 @@ def test_kinds_and_places_are_counted_apart(app, client):
         db.commit()
         act = stats.activity(db, [t])
     assert act["findings"] == 5 and act["kinds"] == 1
+
+
+def test_titles_do_not_carry_details_that_split_one_problem(monkeypatch):
+    """제목은 '무슨 문제인가' 만 적는다 — 세부가 섞이면 같은 문제가 여러 종류로 갈린다.
+
+    11-21 실측: 보안 헤더 미흡이 빠진 헤더 목록 때문에 48곳짜리와 4곳짜리 두 종류로 세어졌다.
+    더 나쁜 것은 분·시간이 든 제목이다 — 돌릴 때마다 새 줄이 쌓인다(JWT 만료).
+    """
+    from modules import header_probe
+    seen = []
+
+    def fetch(url, *, method="GET", headers=None, **_k):
+        seen.append(headers or {})
+        hdrs = [("Content-Type", "text/html")]
+        if len(seen) > 1:                      # 두 번째 주소에는 CSP 가 있다
+            hdrs.append(("Content-Security-Policy", "default-src 'self'"))
+        return Response(url=url, status=200, headers=hdrs, body="<html>ok</html>")
+    monkeypatch.setattr(core, "fetch", fetch)
+    pts = [Point(method="GET", url="https://sesacedu.store/a", param="", place="path"),
+           Point(method="GET", url="https://sesacedu.store/b", param="", place="path")]
+    out = header_probe.run(T, pts, {})
+    assert {c.title for c in out} == {"보안 헤더·쿠키·CORS 설정 미흡"}   # 빠진 것이 달라도 한 종류
+    assert "빠진 것:" in out[0].evidence                                # 무엇이 빠졌는지는 근거에
+    assert "Content-Security-Policy" in out[0].evidence

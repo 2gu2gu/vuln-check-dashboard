@@ -79,7 +79,10 @@ def run(target, points, params):
         verdict = "vuln" if bad else ("potential" if minor else "safe")
         if verdict == "safe":
             note("bypass", "보안 헤더·쿠키 속성·CORS 모두 괜찮음")
-        title = ("보안 설정 미흡: " + ", ".join(bad + minor))[:120] if verdict != "safe" else ""
+        # 제목은 종류를 가르는 열쇠다 — 빠진 헤더 목록을 넣으면 같은 문제가 여러 종류로 갈린다
+        title = "보안 헤더·쿠키·CORS 설정 미흡" if verdict != "safe" else ""
+        if verdict != "safe":
+            note("bypass", "빠진 것: " + ", ".join(bad + minor))
         out.append(Check(point=p, verdict=verdict, evidence="\n".join(lines), response=c if "CORS" in " ".join(bad) else r,
                          title=title, severity="medium" if verdict == "vuln" else "low", recommendation=_REC))
     return out

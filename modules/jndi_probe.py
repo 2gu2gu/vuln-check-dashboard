@@ -153,16 +153,16 @@ def run(target, points, params):
                 if again is None:
                     note("deep", f"한 번 더 보내도 끊김({int(took2 * 1000)}ms) — 서버가 그 값 때문에 바깥으로 "
                                  "연결을 시도하고 기다린 것이다. 멀쩡한 서버는 이 글자를 해석하지 않는다")
-                    verdict, keep, title = "vuln", None, f"jndi 조회로 응답이 끊김({name}, 바깥 연결 시도)"
+                    verdict, keep, title = "vuln", None, "jndi 조회로 응답이 끊김(바깥 연결 시도)"
                 else:
                     note("deep", "두 번째는 응답이 옴 — 우연히 끊긴 것일 수 있다. 리스너로 확정하세요")
-                    verdict, keep, title = "potential", again, f"jndi 조회에 한 번 끊김({name}, 확정 안 됨)"
+                    verdict, keep, title = "potential", again, "jndi 조회에 한 번 끊김(확정 안 됨)"
                 break
             note("deep", f"{name} 에 jndi(닿지 않는 주소): → {r.status} · {int(took * 1000)}ms "
                          f"(기준 {int(base_ms * 1000)}ms)")
             if took >= base_ms * SLOW and took - base_ms >= MIN_GAP:
                 note("deep", "응답이 뚜렷하게 느려짐 — 서버가 연결을 기다린 흔적. 리스너로 확정하세요")
-                verdict, keep, title = "potential", r, f"jndi 조회에 연결을 시도한 흔적({name}, 응답 지연)"
+                verdict, keep, title = "potential", r, "jndi 조회에 연결을 시도한 흔적(응답 지연)"
                 break
         # ④ 우회 — 글자를 가린 모양으로 다시
         if verdict == "safe" and echoed:

@@ -127,7 +127,7 @@ def run(target, points, params):
             note("basic", f"{ext}: → {r.status} · {len(r.body)}B")
             if r.status in OK:
                 note("basic", f"{ext} 를 그대로 받아 줌 — 확장자 검증이 없다")
-                verdict, keep, title = "vuln", r, f"업로드 확장자 검증 없음({ext} 그대로 통과)"
+                verdict, keep, title = "vuln", r, "업로드 확장자 검증 없음"   # 어떤 확장자인지는 근거에
                 break
         # ③ 심화 — 이름에 경로 섞기
         if verdict == "safe":
@@ -147,7 +147,7 @@ def run(target, points, params):
                 note("bypass", f"{kind}({name}): → {r.status} · {len(r.body)}B")
                 if r.status in OK:
                     note("bypass", f"{kind} 로 검증을 지나감 — 저장된 이름을 확인하세요")
-                    verdict, keep, title = "potential", r, f"업로드 검증을 {kind} 로 지나감(저장 이름 확인 필요)"
+                    verdict, keep, title = "potential", r, "업로드 검증 우회(저장 이름 확인 필요)"
                     break
         if verdict == "safe":
             note("bypass", ".txt 만 받고 돌 수 있는 확장자·경로 섞은 이름·우회 모양은 모두 막힘")

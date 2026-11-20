@@ -123,7 +123,7 @@ def run(target, points, params):
                 note("deep", f"{kind}: GET {trick} → {t.status} · {len(t.body)}B")
                 if t.status in OPEN:
                     note("deep", "경로 모양만 바꿔 차단을 지나감 — 앞단이 경로를 글자로 막고 있다")
-                    verdict, keep, title = "vuln", t, f"경로 변형({kind})으로 차단 통과"
+                    verdict, keep, title = "vuln", t, "경로 변형으로 차단 통과"   # 어떤 변형인지는 근거에
                     break
             # ④ 우회 — 경로 알림 헤더.
             # **첫 화면과 견준다.** 헤더를 안 따르면 그냥 첫 화면이 오는데, 그것이 막힌 응답(401)과
@@ -140,7 +140,7 @@ def run(target, points, params):
                         continue
                     if t.status in OPEN and len(t.body) and not _same(t, n, pct):
                         note("bypass", "헤더를 넣었더니 첫 화면과도 막힌 응답과도 다른 것이 왔다 — 뒷단이 경로를 따랐다")
-                        verdict, keep, title = "vuln", t, f"{kind}로 차단 통과"
+                        verdict, keep, title = "vuln", t, "경로 알림 헤더로 차단 통과"
                         break
         if verdict == "safe":
             note("bypass", "인증 없이는 막히고, 경로 변형·경로 알림 헤더로도 지나가지 못함")
