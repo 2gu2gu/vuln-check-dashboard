@@ -72,6 +72,9 @@ def activity(db, targets):
     return {
         "targets": len(ids),
         "findings": one("SELECT COUNT(*) FROM findings WHERE target_id IN ({m})"),
+        # 참고(info)는 '여기 이런 게 있다' 는 메모다 — 취약점 수에 섞으면 숫자가 부풀어 보인다
+        "info": one("SELECT COUNT(*) FROM findings WHERE target_id IN ({m}) AND severity = 'info'"),
+        "false": one("SELECT COUNT(*) FROM findings WHERE target_id IN ({m}) AND status = 'false_positive'"),
         "open": one("SELECT COUNT(*) FROM findings WHERE target_id IN ({m}) AND status NOT IN ('fixed', 'false_positive')"),
         "runs": one("SELECT COUNT(*) FROM runs WHERE target_id IN ({m})"),
         "modules_used": one("SELECT COUNT(DISTINCT module_id) FROM runs WHERE target_id IN ({m})"),
