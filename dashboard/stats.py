@@ -149,8 +149,9 @@ def breakdown(db, targets, modules):
 
 # ── 진단 일정(11-20 추가): 프로젝트 주차·요일별 진단 활동을 GitHub 잔디처럼 색 농도로 ──
 #
-# 한 칸이 하루, 가로가 주차(1주차~), 세로가 요일이다. 주는 프로젝트 시작 요일부터 센다 —
-# 새싹에듀는 10-06(화)~11-23(월) 49일이라 화~월 7주로 꼭 맞는다(사용자 결정 11-20: 7주).
+# 한 칸이 하루, 가로가 주차(1주차~), 세로가 요일(월~일)이다. 주는 월요일부터 센다.
+# 새싹에듀는 10-12(월) 주를 1주차로 7주 — 최종보고회 11-23(월)이 7주차 첫날이다(사용자 결정 11-20).
+# 마지막 날(end) 뒤의 칸은 기간 밖이라 비워 둔다.
 # 기간은 프로젝트 팩의 PROJECT["schedule"] 에서 온다. 보고회 날(중간·최종)은 칸을 그 색으로 채운다.
 # 시각은 KST ISO 로 저장돼 있어(core.now_iso) 앞 10글자가 곧 KST 날짜다.
 
@@ -192,7 +193,8 @@ def calendar(db, targets, schedule=None, today=None, weeks_n=None):
     runs = _daily(db, f"SELECT {day.format(col='started_at')} d, COUNT(*) FROM runs WHERE target_id IN ({{m}}) GROUP BY d", ids)
     reqs = _daily(db, f"SELECT {day.format(col='created_at')} d, COUNT(*) FROM exchanges WHERE target_id IN ({{m}}) GROUP BY d", ids)
     found = _daily(db, f"SELECT {day.format(col='created_at')} d, COUNT(*) FROM findings WHERE target_id IN ({{m}}) GROUP BY d", ids)
-    days = [start + timedelta(days=i) for i in range(weeks_n * 7)]
+    first = start - timedelta(days=start.weekday())          # 그 주 월요일부터
+    days = [first + timedelta(days=i) for i in range(weeks_n * 7)]
     scores = {d.isoformat(): _work(runs.get(d.isoformat(), 0), reqs.get(d.isoformat(), 0), found.get(d.isoformat(), 0))
               for d in days}
     level = _levels(scores)
@@ -207,7 +209,7 @@ def calendar(db, targets, schedule=None, today=None, weeks_n=None):
             cells.append({
                 "date": key, "md": d.strftime("%m-%d"), "wd": WEEKDAYS[d.weekday()],
                 "runs": runs.get(key, 0), "requests": reqs.get(key, 0), "found": found.get(key, 0),
-                "level": level.get(key, 0), "in_period": d <= end, "future": d > today,
+                "level": level.get(key, 0), "in_period": start <= d <= end, "future": d > today,
                 "mark": mk.get("label", ""), "kind": mk.get("kind", ""), "short": mk.get("short", ""),
                 "today": d == today,
             })

@@ -124,7 +124,7 @@
           {% for i in range(7) %}
           <span class="cal-wd">{{ cal.weekdays[i] }}</span>
           {% for w in cal.weeks %}{% set c = w.cells[i] %}
-          <span class="cal-day lv-{{ c.level }}{{ ' future' if c.future }}{{ (' k-' ~ c.kind) if c.kind }}{{ ' today' if c.today }}"
+          <span class="cal-day lv-{{ c.level }}{{ ' future' if c.future }}{{ ' out' if not c.in_period }}{{ (' k-' ~ c.kind) if c.kind }}{{ ' today' if c.today }}"
                 title="{{ c.md }}({{ c.wd }}){% if c.mark %} · {{ c.mark }}{% endif %}{% if c.today %} · 오늘{% endif %}&#10;모듈 실행 {{ c.runs }}번 · 요청 {{ '{:,}'.format(c.requests) }} · 새 결과 {{ c.found }}건">{{ c.short }}</span>
           {% endfor %}
           {% endfor %}

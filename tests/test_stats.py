@@ -173,17 +173,19 @@ def test_results_page_shows_totals_and_breakdowns(client, typed):
 
 def test_calendar_covers_the_project_weeks_and_marks_deadlines(app, typed):
     from datetime import date
-    sched = {"start": "2026-10-06", "end": "2026-11-23",
+    sched = {"start": "2026-10-12", "end": "2026-11-23", "weeks": 7,
              "marks": [{"date": "2026-11-02", "label": "중간보고", "kind": "mid", "short": "중간"},
                        {"date": "2026-11-23", "label": "최종보고회", "kind": "final", "short": "최종"}]}
     with app.app_context():
         db = get_db()
         cal = stats.calendar(db, db.execute("SELECT * FROM targets").fetchall(), sched, today=date(2026, 11, 20))
     days = {c["date"]: c for w in cal["weeks"] for c in w["cells"]}
-    # 10-06(화)~11-23(월) 은 49일 — 화요일부터 세는 7주로 꼭 맞는다(사용자 결정: 7주)
-    assert len(cal["weeks"]) == 7 and min(days) == "2026-10-06" and max(days) == "2026-11-23"
-    assert [w["label"] for w in cal["weeks"]][:2] == ["1주차", "2주차"] and cal["weekdays"][0] == "화"
-    assert cal["now_week"] == "7주차" and cal["weeks"][6]["now"]
+    # 1주차 = 10-12(월) 주, 월~일 7주. 최종보고회 11-23(월)은 7주차 첫날이고 그 뒤는 기간 밖(사용자 결정 11-20)
+    assert len(cal["weeks"]) == 7 and min(days) == "2026-10-12" and max(days) == "2026-11-29"
+    assert [w["label"] for w in cal["weeks"]][:2] == ["1주차", "2주차"] and "".join(cal["weekdays"]) == "월화수목금토일"
+    assert cal["weeks"][6]["cells"][0]["date"] == "2026-11-23" and cal["weeks"][3]["cells"][0]["date"] == "2026-11-02"
+    assert not days["2026-11-24"]["in_period"] and days["2026-11-23"]["in_period"]
+    assert cal["now_week"] == "6주차" and cal["weeks"][5]["now"]
     # typed 는 11-20 에 결과 5건·실행 5번 — 진단한 날이 하루뿐이면 그날이 가장 진하다
     assert days["2026-11-20"]["runs"] == 5 and days["2026-11-20"]["level"] >= 1 and days["2026-11-20"]["today"]
     assert days["2026-11-23"]["kind"] == "final" and days["2026-11-02"]["kind"] == "mid"
@@ -203,5 +205,5 @@ def test_sesacedu_pack_has_the_project_period(app):
     from dashboard import routes
     with app.test_request_context():
         sched = routes._projects()["sesacedu"].schedule
-    assert sched["start"] == "2026-10-06" and sched["end"] == "2026-11-23"
+    assert sched["start"] == "2026-10-12" and sched["end"] == "2026-11-23" and sched["weeks"] == 7
     assert [m["label"] for m in sched["marks"]] == ["중간보고", "최종보고회"] and "weekly" not in sched
