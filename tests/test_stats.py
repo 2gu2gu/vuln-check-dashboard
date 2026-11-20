@@ -207,3 +207,10 @@ def test_sesacedu_pack_has_the_project_period(app):
         sched = routes._projects()["sesacedu"].schedule
     assert sched["start"] == "2026-10-12" and sched["end"] == "2026-11-23" and sched["weeks"] == 7
     assert [m["label"] for m in sched["marks"]] == ["중간보고", "최종보고회"] and "weekly" not in sched
+
+
+def test_weekends_are_only_done_or_not():
+    """평일은 강약 네 단계, 주말은 했다/안 했다만(사용자 결정 11-20)."""
+    lv = stats._levels({"mon": 1, "tue": 5, "wed": 9, "sat": 100, "sun": 0.5, "thu": 0}, weekend={"sat", "sun"})
+    assert lv["sat"] == lv["sun"] == stats.WEEKEND_LEVEL and lv["thu"] == 0
+    assert lv["mon"] < lv["tue"] < lv["wed"] == 4

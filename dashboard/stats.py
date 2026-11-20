@@ -165,20 +165,30 @@ def _daily(db, sql, ids):
     return {r[0]: r[1] for r in db.execute(sql.format(m=m), ids)}
 
 
-def _work(runs, requests, found):
+def _work(runs, requests, found, touched=0):
     """그날 작업량 한 숫자. 모듈 실행을 기본으로, 결과와 요청을 조금씩 얹는다.
-    퍼징 하루가 요청 수천 개라 요청을 그대로 더하면 다른 날이 다 옅어진다 — 100개를 실행 1번으로 친다."""
-    return runs + found + requests / 100
+    퍼징 하루가 요청 수천 개라 요청을 그대로 더하면 다른 날이 다 옅어진다 — 100개를 실행 1번으로 친다.
+    touched 는 그날 다시 확인된 결과·지점 점검 수 — 실행 없이 손댄 날도 비어 보이지 않게 조금 얹는다."""
+    return runs + found + requests / 100 + touched / 10
 
 
-def _levels(scores):
-    """GitHub 잔디처럼 활동한 날끼리 4단계로 나눈다(사분위). 가장 많은 날 하나 때문에
-    나머지가 다 옅어지지 않게, 최댓값 비율이 아니라 순위로 나눈다."""
-    vals = sorted(v for v in scores.values() if v > 0)
-    if not vals:
-        return {}
-    cut = [vals[int((len(vals) - 1) * q)] for q in (0.25, 0.5, 0.75)]
-    return {k: (0 if v <= 0 else 1 + sum(v > c for c in cut)) for k, v in scores.items()}
+WEEKEND_LEVEL = 2  # 주말은 '했다' 한 단계로만 칠한다
+
+
+def _levels(scores, weekend=()):
+    """평일은 GitHub 잔디처럼 활동한 날끼리 4단계(사분위, 순위로 — 가장 많은 날 하나 때문에
+    나머지가 옅어지지 않게). 주말은 했다/안 했다만 본다(사용자 결정 11-20)."""
+    vals = sorted(v for k, v in scores.items() if v > 0 and k not in weekend)
+    cut = [vals[int((len(vals) - 1) * q)] for q in (0.25, 0.5, 0.75)] if vals else [0, 0, 0]
+    out = {}
+    for k, v in scores.items():
+        if v <= 0:
+            out[k] = 0
+        elif k in weekend:
+            out[k] = WEEKEND_LEVEL
+        else:
+            out[k] = 1 + sum(v > c for c in cut)
+    return out
 
 
 def calendar(db, targets, schedule=None, today=None, weeks_n=None):
@@ -193,11 +203,17 @@ def calendar(db, targets, schedule=None, today=None, weeks_n=None):
     runs = _daily(db, f"SELECT {day.format(col='started_at')} d, COUNT(*) FROM runs WHERE target_id IN ({{m}}) GROUP BY d", ids)
     reqs = _daily(db, f"SELECT {day.format(col='created_at')} d, COUNT(*) FROM exchanges WHERE target_id IN ({{m}}) GROUP BY d", ids)
     found = _daily(db, f"SELECT {day.format(col='created_at')} d, COUNT(*) FROM findings WHERE target_id IN ({{m}}) GROUP BY d", ids)
+    # 실행 없이 손댄 날: 결과가 다시 확인됐거나(last_seen) 지점을 점검한 날
+    seen = _daily(db, f"SELECT {day.format(col='last_seen')} d, COUNT(*) FROM findings WHERE target_id IN ({{m}}) "
+                      f"AND last_seen IS NOT NULL GROUP BY d", ids)
+    checked = _daily(db, f"SELECT {day.format(col='pc.checked_at')} d, COUNT(*) FROM point_checks pc "
+                         f"JOIN points p ON p.id = pc.point_id WHERE p.target_id IN ({{m}}) GROUP BY d", ids)
     first = start - timedelta(days=start.weekday())          # 그 주 월요일부터
     days = [first + timedelta(days=i) for i in range(weeks_n * 7)]
-    scores = {d.isoformat(): _work(runs.get(d.isoformat(), 0), reqs.get(d.isoformat(), 0), found.get(d.isoformat(), 0))
+    scores = {d.isoformat(): _work(runs.get(d.isoformat(), 0), reqs.get(d.isoformat(), 0), found.get(d.isoformat(), 0),
+                                   seen.get(d.isoformat(), 0) + checked.get(d.isoformat(), 0))
               for d in days}
-    level = _levels(scores)
+    level = _levels(scores, weekend={d.isoformat() for d in days if d.weekday() >= 5})
 
     marks = {m["date"]: m for m in schedule.get("marks", [])}
     weeks = []

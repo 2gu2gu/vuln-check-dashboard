@@ -115,36 +115,38 @@
           {% for g in bd.status %}<li><i class="sw st-{{ g.status }}" aria-hidden="true"></i>{{ g.label }} <b>{{ g.n }}</b></li>{% endfor %}
         </ul>
       </figure>
-      {# ── 진단 일정(11-20 사용자 요청): 프로젝트 주차 × 요일, 그날 작업량을 색 농도로 ── #}
-      <figure class="panel chart">
-        <figcaption>진단 일정 <span class="sub">— {{ cal.weeks_n }}주({{ cal.start[5:] }} ~ {{ cal.end[5:] }}){% if cal.now_week %} · 지금 <b>{{ cal.now_week }}</b>{% endif %}</span></figcaption>
+      {# ── 진단 일정(11-20 사용자 요청): 프로젝트 주차 × 요일, 그날 작업량을 색 농도로.
+         평일은 네 단계로 강약을, 주말은 했다/안 했다만 보인다. ── #}
+      <figure class="panel chart cal-panel">
+        <figcaption>진단 일정 <span class="sub">— {{ cal.weeks_n }}주 · {{ cal.start[5:] | replace('-', '/') }} ~ {{ cal.end[5:] | replace('-', '/') }}{% if cal.now_week %} · 지금 <b>{{ cal.now_week }}</b>{% endif %}</span></figcaption>
         <div class="cal" style="--weeks: {{ cal.weeks | length }}">
           <span class="cal-corner"></span>
           {% for w in cal.weeks %}<span class="cal-week {{ 'now' if w.now }}">{{ w.label }}<small>{{ w.from }}</small></span>{% endfor %}
           {% for i in range(7) %}
-          <span class="cal-wd">{{ cal.weekdays[i] }}</span>
+          <span class="cal-wd{{ ' we' if i >= 5 }}{{ ' sat' if i == 5 }}">{{ cal.weekdays[i] }}</span>
           {% for w in cal.weeks %}{% set c = w.cells[i] %}
-          <span class="cal-day lv-{{ c.level }}{{ ' future' if c.future }}{{ ' out' if not c.in_period }}{{ (' k-' ~ c.kind) if c.kind }}{{ ' today' if c.today }}"
+          <span class="cal-day lv-{{ c.level }}{{ ' we' if i >= 5 }}{{ ' sat' if i == 5 }}{{ ' future' if c.future }}{{ ' out' if not c.in_period }}{{ (' k-' ~ c.kind) if c.kind }}{{ ' today' if c.today }}"
                 title="{{ c.md }}({{ c.wd }}){% if c.mark %} · {{ c.mark }}{% endif %}{% if c.today %} · 오늘{% endif %}&#10;모듈 실행 {{ c.runs }}번 · 요청 {{ '{:,}'.format(c.requests) }} · 새 결과 {{ c.found }}건">{{ c.short }}</span>
           {% endfor %}
           {% endfor %}
         </div>
-        <div class="cal-foot">
-          <span class="sub small">
-            진단한 날 <b>{{ cal.active_days }}</b>일 · 모듈 실행 <b>{{ cal.total_runs }}</b>번
-            {% if cal.top %} · 가장 많이 한 날 <b>{{ cal.top.md }}({{ cal.top.wd }})</b>{% endif %}
-            {% if cal.next %} · <b>{{ cal.next.label }}</b> {{ cal.next.md }}{% if cal.next.days == 0 %} 오늘{% else %} <b>D-{{ cal.next.days }}</b>{% endif %}{% endif %}
-          </span>
-          <span class="cal-legend">
-            <span class="sub small">적음</span>
+        <div class="cal-legend">
+          <span class="lg-group"><span class="sub small">평일</span>
             {% for i in range(5) %}<i class="cal-day lv-{{ i }}" aria-hidden="true"></i>{% endfor %}
-            <span class="sub small">많음</span>
+            <span class="sub small">적음 → 많음</span></span>
+          <span class="lg-group"><span class="sub small">주말</span>
+            <i class="cal-day lv-0" aria-hidden="true"></i><i class="cal-day lv-2" aria-hidden="true"></i>
+            <span class="sub small">안 함 / 함</span></span>
+          <span class="lg-group">
             <i class="cal-day k-mid" aria-hidden="true"></i><span class="sub small">중간보고</span>
-            <i class="cal-day k-final" aria-hidden="true"></i><span class="sub small">최종보고회(마감)</span>
-            <i class="cal-day lv-0 today" aria-hidden="true"></i><span class="sub small">오늘</span>
-          </span>
+            <i class="cal-day k-final" aria-hidden="true"></i><span class="sub small">최종보고회</span>
+            <i class="cal-day lv-0 today" aria-hidden="true"></i><span class="sub small">오늘</span></span>
         </div>
-        <p class="sub small cal-note">작업량 = 모듈 실행 + 새 결과 + 요청 100개당 1. 진단한 날끼리 순위로 네 단계를 나눕니다.</p>
+        <p class="cal-sum">
+          진단한 날 <b>{{ cal.active_days }}</b>일 <span class="dot">·</span> 모듈 실행 <b>{{ cal.total_runs }}</b>번
+          {% if cal.top %}<span class="dot">·</span> 가장 많이 한 날 <b>{{ cal.top.md | replace('-', '/') }}({{ cal.top.wd }})</b>{% endif %}
+          {% if cal.next %}<span class="dot">·</span> {{ cal.next.label }}까지 <b class="dday">{% if cal.next.days == 0 %}D-DAY{% else %}D-{{ cal.next.days }}{% endif %}</b>{% endif %}
+        </p>
       </figure>
     </div>
   </div>
