@@ -264,8 +264,12 @@ def targets():
     header_text = {row["id"]: (row["headers"] or "") for row in targets}
     # 표면 탭을 여기로 합쳤다(11-20 사용자 결정). 대상을 누르면 그 대상이 모은
     # 페이지·파라미터와 지점 점검이 목록 아래에 뜬다.
-    groups, totals = _surface_of(target)
-    return render_template("targets.html", target=target, targets=targets,
+    # ?target= 로 누른 대상만 펼친다. 처음 열면 목록만 보인다.
+    picked = target if request.args.get("target", type=int) and target else None
+    groups, totals = _surface_of(picked)
+    point_counts = {row["target_id"]: {"pages": row["pages"], "params": row["params"]} for row in get_db().execute(
+        "SELECT target_id, COUNT(DISTINCT url) AS pages, SUM(param != '') AS params FROM points GROUP BY target_id")}
+    return render_template("targets.html", target=target, targets=targets, picked=picked, point_counts=point_counts,
                            header_names=names, header_text=header_text, logins=logins,
                            groups=groups, totals=totals, probes=_probe_modules(target),
                            collectors=[m for m in _modules_for(target).values() if m.stage == "collect"],

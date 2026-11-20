@@ -3,26 +3,35 @@
 {% block title %}대상{% endblock %}
 {% block content %}
 <h1>대상</h1>
-<p class="lead">점검할 서버를 여기에 등록합니다 — 한 줄이 서버 하나입니다.
-  <b>이름을 누르면</b> 그 대상에서 모은 페이지·파라미터가 아래에 뜨고, 거기서 지점을 골라 점검합니다.</p>
-<dl class="facts">
-  <dt>프로젝트</dt><dd>점검할 서비스 한 벌. 그 프로젝트에 허락된 주소만 등록됩니다 — 오타 하나로 남의 서버에 요청이 나가는 일을 막습니다.</dd>
-  <dt>점검 대상</dt><dd>그 서비스의 어느 서버인지(사용자 웹·관리자 웹 등). 모듈이 요청을 보낼 수 있는 호스트와 포트가 여기서 정해집니다.</dd>
-  <dt>이름</dt><dd>주소만 보고는 어디인지 알기 어려워서 알아보기 쉽게 붙이는 별명입니다.</dd>
-  <dt>연습용</dt><dd>모듈을 시험해 보라고 띄워 둔 가짜 서버입니다. 실제 서비스가 아닙니다.</dd>
-</dl>
 
-<div class="proj-list">
-  {% for p in PROJECTS.values() %}
-  <div class="panel proj">
-    <b>{{ p.name }}</b>
-    <span class="sub">{{ p.description }}</span>
-    <span class="mono small">{% for h in p.scope %}{{ h }}{{ ", " if not loop.last }}{% endfor %}</span>
-    {% if p.roles %}{% for rid, r in p.roles.items() %}<span class="sub small">{{ r.name }}{% if r.practice %} <span class="practice-tag">연습용</span>{% endif %}{% if r.scope %} — <span class="mono">{{ r.scope | join(", ") }}</span>{% endif %}</span>{% endfor %}{% endif %}
-  </div>
+{# 한 줄에 대상 하나(11-20 사용자 요청). 누르면 그 대상의 페이지·파라미터가 아래에 펴진다.
+   인증 헤더·삭제는 줄이 길어져서 누른 대상 아래로 옮겼다. #}
+{% if targets %}
+<ul class="tlist">
+  {% for t in targets %}
+  {% set tp = PROJECTS[t.project] if t.project in PROJECTS else none %}
+  {% set n = point_counts.get(t.id) %}
+  <li class="{{ 'on' if picked and t.id == target.id }}">
+    <a href="{{ url_for('dash.targets', target=t.id) }}#surface" title="이 대상에서 모은 페이지·파라미터 보기"
+       {{ 'aria-current="true"' | safe if picked and t.id == target.id }}>
+      <b class="t-name">{{ t.name }}</b>
+      <span class="mono t-url">{{ t.url }}</span>
+      {% if tp and tp.is_practice(t.role) %}<span class="practice-tag">연습용</span>{% endif %}
+      <span class="sub small t-meta">
+        {%- if n and n.pages %}페이지 {{ n.pages }} · 파라미터 {{ n.params }}{% else %}모은 지점 없음{% endif -%}
+        {%- if header_names[t.id] %} · 인증 헤더 {{ header_names[t.id] | length }}{% endif -%}
+      </span>
+      <span class="chev" aria-hidden="true">›</span>
+    </a>
+  </li>
   {% endfor %}
-</div>
+</ul>
+{% else %}
+  {{ empty("등록된 대상이 없습니다", "아래 '대상 추가' 에서 점검할 서버를 등록하세요.", "", "") }}
+{% endif %}
 
+<details class="panel add-target" {{ 'open' if not targets }}>
+  <summary><b>+ 대상 추가</b> <span class="sub small">프로젝트에 허락된 주소만 등록됩니다</span></summary>
 <form method="post" class="panel form-row">
   {{ csrf_field() }}
   {% set default_pid = target.project if target else ((PROJECTS.keys() | reject("equalto", "general") | first) or "general") %}
@@ -44,85 +53,62 @@
   <label class="grow">메모<input name="note" placeholder="선택"></label>
   <button class="btn" type="submit">등록</button>
 </form>
+</details>
 
-{% if targets %}
-<div class="table-wrap">
-<table class="grid targets">
-  <thead><tr><th>프로젝트</th><th>점검 대상</th><th>이름</th><th>주소</th><th>인증 헤더</th><th>메모</th><th>등록</th><th></th></tr></thead>
-  <tbody>
-  {% for t in targets %}
-    <tr class="{{ 'on' if target and t.id == target.id }}">
-      {% set tp = PROJECTS[t.project] if t.project in PROJECTS else none %}
-      <td>{% if tp and tp.is_practice(t.role) %}<span class="practice-badge" title="연습용으로 띄운 가짜 서버입니다. 실제 서비스가 아닙니다.">연습용</span>
-          {%- else %}<span class="proj-badge">{{ tp.name if tp else t.project ~ " (팩 없음)" }}</span>{% endif %}</td>
-      <td class="sub">{{ PROJECTS[t.project].role_name(t.role) if t.project in PROJECTS else t.role }}</td>
-      <td><a href="{{ url_for('dash.targets', target=t.id) }}#surface"
-             title="이 대상에서 모은 페이지·파라미터 보기"
-             {{ 'aria-current="true"' | safe if target and t.id == target.id }}>{{ t.name }}</a></td>
-      <td class="mono">{{ t.url }}</td>
-      <td>
-        <details class="hdr-edit" id="hdr-{{ t.id }}">
-          <summary>
-            {%- if header_names[t.id] %}<span class="mono small">{{ header_names[t.id] | join(", ") }}</span>
-              <span class="sub small">고치기</span>
-            {%- else %}<span class="sub">없음</span> <span class="hdr-cue">넣기</span>{% endif -%}
-          </summary>
-          <form method="post" action="{{ url_for('dash.target_headers', tid=t.id) }}">
-            {{ csrf_field() }}
-            <textarea name="headers" rows="3" class="mono" placeholder="Cookie: JSESSIONID=...&#10;Authorization: Bearer ...">{{ header_text[t.id] }}</textarea>
-            <small class="sub">한 줄에 '이름: 값'. 저장하면 기존 값을 모두 바꿉니다. 이 대상 주소로 가는 요청에만 붙습니다.
-              값은 여기서 그대로 보이고 요청 기록에도 가리지 않고 남습니다.</small>
-            <div class="row-btns">
-              <button class="btn" type="submit">저장</button>
-              {% if header_names[t.id] %}<button class="btn ghost danger" type="submit" name="clear" value="yes">지우기</button>{% endif %}
-            </div>
-          </form>
-          {% if logins.get(t.id) %}
-          <form method="post" action="{{ url_for('dash.target_login', tid=t.id) }}" class="login-get">
-            {{ csrf_field() }}
-            <b class="small">로그인해서 토큰 받기</b>
-            {% set demo = logins[t.id].get('demo') %}
-            <div class="login-row">
-              <input name="ident" type="text" autocomplete="off" value="{{ demo.ident if demo else '' }}"
-                     placeholder="{{ logins[t.id].get('id_label') or '아이디' }}" aria-label="아이디">
-              {# 연습용 계정은 가리지 않는다 — 가짜고, 안 보이면 뭘 보냈는지 모른다 #}
-              <input name="secret" type="{{ 'text' if demo else 'password' }}" autocomplete="off"
-                     value="{{ demo.secret if demo else '' }}"
-                     placeholder="비밀번호" aria-label="비밀번호">
-              <button class="btn" type="submit">받아서 넣기</button>
-            </div>
-            {% if demo %}
-            <small class="sub">{{ demo.note }}
-              <span class="mono">{{ demo.ident }} / {{ demo.secret }}</span></small>
-            {% else %}
-            <small class="sub">{{ logins[t.id].get('note') or
-              '비밀번호는 저장하지 않습니다 — 한 번 보내고 버립니다. 받은 토큰만 위 인증 헤더에 들어갑니다.' }}</small>
-            {% endif %}
-            <small class="sub mono">POST {{ logins[t.id].get('path') }}</small>
-          </form>
-          {% endif %}
-        </details>
-      </td>
-      <td class="sub">{{ t.note }}</td>
-      <td class="sub">{{ t.created_at | kst }}</td>
-      <td class="right">
-        <form method="post" action="{{ url_for('dash.target_delete', tid=t.id) }}" data-confirm="{{ t.name }} 과 그 결과를 모두 지울까요?">
-          {{ csrf_field() }}
-          <button class="btn ghost danger" type="submit">삭제</button>
-        </form>
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
-{% endif %}
-
-{# ── 표면: 고른 대상이 모은 페이지·파라미터(옛 표면 탭, 11-20 합침) ── #}
-{% if target %}
+{# ── 누른 대상: 인증 헤더·삭제와 모은 페이지·파라미터(옛 표면 탭, 11-20 합침) ── #}
+{% if picked %}
 <section id="surface" class="surface-sec">
-<div class="group-head"><h2>{{ target.name }} — 모은 페이지·파라미터</h2>
-  <span class="sub small">수집 모듈이 모은 엔드포인트·파라미터입니다. 지점을 골라 점검 모듈을 돌리면 지점마다 취약 · 잠재 · 안전으로 판정하고, 취약은 결과 탭에도 올라갑니다.</span></div>
+{% set t = target %}
+<div class="t-head">
+  <h2>{{ target.name }} <span class="mono sub">{{ target.url }}</span></h2>
+  <div class="t-tools">
+    <details class="hdr-edit" id="hdr-{{ t.id }}">
+      <summary><span class="small">인증 헤더</span>
+        {%- if header_names[t.id] %}<span class="mono small">{{ header_names[t.id] | join(", ") }}</span>
+          <span class="sub small">고치기</span>
+        {%- else %}<span class="sub">없음</span> <span class="hdr-cue">넣기</span>{% endif -%}
+      </summary>
+      <form method="post" action="{{ url_for('dash.target_headers', tid=t.id) }}">
+        {{ csrf_field() }}
+        <textarea name="headers" rows="3" class="mono" placeholder="Cookie: JSESSIONID=...&#10;Authorization: Bearer ...">{{ header_text[t.id] }}</textarea>
+        <small class="sub">한 줄에 '이름: 값'. 저장하면 기존 값을 모두 바꿉니다. 이 대상 주소로 가는 요청에만 붙습니다.
+          값은 여기서 그대로 보이고 요청 기록에도 가리지 않고 남습니다.</small>
+        <div class="row-btns">
+          <button class="btn" type="submit">저장</button>
+          {% if header_names[t.id] %}<button class="btn ghost danger" type="submit" name="clear" value="yes">지우기</button>{% endif %}
+        </div>
+      </form>
+      {% if logins.get(t.id) %}
+      <form method="post" action="{{ url_for('dash.target_login', tid=t.id) }}" class="login-get">
+        {{ csrf_field() }}
+        <b class="small">로그인해서 토큰 받기</b>
+        {% set demo = logins[t.id].get('demo') %}
+        <div class="login-row">
+          <input name="ident" type="text" autocomplete="off" value="{{ demo.ident if demo else '' }}"
+                 placeholder="{{ logins[t.id].get('id_label') or '아이디' }}" aria-label="아이디">
+          {# 연습용 계정은 가리지 않는다 — 가짜고, 안 보이면 뭘 보냈는지 모른다 #}
+          <input name="secret" type="{{ 'text' if demo else 'password' }}" autocomplete="off"
+                 value="{{ demo.secret if demo else '' }}"
+                 placeholder="비밀번호" aria-label="비밀번호">
+          <button class="btn" type="submit">받아서 넣기</button>
+        </div>
+        {% if demo %}
+        <small class="sub">{{ demo.note }}
+          <span class="mono">{{ demo.ident }} / {{ demo.secret }}</span></small>
+        {% else %}
+        <small class="sub">{{ logins[t.id].get('note') or
+          '비밀번호는 저장하지 않습니다 — 한 번 보내고 버립니다. 받은 토큰만 위 인증 헤더에 들어갑니다.' }}</small>
+        {% endif %}
+        <small class="sub mono">POST {{ logins[t.id].get('path') }}</small>
+      </form>
+      {% endif %}
+    </details>
+  <form method="post" action="{{ url_for('dash.target_delete', tid=t.id) }}" data-confirm="{{ t.name }} 과 그 결과를 모두 지울까요?">
+    {{ csrf_field() }}
+    <button class="btn ghost danger" type="submit">삭제</button>
+  </form>
+  </div>
+</div>
 
 <section class="cards">
   <div class="card"><small>엔드포인트</small><strong>{{ totals.endpoints }}</strong></div>

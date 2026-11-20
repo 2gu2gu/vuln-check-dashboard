@@ -273,7 +273,16 @@ def test_clicking_a_target_shows_its_points(client, seeded):
     page = client.get(f"/targets?target={tid}").get_data(as_text=True)
     assert f'href="/targets?target={tid}#surface"' in page
     assert 'id="surface"' in page and 'id="probe-form"' in page
-    assert '<tr class="on">' in page
+    assert '<li class="on">' in page
+    # 목록 줄에는 모은 개수가 붙는다 — 주소 2개(courses, qna), 파라미터 4개
+    assert "페이지 2 · 파라미터 4" in page
+
+
+def test_targets_page_starts_as_a_plain_list(client, seeded):
+    """처음 열면 한 줄짜리 목록만. 눌러야 그 대상이 펼쳐진다. 설명 배너는 없다."""
+    page = client.get("/targets").get_data(as_text=True)
+    assert 'class="tlist"' in page and 'id="surface"' not in page
+    assert 'class="facts"' not in page and 'class="proj-list"' not in page
 
 
 def test_probe_returns_to_targets_tab(client, seeded):
