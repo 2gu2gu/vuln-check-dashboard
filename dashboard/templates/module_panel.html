@@ -1,0 +1,96 @@
+{% extends "_bare.html" if partial else "base.html" %}
+{% from "_macros.html" import param_input, needs_block, verdict, empty %}
+{% block title %}{{ mod.name }}{% endblock %}
+{% block content %}
+{# ── 모듈 팝업(11-20 사용자 결정) ─────────────────────────────
+   왼쪽: 모듈 설명·설정·실행. 오른쪽: 이 대상이 모은 지점 표.
+   지점 점검 모듈은 오른쪽에서 고른 지점마다 ① 받는 구간 → ② 기본 → ③ 심화 → ④ 우회 순서로 넣는다.
+   폼은 back 으로 이 팝업이 다시 열리는 모듈 화면을 실어 보낸다 — 실행 뒤 같은 자리로 돌아온다. #}
+{% set is_probe = mod.stage == "probe" %}
+<div class="mp" data-mod="{{ mod.id }}">
+  <header class="mp-head">
+    <div>
+      <span class="stage stage-{{ mod.stage }}">{{ mod.stage_label }}</span>
+      <span class="kind kind-{{ mod.kind }}">{{ "수동(읽기)" if mod.kind == "passive" else "능동" }}</span>
+      <span class="sub small">{{ mod.category }}{% if mod.vuln and mod.vuln != '기타' %} · <b>{{ mod.vuln }}</b>{% endif %}</span>
+      <h2>{{ mod.name }}</h2>
+    </div>
+    {% if partial %}<button type="button" class="btn ghost icon mp-close" aria-label="닫기">✕</button>{% endif %}
+  </header>
+
+  {% if not target %}
+    {{ empty("대상을 먼저 등록하세요", "모듈은 등록된 대상에만 실행됩니다.", url_for('dash.targets'), "대상 등록") }}
+  {% else %}
+  <div class="mp-grid {{ 'with-surface' if is_probe }}">
+    <section class="mp-side">
+      <p class="sub">{{ mod.description | strong }}</p>
+      <div class="tags">
+        {% for a in mod.attack %}<span class="tag" title="{{ a.name }}"><b>{{ tactic_name[a.tactic] }}</b> <span class="mono">{{ a.technique }}</span></span>{% endfor %}
+        {% for k in mod.kisa %}<span class="tag"><b>KISA</b> <span class="mono">{{ k }}</span></span>{% endfor %}
+      </div>
+      {{ needs_block(module_needs(mod, target), target) }}
+      <form method="post" id="mp-form" data-run="bg" class="mp-form"
+            action="{{ url_for('dash.surface_probe') if is_probe else url_for('dash.module_run', mid=mod.id) }}">
+        {{ csrf_field() }}
+        <input type="hidden" name="target_id" value="{{ target.id }}">
+        <input type="hidden" name="back" value="{{ back }}">
+        {% if is_probe %}<input type="hidden" name="module_id" value="{{ mod.id }}">{% endif %}
+        {% for p in mod.params %}{{ param_input(p, (mod.id ~ "__") if is_probe else "") }}{% endfor %}
+        <div class="mp-run">
+          {% if mod.kind == "active" %}
+          <label class="check"><input type="checkbox" name="confirm" value="yes"> 자체 환경({{ target.name }}) 확인</label>
+          {% endif %}
+          <button class="btn" type="submit">{% if is_probe %}고른 지점 점검 <span class="mp-count">0</span>개{% else %}{{ RUN_VERB[mod.stage] }}{% endif %}</button>
+        </div>
+      </form>
+      <footer class="sub mono small">{{ mod.source }}</footer>
+    </section>
+
+    {% if is_probe %}
+    <section class="mp-surface">
+      <div class="mp-tools">
+        <b>{{ target.name }}</b> <span class="sub small">— 모은 지점 {{ totals.params or 0 }}개</span>
+        <span class="mp-pick">
+          <button type="button" class="btn ghost small-btn" data-pick="all">전체</button>
+          <button type="button" class="btn ghost small-btn" data-pick="suggest" title="표면 수집이 이 모듈을 추천한 지점">추천 지점만</button>
+          <button type="button" class="btn ghost small-btn" data-pick="none">비우기</button>
+        </span>
+      </div>
+      {% if not groups %}
+        {{ empty("모은 지점이 없습니다", "모듈 탭의 표면 수집 모듈을 먼저 돌리세요.", url_for('dash.modules', target=target.id), "모듈로") }}
+      {% else %}
+      <div class="table-wrap mp-table">
+      <table class="grid surface">
+        <thead><tr><th></th><th>메서드</th><th>파라미터</th><th>위치</th><th>발견 값</th><th>이 모듈 판정</th><th>다른 점검</th></tr></thead>
+        {% for gr in groups if gr.params %}{# 파라미터 없는 주소는 지점 점검을 걸 자리가 없다 #}
+        <tbody>
+          <tr class="ep"><td></td><td class="mono nowrap">{{ gr.methods | sort | join(" · ") }}</td>
+            <td colspan="5"><span class="mono">{{ gr.path }}</span> <span class="sub small">{{ gr.params | length }}개 파라미터</span></td></tr>
+          {% for p in gr.params %}
+          {% set sug = [] %}{% for sg in p.suggest %}{% for m in sg.modules %}{% if m[0] == mod.id %}{% set _ = sug.append(1) %}{% endif %}{% endfor %}{% endfor %}
+          {% set mine = p.checks | selectattr('module', 'equalto', mod.name) | list %}
+          <tr class="{{ 'mp-sug' if sug }}">
+            <td><input type="checkbox" name="point" value="{{ p.id }}" form="mp-form" data-suggest="{{ '1' if sug }}"
+                       aria-label="{{ gr.path }} {{ p.param }} 선택"></td>
+            <td class="mono sub">{{ p.method }}</td>
+            <td class="mono">{{ p.param }}{% if sug %} <span class="sg-dot" title="표면 수집이 이 모듈을 추천">추천</span>{% endif %}</td>
+            <td class="sub">{{ {"query": "쿼리", "form": "폼 본문", "path": "경로", "json": "JSON 본문", "header": "헤더"}.get(p.place, p.place) }}</td>
+            <td class="mono sub loc" title="{{ p.sample }}">{{ p.sample }}</td>
+            <td>{% for c in mine %}
+              {% if c.exchange_id %}<a class="vchip" href="{{ url_for('dash.history_detail', xid=c.exchange_id) }}" title="{{ c.evidence }}">{{ verdict(c.verdict) }}</a>
+              {% else %}<span class="vchip" title="{{ c.evidence }}">{{ verdict(c.verdict) }}</span>{% endif %}
+            {% else %}<span class="sub small">미점검</span>{% endfor %}</td>
+            <td class="sub small">{% for c in p.checks if c.module != mod.name %}<span title="{{ c.module }}&#10;{{ c.evidence }}">{{ verdict(c.verdict) }}</span>{% endfor %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        {% endfor %}
+      </table>
+      </div>
+      {% endif %}
+    </section>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -50,7 +50,9 @@
         <span class="kind kind-{{ m.kind }}">{{ "수동(읽기)" if m.kind == "passive" else "능동" }}</span></span>
       <span class="sub">{{ m.category }}{% if m.vuln and m.vuln != '기타' %} · <b>{{ m.vuln }}</b>{% endif %}</span>
     </header>
-    <button class="mod-open" type="button" aria-expanded="false" aria-controls="body-{{ m.id }}">
+    {# 누르면 팝업으로 연다(11-20) — 왼쪽 설정·실행, 오른쪽 모은 지점 #}
+    <button class="mod-open" type="button" aria-expanded="false" aria-controls="body-{{ m.id }}"
+            data-panel="{{ url_for('dash.module_panel', mid=m.id, target=target.id if target else none, partial=1) }}">
       <h3 title="{{ m.name }}">{{ m.name }}</h3>
       <p>{{ m.description | strong }}</p>
       <span class="mod-cue">
@@ -67,7 +69,7 @@
     {% if target %}
     <div class="mod-quick">
       {% if m.stage == "probe" %}
-      <a class="btn ghost" href="{{ url_for('dash.targets', target=target.id) }}#surface">지점 골라 점검 →</a>
+      <button class="btn ghost" type="button" data-open-panel="{{ m.id }}">지점 골라 점검 →</button>
       {% elif blocked %}
       <button class="btn" type="button" disabled title="준비할 것을 먼저 채우세요 — 눌러서 펴면 보입니다">{{ RUN_VERB[m.stage] }}</button>
       {% else %}
@@ -130,4 +132,7 @@
 </table>
 </div>
 {% endif %}
+
+{# 모듈 팝업 자리. 내용은 /modules/<id>/panel 에서 받아 끼운다. ?open=<id> 로 들어오면 바로 연다 #}
+<dialog class="mod-dialog" id="mod-dialog" aria-label="모듈" data-open="{{ request.args.get('open', '') }}"></dialog>
 {% endblock %}

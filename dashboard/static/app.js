@@ -147,6 +147,8 @@
       if (open[card.dataset.mod]) set(card, true, false);
       var btn = card.querySelector(".mod-open");
       if (btn) btn.addEventListener("click", function () {
+        // 모듈은 팝업으로 연다(11-20). 팝업을 못 여는 경우만 예전처럼 카드를 편다
+        if (btn.dataset.panel && window.openModulePanel) { window.openModulePanel(btn.dataset.panel); return; }
         set(card, card.querySelector(".mod-body").hidden, true);
       });
       // 접힌 채로 누른 실행 버튼. 필수 칸이 비어 있으면 브라우저는 숨은 칸이라
@@ -870,4 +872,66 @@
   });
   window.addEventListener("hashchange", showTab);
   showTab();
+})();
+
+// ── 모듈 팝업(11-20 사용자 결정) ─────────────────────────────
+// 모듈을 누르면 왼쪽에 설정·실행, 오른쪽에 이 대상이 모은 지점 표가 뜬다. 지점 점검 모듈은
+// 여기서 지점을 골라 바로 돌린다. 실행하면 서버가 '같은 팝업을 다시 연 모듈 화면' 으로 돌려보낸다.
+(function () {
+  var dlg = document.getElementById("mod-dialog");
+  if (!dlg || typeof dlg.showModal !== "function") return;
+
+  function count() {
+    var n = dlg.querySelectorAll('input[name=point][form="mp-form"]:checked').length;
+    var c = dlg.querySelector(".mp-count");
+    if (c) c.textContent = n;
+  }
+
+  window.openModulePanel = function (url) {
+    fetch(url, { headers: { "X-Requested-With": "fetch" } })
+      .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
+      .then(function (html) {
+        dlg.innerHTML = html;
+        if (!dlg.open) dlg.showModal();
+        count();
+      })
+      .catch(function () { location.href = url.replace(/([?&])partial=1&?/, "$1"); });
+  };
+
+  dlg.addEventListener("click", function (e) {
+    if (e.target === dlg || e.target.closest(".mp-close")) { dlg.close(); return; }
+    var pick = e.target.closest("[data-pick]");
+    if (pick) {
+      var how = pick.dataset.pick;
+      dlg.querySelectorAll('input[name=point][form="mp-form"]').forEach(function (b) {
+        b.checked = how === "all" || (how === "suggest" && b.dataset.suggest === "1");
+      });
+      count();
+    }
+  });
+  dlg.addEventListener("change", function (e) { if (e.target.name === "point") count(); });
+  dlg.addEventListener("submit", function (e) {
+    var form = e.target;
+    if (form.id === "mp-form" && form.querySelector('input[name=module_id]') &&
+        !dlg.querySelector('input[name=point][form="mp-form"]:checked')) {
+      e.preventDefault();
+      alert("점검할 지점을 고르세요 — 오른쪽 표에서 체크하거나 '추천 지점만' 을 누르세요.");
+    }
+  }, true);
+
+  // 지점 점검 모듈 카드의 '지점 골라 점검' 단추
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-open-panel]");
+    if (!b) return;
+    var card = b.closest(".mod");
+    var open = card && card.querySelector(".mod-open");
+    if (open && open.dataset.panel) window.openModulePanel(open.dataset.panel);
+  });
+
+  // ?open=<모듈 id> 로 들어오면(실행 뒤 돌아온 자리) 그 팝업을 바로 연다
+  var want = dlg.dataset.open;
+  if (want) {
+    var c = document.querySelector('.mod[data-mod="' + want + '"] .mod-open');
+    if (c && c.dataset.panel) window.openModulePanel(c.dataset.panel);
+  }
 })();

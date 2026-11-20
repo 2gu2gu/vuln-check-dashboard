@@ -1008,3 +1008,27 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
 .donut-hole strong { font-size: 22px; font-variant-numeric: tabular-nums; }
 .donut-hole small { font-size: 11px; color: var(--sub); }
 .legend-list a { color: var(--text); display: inline-flex; align-items: center; gap: 6px; }
+
+/* ── 모듈 팝업(11-20): 왼쪽 설정·실행, 오른쪽 이 대상이 모은 지점 ── */
+.mod-dialog { width: min(1280px, 96vw); max-height: 92vh; padding: 0; border: 1px solid var(--line);
+              border-radius: var(--radius); background: var(--bg); color: var(--text); }
+.mod-dialog::backdrop { background: rgba(28, 28, 28, .45); }
+.mp { display: flex; flex-direction: column; max-height: 92vh; }
+.mp-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 20px 10px;
+           border-bottom: 1px solid var(--line); background: var(--surface); }
+.mp-head h2 { margin: 6px 0 0; font-size: 18px; }
+.mp-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 16px 20px; overflow: auto; }
+.mp-grid.with-surface { grid-template-columns: 340px minmax(0, 1fr); }
+@media (max-width: 900px) { .mp-grid.with-surface { grid-template-columns: minmax(0, 1fr); } }
+.mp-side { display: flex; flex-direction: column; gap: 10px; background: var(--surface); border: 1px solid var(--line);
+           border-radius: var(--radius); padding: 14px; align-self: start; position: sticky; top: 0; }
+.mp-side p { margin: 0; }
+.mp-form { display: flex; flex-direction: column; gap: 10px; }
+.mp-run { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.mp-run label.check { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.mp-surface { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.mp-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mp-pick { margin-left: auto; display: inline-flex; gap: 6px; }
+.mp-table { max-height: 62vh; overflow: auto; }
+.mp-table tr.mp-sug td { background: var(--accent-soft); }
+.sg-dot { font-size: 10px; font-weight: 700; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 6px; }

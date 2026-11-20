@@ -13,7 +13,7 @@ from dashboard.payloads import ENCODINGS, traversal
 
 META = {
     "id": "sesacedu_material_traversal",
-    "name": "자료 다운로드 경로 조작",
+    "name": "자료 다운로드 경로 조작 (심화)",
     "category": "경로 조작",
     "kisa": ["FD"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
     # 로그인한 사용자가 저장소 밖 파일을 읽는다
@@ -28,7 +28,7 @@ META = {
         {"tactic": "TA0007", "technique": "T1083", "name": "File and Directory Discovery"},
         {"tactic": "TA0009", "technique": "T1005", "name": "Data from Local System"},
     ],
-    "description": "읽을 경로를 한 줄에 하나씩 넣으면 인코딩해 보내고 응답 코드를 보여 줍니다. 한 줄만 넣으면 내용까지 보여 줍니다.",
+    "description": "**심화** — 경로 조작 점검(지점)에서 자료 다운로드 file 이 취약으로 나온 뒤 씁니다. 읽을 경로를 한 줄에 하나씩 넣으면 인코딩해 보내고 응답 코드를 보여 줍니다. 한 줄만 넣으면 내용까지 보여 줍니다.",
     "needs": [
         {"kind": "auth_header", "name": "Authorization",
          "why": "강의 자료는 로그인한 사용자만 내려받을 수 있어, 토큰이 없으면 전부 401 로 돌아옵니다",
