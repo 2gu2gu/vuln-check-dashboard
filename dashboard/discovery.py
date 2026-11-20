@@ -43,6 +43,9 @@ SPEC_PATHS = ["/v3/api-docs", "/v2/api-docs", "/swagger.json", "/openapi.json", 
               "/backend/v3/api-docs", "/backend/v2/api-docs"]
 # Spring Boot 는 이 하나에 매핑된 경로가 전부 나온다
 ACTUATOR_PATHS = ["/actuator/mappings", "/backend/actuator/mappings"]
+# 명세 문서 이름만 떼어 낸 것 — 명세를 찾은 자리에서 접두사를 되찾는 데 쓴다(긴 것부터 맞춘다)
+SPEC_TAILS = sorted(["/v3/api-docs", "/v2/api-docs", "/swagger.json", "/openapi.json", "/api-docs",
+                     "/swagger/v1/swagger.json"], key=len, reverse=True)
 
 
 @dataclass
@@ -330,15 +333,74 @@ def _ref(doc, obj, depth=0):
     return obj if isinstance(obj, dict) else {}
 
 
-def parse_openapi(doc, spec_url, origin, reg):
-    """OpenAPI 3 / Swagger 2 → 후보 수. 파라미터 위치(query·path·header)와 본문 키까지 읽는다."""
+def base_candidates(doc, spec_url):
+    """명세가 적은 접두사와 **명세를 찾은 자리에서 되찾은 접두사** → 시도할 순서대로.
+
+    명세의 servers 가 늘 맞지는 않는다. 새싹에듀는 `https://sesacedu.store` 라고만 적어 두었는데
+    실제 API 는 `/backend` 아래에 있다(11-21 실측). 그걸 그대로 믿어서 모은 주소가 전부 화면
+    라우트로 떨어졌고, 점검이 SPA 껍데기만 두드렸다.
+    """
+    declared = ""
+    if doc.get("servers"):
+        declared = urlsplit(str(doc["servers"][0].get("url", ""))).path.rstrip("/")
+    elif doc.get("basePath"):
+        declared = str(doc["basePath"]).rstrip("/")
+    path = urlsplit(spec_url).path
+    found = ""
+    for tail in SPEC_TAILS:
+        if path.endswith(tail):
+            found = path[:-len(tail)].rstrip("/")
+            break
+    out = []
+    for b in (declared, found, ""):
+        if b not in out:
+            out.append(b)
+    return out
+
+
+def pick_base(doc, spec_url, origin, get):
+    """후보 접두사 중 **실제로 닿는** 것을 고른다 → (접두사, 왜 그렇게 골랐는지).
+
+    get(url) 이 응답을 돌려준다. 첫 화면과 같은 본문이 오면 그 접두사는 화면 라우트라 아니다.
+    """
+    cands = base_candidates(doc, spec_url)
+    if len(cands) == 1:
+        return cands[0], ""
+    samples = [p for p in list(doc.get("paths") or {}) if "{" not in p][:3]
+    if not samples:
+        return cands[0], ""
+    try:
+        shell = get(origin + "/")
+        shell_body = shell.body if 200 <= shell.status < 300 else None
+    except OSError:
+        shell_body = None
+    for base in cands:
+        for p in samples:
+            try:
+                r = get(origin + base + p)
+            except OSError:
+                continue
+            if r.status == 404 or (shell_body is not None and r.body == shell_body):
+                continue
+            why = f"명세 경로가 {base or '/'} 아래에서 응답함({p} → {r.status})"
+            if base != cands[0]:
+                why += f" — 명세가 적은 {cands[0] or '/'} 는 화면 라우트였다"
+            return base, why
+    return cands[0], ""
+
+
+def parse_openapi(doc, spec_url, origin, reg, get=None):
+    """OpenAPI 3 / Swagger 2 → 후보 수. 파라미터 위치(query·path·header)와 본문 키까지 읽는다.
+
+    get 을 주면 명세가 적은 접두사를 그대로 믿지 않고 실제로 닿는 것을 골라 쓴다.
+    """
     if not isinstance(doc, dict) or not isinstance(doc.get("paths"), dict):
         return 0
-    base = ""
-    if doc.get("servers"):
-        base = urlsplit(str(doc["servers"][0].get("url", ""))).path.rstrip("/")
-    elif doc.get("basePath"):
-        base = str(doc["basePath"]).rstrip("/")
+    note = ""
+    if get:
+        base, note = pick_base(doc, spec_url, origin, get)
+    else:
+        base = base_candidates(doc, spec_url)[0]
     n = 0
     for path, ops in doc["paths"].items():
         if not isinstance(ops, dict):
@@ -364,7 +426,8 @@ def parse_openapi(doc, spec_url, origin, reg):
                 for k in props:
                     params[k] = ("json" if "json" in ctype else "form", "")
             reg.add(method, urljoin(origin, base + path), "spec", params=params,
-                    evidence=f"API 명세 {urlsplit(spec_url).path} — {method.upper()} 선언")
+                    evidence=f"API 명세 {urlsplit(spec_url).path} — {method.upper()} 선언"
+                             + (f". {note}" if note else ""))
             n += 1
     return n
 

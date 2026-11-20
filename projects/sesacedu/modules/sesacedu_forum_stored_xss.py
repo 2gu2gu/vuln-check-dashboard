@@ -10,7 +10,7 @@ sesacedu.store 는 React SPA + JSON API 라 서버측 '반사형' 표면이 없�
 
 테스트 입력값 = 고전/탈출 payload 24개(<script>·<img>·속성/스크립트/textarea 탈출 등)
              + 자동 발화 조합 100개. 결과에 '넣은 입력값' 을 모두 남긴다.
-쓰기/삭제를 보낸다 — 삭제 가능한 테스트 환경에서만, write_ack 에 WRITE 를 넣어야 돈다.
+쓰기/삭제를 보낸다 — 글을 등록하고 바로 지운다. 지우기가 실패하면 글이 남으니 뒤에 확인한다.
 """
 import json
 
@@ -176,8 +176,6 @@ META = {
         "저장됐는지 확인한 뒤, 만든 글을 바로 삭제합니다. 로그인(Bearer 토큰) 필요."
     ),
     "params": [
-        {"name": "write_ack", "need": "required", "label": "쓰기 허용 확인", "default": "",
-         "help": "글을 등록·삭제합니다. 삭제 가능한 테스트 환경에서만, 확인 칸에 WRITE 를 입력하세요."},
         {"name": "count", "need": "optional", "type": "int", "default": str(len(CLASSIC_VECTORS)),
          "label": "시험할 조합 수",
          "help": f"조합마다 글 1개를 만들고 확인 후 바로 지웁니다(한 번에 글 1개만 존재). "
@@ -240,8 +238,7 @@ SEVERITY = {"vuln": "high", "potential": "medium"}
 
 
 def run(target, params):
-    if (params.get("write_ack") or "").strip() != "WRITE":
-        raise ValueError("쓰기 허용 확인 칸에 WRITE 를 입력해야 실행됩니다(글을 등록·삭제합니다).")
+    # 글을 등록하고 바로 지운다 — 지우기가 실패하면 글이 남는다(확인 칸은 11-21 사용자 지시로 뺐다)
     count = _clamp(params.get("count"), 1, len(PAYLOADS), len(CLASSIC_VECTORS))
     start = _clamp(params.get("start_vector"), 1, len(PAYLOADS), 1)
     category = (params.get("category") or "STUDY").strip() or "STUDY"

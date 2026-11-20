@@ -1,5 +1,6 @@
 """다른 도구(Burp·katana·gau 등)로 모은 URL 목록을 붙여 넣어 지점으로 등록한다. 요청은 보내지 않는다."""
-from urllib.parse import parse_qsl
+import re
+from urllib.parse import parse_qsl, urlsplit
 
 from dashboard.core import Point
 from modules.surface_crawl import _query_points, _split
@@ -20,6 +21,19 @@ META = {
 }
 
 
+PATH_VAR = re.compile(r"\{([^}/]+)\}")
+
+
+def _path_points(url: str, method: str):
+    """경로 틀의 {변수} 를 고를 수 있는 지점으로 만든다 → [Point].
+
+    11-21 실측: 명세에서 뽑은 `/backend/lectures/{lid}/qna/{qnaid}` 를 URL 목록으로 넣었더니
+    주소 줄만 생기고 변수가 지점이 안 돼서, IDOR 점검이 고를 것이 하나도 없었다.
+    """
+    return [Point(method, url, param=m.group(1), place="path", source="import")
+            for m in PATH_VAR.finditer(urlsplit(url).path)]
+
+
 def run(target, params):
     text = (params.get("urls") or "").strip()
     if not text:
@@ -36,6 +50,7 @@ def run(target, params):
         if not url.startswith(("http://", "https://")):
             url = target.url + "/" + url.lstrip("/")
         points += _query_points(url, "import", method)
+        points += _path_points(url, method)
         if method == "POST" and len(parts) > 1:
             base, _ = _split(url)
             points += [Point("POST", base, param=k, place="form", sample=v, source="import")
