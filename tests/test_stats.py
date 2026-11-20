@@ -174,7 +174,8 @@ def test_results_page_shows_totals_and_breakdowns(client, typed):
 def test_calendar_covers_the_project_weeks_and_marks_deadlines(app, typed):
     from datetime import date
     sched = {"start": "2026-10-06", "end": "2026-11-23",
-             "marks": [{"date": "2026-11-23", "label": "최종보고회"}], "weekly": {"weekday": 2, "label": "주간활동보고"}}
+             "marks": [{"date": "2026-11-02", "label": "중간보고", "kind": "mid", "short": "중간"},
+                       {"date": "2026-11-23", "label": "최종보고회", "kind": "final", "short": "최종"}]}
     with app.app_context():
         db = get_db()
         cal = stats.calendar(db, db.execute("SELECT * FROM targets").fetchall(), sched, today=date(2026, 11, 20))
@@ -185,7 +186,8 @@ def test_calendar_covers_the_project_weeks_and_marks_deadlines(app, typed):
     assert cal["now_week"] == "7주차" and cal["weeks"][6]["now"]
     # typed 는 11-20 에 결과 5건·실행 5번 — 진단한 날이 하루뿐이면 그날이 가장 진하다
     assert days["2026-11-20"]["runs"] == 5 and days["2026-11-20"]["level"] >= 1 and days["2026-11-20"]["today"]
-    assert days["2026-11-23"]["deadline"] and days["2026-11-18"]["mark"] == "주간활동보고"
+    assert days["2026-11-23"]["kind"] == "final" and days["2026-11-02"]["kind"] == "mid"
+    assert days["2026-11-18"]["mark"] == ""  # 주간보고는 달력에 넣지 않는다(11-20)
     assert days["2026-11-21"]["future"] and not days["2026-11-19"]["future"]
     assert cal["next"] == {"label": "최종보고회", "md": "11-23", "days": 3}
 
@@ -202,3 +204,4 @@ def test_sesacedu_pack_has_the_project_period(app):
     with app.test_request_context():
         sched = routes._projects()["sesacedu"].schedule
     assert sched["start"] == "2026-10-06" and sched["end"] == "2026-11-23"
+    assert [m["label"] for m in sched["marks"]] == ["중간보고", "최종보고회"] and "weekly" not in sched

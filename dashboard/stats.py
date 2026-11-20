@@ -151,7 +151,7 @@ def breakdown(db, targets, modules):
 #
 # 한 칸이 하루, 가로가 주차(1주차~), 세로가 요일이다. 주는 프로젝트 시작 요일부터 센다 —
 # 새싹에듀는 10-06(화)~11-23(월) 49일이라 화~월 7주로 꼭 맞는다(사용자 결정 11-20: 7주).
-# 기간은 프로젝트 팩의 PROJECT["schedule"] 에서 온다. 마감일과 매주 반복 일정은 테두리로 표시한다.
+# 기간은 프로젝트 팩의 PROJECT["schedule"] 에서 온다. 보고회 날(중간·최종)은 칸을 그 색으로 채운다.
 # 시각은 KST ISO 로 저장돼 있어(core.now_iso) 앞 10글자가 곧 KST 날짜다.
 
 from datetime import date, timedelta  # noqa: E402
@@ -197,21 +197,19 @@ def calendar(db, targets, schedule=None, today=None, weeks_n=None):
               for d in days}
     level = _levels(scores)
 
-    marks = {m["date"]: m["label"] for m in schedule.get("marks", [])}
-    weekly = schedule.get("weekly") or {}
+    marks = {m["date"]: m for m in schedule.get("marks", [])}
     weeks = []
     for w in range(weeks_n):
         cells = []
         for d in days[w * 7:(w + 1) * 7]:
             key = d.isoformat()
-            label = marks.get(key, "")
-            if not label and weekly and d.weekday() == weekly.get("weekday"):
-                label = weekly.get("label", "")
+            mk = marks.get(key, {})
             cells.append({
                 "date": key, "md": d.strftime("%m-%d"), "wd": WEEKDAYS[d.weekday()],
                 "runs": runs.get(key, 0), "requests": reqs.get(key, 0), "found": found.get(key, 0),
                 "level": level.get(key, 0), "in_period": d <= end, "future": d > today,
-                "mark": label, "deadline": key in marks, "today": d == today,
+                "mark": mk.get("label", ""), "kind": mk.get("kind", ""), "short": mk.get("short", ""),
+                "today": d == today,
             })
         first = days[w * 7]
         weeks.append({"cells": cells, "label": f"{w + 1}주차", "from": first.strftime("%m/%d"),
@@ -219,7 +217,7 @@ def calendar(db, targets, schedule=None, today=None, weeks_n=None):
 
     active = [c for w in weeks for c in w["cells"] if c["level"]]
     top = max(active, key=lambda c: scores[c["date"]], default=None)
-    upcoming = sorted((k, v) for k, v in marks.items() if k >= today.isoformat())
+    upcoming = sorted((k, v["label"]) for k, v in marks.items() if k >= today.isoformat())
     nxt = None
     if upcoming:
         k, v = upcoming[0]

@@ -124,8 +124,8 @@
           {% for i in range(7) %}
           <span class="cal-wd">{{ cal.weekdays[i] }}</span>
           {% for w in cal.weeks %}{% set c = w.cells[i] %}
-          <span class="cal-day lv-{{ c.level }}{{ ' future' if c.future }}{{ ' mark' if c.mark }}{{ ' deadline' if c.deadline }}{{ ' today' if c.today }}"
-                title="{{ c.md }}({{ c.wd }}){% if c.mark %} · {{ c.mark }}{% endif %}{% if c.today %} · 오늘{% endif %}&#10;모듈 실행 {{ c.runs }}번 · 요청 {{ '{:,}'.format(c.requests) }} · 새 결과 {{ c.found }}건"></span>
+          <span class="cal-day lv-{{ c.level }}{{ ' future' if c.future }}{{ (' k-' ~ c.kind) if c.kind }}{{ ' today' if c.today }}"
+                title="{{ c.md }}({{ c.wd }}){% if c.mark %} · {{ c.mark }}{% endif %}{% if c.today %} · 오늘{% endif %}&#10;모듈 실행 {{ c.runs }}번 · 요청 {{ '{:,}'.format(c.requests) }} · 새 결과 {{ c.found }}건">{{ c.short }}</span>
           {% endfor %}
           {% endfor %}
         </div>
@@ -139,8 +139,8 @@
             <span class="sub small">적음</span>
             {% for i in range(5) %}<i class="cal-day lv-{{ i }}" aria-hidden="true"></i>{% endfor %}
             <span class="sub small">많음</span>
-            <i class="cal-day lv-0 deadline" aria-hidden="true"></i><span class="sub small">마감</span>
-            <i class="cal-day lv-0 mark" aria-hidden="true"></i><span class="sub small">주간보고</span>
+            <i class="cal-day k-mid" aria-hidden="true"></i><span class="sub small">중간보고</span>
+            <i class="cal-day k-final" aria-hidden="true"></i><span class="sub small">최종보고회(마감)</span>
             <i class="cal-day lv-0 today" aria-hidden="true"></i><span class="sub small">오늘</span>
           </span>
         </div>
