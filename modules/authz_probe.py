@@ -4,7 +4,10 @@
 (미수강 강의 영상·자료 열람, 일반 유저의 강사센터 접근, Nginx location deny all 우회). 이 셋은 전부
 같은 방법으로 드러난다 — 같은 주소를 **인증 있이 한 번, 떼고 한 번** 보내 응답을 견준다.
 
-  ① 받는 구간  인증 헤더를 붙여 한 번. 2xx 가 아니면 견줄 것이 없다(후보 제외)
+  ① 받는 구간  인증 헤더를 붙여 한 번. 2xx 가 아니면 견줄 것이 없다(후보 제외).
+               **화면 틀(SPA 껍데기)도 여기서 뺀다** — React·Vue 앱은 어느 주소를 불러도 같은 index.html
+               을 돌려주므로 '인증 없이 같은 응답' 이 늘 참이 된다. 권한은 뒤쪽 API 가 보는데 그건
+               이 주소가 아니다(11-21 실측: /mypage·/instructor 가 똑같이 564바이트짜리 껍데기였다)
   ② 기본       인증 헤더를 떼고 같은 요청. 같은 응답이 오면 그 주소에는 인증이 없는 것이다
   ③ 심화       막혀 있을 때 **경로를 바꿔** 지나가는가 — Nginx location 은 경로를 글자로 맞추므로
                `//login`, `/login/`, `/./login`, `/LOGIN`, `/login;x`, `/%2e/login` 이 다른 경로가 된다
@@ -71,9 +74,22 @@ def _same(a, b, pct: float) -> bool:
     return abs(len(a.body) - len(b.body)) * 100 / big <= pct
 
 
+def _shell_of(target):
+    """대상 첫 화면을 인증 없이 한 번 읽어 둔다 — 화면 틀(SPA 껍데기)을 가리는 잣대다.
+
+    어느 주소를 불러도 이것과 같은 본문이 오면 그 주소는 '보호된 화면' 이 아니라 앱 껍데기다.
+    """
+    try:
+        r = core.fetch(core.join(target.url, "/"), auth=False)
+    except OSError:
+        return None
+    return r.body if r.status in OPEN and r.body else None
+
+
 def run(target, points, params):
     pct = float(params.get("same_pct") or 5)
     have_auth = bool(core.auth_headers())
+    shell = _shell_of(target)
     out = []
     for p in points:
         lines, verdict, keep, title = [], "safe", None, ""
@@ -89,6 +105,12 @@ def run(target, points, params):
             continue
         if r.status not in OPEN:
             note("screen", f"인증 있이도 {r.status} — 견줄 것이 없음(후보 제외)")
+            out.append(Check(point=p, verdict="safe", evidence="\n".join(lines), response=r))
+            continue
+        if shell is not None and r.body == shell:
+            note("screen", "첫 화면과 **글자 하나까지 같은 응답** — 이 주소는 화면 틀(SPA 껍데기)이다. "
+                           "어느 주소를 불러도 같은 것이 오므로 '인증 없이 열린다' 고 말할 수 없다(후보 제외)")
+            note("screen", "권한은 뒤쪽 API 가 본다 — 로그인한 뒤 HAR 을 떠서 그 API 주소를 모아 다시 돌리세요")
             out.append(Check(point=p, verdict="safe", evidence="\n".join(lines), response=r))
             continue
         keep = r

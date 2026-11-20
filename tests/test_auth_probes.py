@@ -50,7 +50,8 @@ def test_authz_says_what_to_do_when_the_target_has_no_auth(monkeypatch):
 def test_authz_same_answer_without_the_token_is_vuln(monkeypatch):
     """인증 있이와 없이가 같은 응답이면 그 주소에는 인증이 없는 것이다(미수강 자료·강사센터 모양)."""
     _ctx(monkeypatch)
-    _server(monkeypatch, lambda url, h: (200, "강사센터" * 50))
+    # 첫 화면과 다른 본문이어야 '화면 틀' 이 아니라 진짜 보호 화면으로 본다
+    _server(monkeypatch, lambda url, h: (200, "첫 화면") if url.endswith("/") else (200, "강사센터" * 50))
     c = authz_probe.run(T, [_end()], {})[0]
     assert c.verdict == "vuln" and "인증 없이 열리는 주소" in c.title
 
@@ -203,3 +204,25 @@ def test_the_new_probes_are_registered_with_the_notion_vocabulary(app):
     assert mods["idor_probe"].vuln == "AUTH" and mods["idor_probe"].unit == "param"
     assert mods["rate_limit_probe"].vuln == "Insecure Design"
     assert all(mods[m].stage == "probe" for m in ("authz_probe", "idor_probe", "rate_limit_probe"))
+
+
+def test_authz_does_not_call_a_spa_shell_an_open_page(monkeypatch):
+    """React·Vue 앱은 어느 주소를 불러도 같은 index.html 을 준다 — 그걸 '인증 없이 열림' 이라 하면 안 된다.
+
+    11-21 실측: 사용자 웹의 /mypage·/instructor·/mypage/buy·/mypage/cart 가 전부 564바이트짜리
+    같은 껍데기였는데 모듈이 취약 6 으로 적었다.
+    """
+    _ctx(monkeypatch)
+    SHELL = "<!doctype html><html><div id=root></div></html>"
+    _server(monkeypatch, lambda url, h: (200, SHELL))
+    c = authz_probe.run(T, [_end("https://sesacedu.store/mypage")], {})[0]
+    assert c.verdict == "safe"
+    assert "화면 틀(SPA 껍데기)" in c.evidence and "HAR" in c.evidence
+
+
+def test_authz_still_flags_a_real_page_that_differs_from_the_shell(monkeypatch):
+    _ctx(monkeypatch)
+    SHELL = "<!doctype html><html><div id=root></div></html>"
+    _server(monkeypatch, lambda url, h: (200, SHELL) if url.endswith("/") else (200, "강사센터 목록" * 40))
+    c = authz_probe.run(T, [_end("https://sesacedu.store/backend/instructor")], {})[0]
+    assert c.verdict == "vuln" and "인증 없이 열리는 주소" in c.title
