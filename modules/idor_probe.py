@@ -93,8 +93,11 @@ def _same_body(a, b) -> bool:
     return a.status == b.status and a.body == b.body
 
 
-def _baseline(point, lad):
-    """기준이 될 번호를 찾는다 → (번호, 응답). 표본이 없으면 몇 개 넣어 보고 내용이 오는 것을 고른다."""
+def _baseline(point, lad, shell):
+    """기준이 될 번호를 찾는다 → (번호, 응답). 표본이 없으면 몇 개 넣어 보고 내용이 오는 것을 고른다.
+
+    화면 틀(앱 껍데기)이 오는 번호는 기준이 될 수 없다 — 번호와 상관없이 늘 같은 것이 오기 때문이다.
+    """
     s = (point.sample or "").strip()
     if NUMBER.match(s) or UUIDISH.match(s):
         return s, probe.send(point, s)
@@ -103,6 +106,11 @@ def _baseline(point, lad):
     for guess in LOOKUP:
         r = probe.send(point, guess)
         lad.note("screen", f"기준 번호 찾기({guess}): → {r.status} · {len(r.body)}B")
+        if shell is not None and r.body == shell:
+            lad.note("screen", "첫 화면과 **글자 하나까지 같은 응답** — 이 주소는 화면 틀(SPA 껍데기)이다. "
+                               "번호를 바꿔도 늘 같은 것이 오므로 남의 자원인지 가릴 수 없다(후보 제외)")
+            lad.note("screen", "자원은 뒤쪽 API 가 돌려준다 — 로그인한 뒤 HAR 을 떠서 그 API 주소를 모아 다시 돌리세요")
+            return "", None
         if r.status in OPEN and len(r.body) >= MIN_BODY:
             lad.note("screen", f"{guess} 이 내용을 돌려줌 — 이것을 기준으로 삼는다")
             return guess, r
@@ -111,12 +119,13 @@ def _baseline(point, lad):
 
 def run(target, points, params):
     other = parse_line(params.get("other_auth"))
+    shell = probe.app_shell(target)
     out = []
     for p in points:
         if p.method != "GET":
             continue
         lad = probe.Ladder(p)
-        base, r0 = _baseline(p, lad)
+        base, r0 = _baseline(p, lad, shell)
         if not base:
             # 번호 자리가 아니거나(keyword 같은 이름) 어떤 번호로도 내용이 안 온다
             continue
@@ -124,7 +133,9 @@ def run(target, points, params):
         if not shots:
             continue
         lad.note("screen", f"원래 값: {probe.request_line(p, base)} → {r0.status} · {len(r0.body)}B")
-        if r0.status not in OPEN or len(r0.body) < MIN_BODY:
+        if shell is not None and r0.body == shell:
+            lad.note("screen", "첫 화면과 글자 하나까지 같은 응답 — 화면 틀(SPA 껍데기)이라 가릴 수 없음(후보 제외)")
+        elif r0.status not in OPEN or len(r0.body) < MIN_BODY:
             lad.note("screen", "원래 값으로도 내용이 오지 않음 — 견줄 것이 없음(후보 제외)")
         else:
             # ② 기본 — 번호를 바꿔 본다
