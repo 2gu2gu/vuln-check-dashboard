@@ -190,7 +190,10 @@ table.grid { width: 100%; border-collapse: collapse; }
 .detail dt { color: var(--sub); font-size: 12px; }
 .detail dd { margin: 0; word-break: break-all; }
 .detail pre { margin: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 10px; font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; }
-.status-form { display: flex; gap: 8px; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.status-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+/* CVSS 칸은 한 줄을 다 쓰고, 상태·저장은 그 밑 줄로. 같은 줄에 두면 CVSS 칸이 좁게 찌그러졌다(사용자 지적 11-20). */
+.status-form .cvss { flex: 1 1 100%; margin-bottom: 4px; }
+.status-form > select { flex: 1; }
 .status-form label { color: var(--sub); font-size: 12px; }
 
 /* 대상 */
