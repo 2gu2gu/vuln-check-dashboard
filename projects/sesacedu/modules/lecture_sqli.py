@@ -21,6 +21,7 @@ META = {
     "id": "sesacedu_lecture_sqli",
     "name": "강의 목록 SQL 주입",
     "category": "SQL 주입",
+    "kisa": ["SI"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
     # 노션 '웹 서비스 취약점 목록' 의 취약점 유형 — 검색어가 질의문으로 섞여 들어가 참·거짓으로 DB 를 읽는 것
     "vuln": "SQL",
     "kind": "active",

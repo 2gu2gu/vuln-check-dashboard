@@ -22,6 +22,7 @@ META = {
     "id": "sesacedu_xss_probe",
     "name": "새싹에듀 XSS 후보 탐색 (반사·저장·DOM)",
     "category": "입력 검증",
+    "kisa": ["XS"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
     "vuln": "XSS",
     "kind": "active",
     "stage": "probe",

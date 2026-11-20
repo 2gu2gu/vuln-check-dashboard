@@ -161,6 +161,7 @@ META = {
     "id": "sesacedu_forum_stored_xss",
     "name": "새싹에듀 커뮤니티 저장형 XSS (등록→확인→자동삭제)",
     "category": "입력 검증",
+    "kisa": ["XS"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
     "vuln": "XSS",
     "kind": "active",
     "stage": "check",
