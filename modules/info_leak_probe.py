@@ -36,6 +36,19 @@ PRODUCT_VERSION = re.compile(r"(Apache Tomcat|nginx|Apache|Jetty|Microsoft-IIS|E
 STACK_TRACE = re.compile(r"(java\.lang\.\w+(Exception|Error)|\bat (org|com|java)\.[\w.$]+\(|Traceback \(most recent call last\)"
                          r"|org\.springframework\.\w+|Whitelabel Error Page)")
 GENERATOR = re.compile(r'<meta[^>]+name=["\']generator["\'][^>]+content=["\']([^"\']+)', re.I)
+# 응답 본문에 그대로 박혀 나오는 비밀값 모양(팀원 도구 piroim/site-scanner 의 정규식을 참고해 다듬었다).
+# 이름만 맞은 것으로는 적지 않는다 — 값의 길이·모양까지 맞아야 판정한다.
+SECRETS = [
+    ("AWS 접근 키", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("JWT 토큰", re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}")),
+    ("개인 키", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----")),
+    ("API 키", re.compile(r"(?:api[_-]?key|access[_-]?key|client[_-]?secret)[\"']?\s*[:=]\s*[\"']([A-Za-z0-9_\-]{20,})", re.I)),
+    ("비밀번호", re.compile(r"(?:password|passwd|pwd)[\"']?\s*[:=]\s*[\"']([^\"'\s]{4,})[\"']", re.I)),
+    ("DB 접속 문자열", re.compile(r"\b(?:jdbc:[a-z]+|mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis)://[^\s\"'<>]{6,}", re.I)),
+]
+# Next.js 앱 라우터는 화면을 되살릴 데이터를 통째로 실어 보낸다. 없는 경로의 응답까지 그러면
+# 라우트 목록과 빌드 번호가 그대로 드러난다(노션 '정보노출' 에 같은 건이 있다).
+RSC_PAYLOAD = re.compile(r"self\.__next_f\.push\(|__NEXT_DATA__")
 DANGER = ("PUT", "DELETE", "TRACE", "CONNECT", "PATCH")
 _REC = ("응답 헤더에서 제품명·버전을 지우고(nginx server_tokens off, Tomcat server 속성), 기본 오류 페이지 대신 사용자 정의 "
         "오류 페이지를 쓰며 예외 상세를 응답에 싣지 않습니다. 쓰지 않는 메서드(TRACE·PUT·DELETE)는 막습니다.")
@@ -70,6 +83,13 @@ def run(target, points, params):
         if m:
             note("basic", f"본문에 제품 버전: {m.group(0)}")
             verdict, title = "potential", "본문에 제품 버전 노출"
+        for kind, pat in SECRETS:
+            sm = pat.search(r.body)
+            if sm:
+                # 값을 가리지 않는다 — 자체 실습 환경이고, 가리면 맞는 값인지 확인할 수 없다(core.fetch 와 같은 기준)
+                note("basic", f"본문에 {kind} 모양: …{core.excerpt(sm.group(0), 120)}…")
+                verdict, keep, title = "vuln", r, f"응답 본문에 {kind} 노출"
+                break
         # ③ 심화 — 일부러 오류를 낸다
         tag = uuid.uuid4().hex[:6]
         for url, kind in ((p.url.rstrip("/") + "/%7B" + tag, "깨진 경로 글자"), (p.url + "%", "끝에 %"),
@@ -85,6 +105,12 @@ def run(target, points, params):
             if pv and verdict == "safe":
                 note("deep", f"오류 페이지에 서버 버전: {pv.group(0)}")
                 verdict, keep, title = "potential", e, "오류 페이지에 서버 버전 노출"
+        # 없는 경로도 화면 데이터를 통째로 돌려주는가(Next.js 앱 라우터)
+        miss = core.fetch(p.url.rstrip("/") + "/zz" + tag)
+        note("deep", f"없는 경로: → {miss.status} · {len(miss.body)}B")
+        if verdict == "safe" and len(miss.body) > 2000 and RSC_PAYLOAD.search(miss.body):
+            note("deep", "없는 경로의 응답에 화면 복원 데이터(__next_f·__NEXT_DATA__)가 통째로 들어 있음 — 라우트·빌드 번호가 드러난다")
+            verdict, keep, title = "potential", miss, "없는 경로가 화면 데이터를 통째로 응답"
         # ④ 우회 — 메서드
         o = core.fetch(p.url, method="OPTIONS")
         allow = (o.header("Allow") or o.header("Access-Control-Allow-Methods")).upper()

@@ -344,6 +344,32 @@ def test_info_leak_version_header_is_potential(monkeypatch):
     assert c.verdict == "potential" and "Server" in c.title
 
 
+def test_info_leak_finds_a_secret_shaped_value_in_the_body(monkeypatch):
+    """팀원 도구(piroim/site-scanner)의 생각을 가져온 것 — 응답 본문에 비밀값이 그대로 박혀 나오는가."""
+    from modules import info_leak_probe
+    body = '<script>window.cfg={apiKey:"AbCdEf0123456789AbCdEf01"};</script>'
+    _hserver(monkeypatch, lambda url, method, h: (200, [], body))
+    c = info_leak_probe.run(T, [_ep()], {})[0]
+    assert c.verdict == "vuln" and "API 키" in c.title and "② 기본" in c.evidence
+
+
+def test_info_leak_does_not_cry_wolf_on_a_bare_secret_name(monkeypatch):
+    """이름만 맞은 것으로는 적지 않는다 — 값의 모양까지 맞아야 한다."""
+    from modules import info_leak_probe
+    _hserver(monkeypatch, lambda url, method, h: (200, [], '<label>password</label><input name="apiKey">'))
+    c = info_leak_probe.run(T, [_ep()], {})[0]
+    assert "노출" not in (c.title or "") or "API 키" not in c.title
+
+
+def test_info_leak_flags_a_missing_path_that_answers_with_the_whole_screen(monkeypatch):
+    """노션 '정보노출' 의 'Next.js 관리자 404가 전체 RSC 페이로드로 응답' 과 같은 모양."""
+    from modules import info_leak_probe
+    big = '<script>self.__next_f.push([1,"' + "x" * 3000 + '"])</script>'
+    _hserver(monkeypatch, lambda url, method, h: (200, [], big) if "/zz" in url else (200, [], "ok"))
+    c = info_leak_probe.run(T, [_ep()], {})[0]
+    assert c.verdict == "potential" and "없는 경로가 화면 데이터를 통째로 응답" in c.title
+
+
 def test_header_probe_flags_cors_reflecting_any_origin(monkeypatch):
     from modules import header_probe
     full = [("Strict-Transport-Security", "max-age=1"), ("X-Content-Type-Options", "nosniff"),

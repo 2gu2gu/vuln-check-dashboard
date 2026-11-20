@@ -53,7 +53,7 @@ def test_vuln_uses_the_notion_vocabulary_in_its_order():
 def test_vuln_says_which_types_have_no_module_yet():
     """'XSS 칸이 비었다' 는 '아직 XSS 모듈이 없다' 는 뜻이고, 다음에 만들 것을 고르는 데 쓴다."""
     rows = grouping.group([mod("a", vuln="SQL")], "vuln")
-    assert set(grouping.empty_groups("vuln", rows)) == {"정보노출", "AUTH", "XSS", "FILE"}
+    assert set(grouping.empty_groups("vuln", rows)) == {"정보노출", "AUTH", "XSS", "FILE", "RCE", "Insecure Design"}
     assert grouping.empty_groups("stage", rows) == []        # 다른 기준에는 '없는 묶음' 개념이 없다
 
 
