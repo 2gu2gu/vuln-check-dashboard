@@ -306,3 +306,9 @@ def test_run_button_sits_outside_the_folded_body(client, seeded):
     assert 'name="confirm" value="yes" form="run-content_discovery"' in active.split('class="mod-body"', 1)[0]
     probe = re.search(r'data-mod="reflection_check".*?</article>', page, re.S).group(0)
     assert "지점 골라 점검" in probe.split('class="mod-body"', 1)[0]
+
+
+def test_add_target_box_sits_above_the_list(client, seeded):
+    """대상 추가 칸은 목록 위에 있다(11-20 사용자 요청)."""
+    page = client.get("/targets").get_data(as_text=True)
+    assert page.index('class="panel add-target"') < page.index('class="tlist"')

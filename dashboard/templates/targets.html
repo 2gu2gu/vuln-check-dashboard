@@ -6,30 +6,7 @@
 
 {# 한 줄에 대상 하나(11-20 사용자 요청). 누르면 그 대상의 페이지·파라미터가 아래에 펴진다.
    인증 헤더·삭제는 줄이 길어져서 누른 대상 아래로 옮겼다. #}
-{% if targets %}
-<ul class="tlist">
-  {% for t in targets %}
-  {% set tp = PROJECTS[t.project] if t.project in PROJECTS else none %}
-  {% set n = point_counts.get(t.id) %}
-  <li class="{{ 'on' if picked and t.id == target.id }}">
-    <a href="{{ url_for('dash.targets', target=t.id) }}#surface" title="이 대상에서 모은 페이지·파라미터 보기"
-       {{ 'aria-current="true"' | safe if picked and t.id == target.id }}>
-      <b class="t-name">{{ t.name }}</b>
-      <span class="mono t-url">{{ t.url }}</span>
-      {% if tp and tp.is_practice(t.role) %}<span class="practice-tag">연습용</span>{% endif %}
-      <span class="sub small t-meta">
-        {%- if n and n.pages %}페이지 {{ n.pages }} · 파라미터 {{ n.params }}{% else %}모은 지점 없음{% endif -%}
-        {%- if header_names[t.id] %} · 인증 헤더 {{ header_names[t.id] | length }}{% endif -%}
-      </span>
-      <span class="chev" aria-hidden="true">›</span>
-    </a>
-  </li>
-  {% endfor %}
-</ul>
-{% else %}
-  {{ empty("등록된 대상이 없습니다", "아래 '대상 추가' 에서 점검할 서버를 등록하세요.", "", "") }}
-{% endif %}
-
+{# 대상 추가는 목록 위에 둔다(11-20 사용자 요청) — 새 대상을 넣고 바로 아래에서 고른다 #}
 <details class="panel add-target" {{ 'open' if not targets }}>
   <summary><b>+ 대상 추가</b> <span class="sub small">프로젝트에 허락된 주소만 등록됩니다</span></summary>
 <form method="post" class="panel form-row">
@@ -54,6 +31,30 @@
   <button class="btn" type="submit">등록</button>
 </form>
 </details>
+
+{% if targets %}
+<ul class="tlist">
+  {% for t in targets %}
+  {% set tp = PROJECTS[t.project] if t.project in PROJECTS else none %}
+  {% set n = point_counts.get(t.id) %}
+  <li class="{{ 'on' if picked and t.id == target.id }}">
+    <a href="{{ url_for('dash.targets', target=t.id) }}#surface" title="이 대상에서 모은 페이지·파라미터 보기"
+       {{ 'aria-current="true"' | safe if picked and t.id == target.id }}>
+      <b class="t-name">{{ t.name }}</b>
+      <span class="mono t-url">{{ t.url }}</span>
+      {% if tp and tp.is_practice(t.role) %}<span class="practice-tag">연습용</span>{% endif %}
+      <span class="sub small t-meta">
+        {%- if n and n.pages %}페이지 {{ n.pages }} · 파라미터 {{ n.params }}{% else %}모은 지점 없음{% endif -%}
+        {%- if header_names[t.id] %} · 인증 헤더 {{ header_names[t.id] | length }}{% endif -%}
+      </span>
+      <span class="chev" aria-hidden="true">›</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+  {{ empty("등록된 대상이 없습니다", "위 '대상 추가' 에서 점검할 서버를 등록하세요.", "", "") }}
+{% endif %}
 
 {# ── 누른 대상: 인증 헤더·삭제와 모은 페이지·파라미터(옛 표면 탭, 11-20 합침) ── #}
 {% if picked %}
