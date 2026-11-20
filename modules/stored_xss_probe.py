@@ -8,7 +8,7 @@
   ③ 심화       이벤트 처리기(" autofocus onfocus=…), 스크립트 블록 탈출(</script><표식>)
   ④ 우회       대소문자 섞기, 공백 대신 /, 꺾쇠 인코딩, javascript: 링크
 
-**글·댓글이 남는다.** 테스트 계정으로 자체 환경에서만 돌리고, 끝난 뒤 남은 글은 직접 지운다
+**글·댓글이 남는다.** 테스트 계정으로 돌리고, 끝난 뒤 남은 글은 직접 지운다
 (지우는 것까지 하는 건 새싹에듀 커뮤니티 전용 모듈의 몫이다 — 그쪽은 등록→확인→자동삭제를 한다).
 """
 from dashboard import core, probe
@@ -30,15 +30,13 @@ META = {
                {"tactic": "TA0001", "technique": "T1190", "name": "Exploit Public-Facing Application"}],
     "description": "고른 **쓰기 지점**(POST·PUT·PATCH)에 값을 넣고 **다시 읽어** 남아 있는지 봅니다. "
                    "① 표식이 남는 지점만 후보로 두고 ② 기본 → ③ 심화 → ④ 우회 순서로 넣습니다. "
-                   "**글·댓글이 남습니다** — 테스트 계정으로 자체 환경에서만, 끝난 뒤 직접 지우세요.",
+                   "**글·댓글이 남습니다** — 테스트 계정으로 돌리고 끝난 뒤 직접 지우세요.",
     "needs": [
         {"kind": "account", "required": False,
          "why": "글을 등록하려면 보통 로그인이 필요하고, 남는 데이터는 그 계정 이름으로 남습니다",
          "how": "테스트 계정으로 받은 토큰을 대상 탭의 인증 헤더에 넣습니다"},
     ],
     "params": [
-        {"name": "write_ack", "need": "required", "label": "쓰기 허용 확인", "default": "",
-         "help": "데이터가 남습니다. WRITE 를 적어야 실행됩니다."},
         {"name": "read_urls", "need": "optional", "label": "확인할 주소 (한 줄에 하나)", "type": "textarea", "default": "",
          "help": "비우면 그 지점의 주소를 GET 으로 다시 읽습니다. 글 목록·상세 주소를 적으면 거기서도 찾습니다."},
         {"name": "methods", "need": "required", "label": "보낼 메서드", "default": "POST,PUT,PATCH",
@@ -56,8 +54,6 @@ def _read(urls):
 
 
 def run(target, points, params):
-    if (params.get("write_ack") or "").strip().upper() != "WRITE":
-        raise ValueError("쓰기 허용 확인 칸에 WRITE 를 적어야 실행됩니다 (글·댓글이 남습니다)")
     allowed = {m.strip().upper() for m in params.get("methods", "POST,PUT,PATCH").split(",") if m.strip()}
     extra = [u.strip() for u in (params.get("read_urls") or "").splitlines() if u.strip()][:MAX_READ]
     out = []

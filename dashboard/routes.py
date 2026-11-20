@@ -299,8 +299,16 @@ def targets():
     # 페이지·파라미터와 지점 점검이 목록 아래에 뜬다.
     # ?target= 로 누른 대상만 펼친다. 처음 열면 목록만 보인다.
     picked = target if request.args.get("target", type=int) and target else None
+    show_all = request.args.get("show") == "all"
     groups, totals = _surface_of(picked, sort=request.args.get("sort", ""), state=request.args.get("state", ""),
-                                 show_all=request.args.get("show") == "all")
+                                 show_all=show_all)
+    # 고를 파라미터가 전부 '없는 경로' 안에 있으면 숨긴 채로는 아무것도 못 고른다(11-20 사용자 지적).
+    # 안내만 띄우고 한 번 더 누르게 하지 말고, 그런 대상에서는 처음부터 펴서 보여 준다.
+    if not show_all and not totals["shown_params"] and totals["hidden_params"]:
+        show_all = True
+        groups, totals = _surface_of(picked, sort=request.args.get("sort", ""),
+                                     state=request.args.get("state", ""), show_all=True)
+        totals["opened_for_params"] = True
     point_counts = {row["target_id"]: {"pages": row["pages"], "params": row["params"]} for row in get_db().execute(
         "SELECT target_id, COUNT(DISTINCT CASE WHEN state NOT IN ('not_found', 'soft_404') THEN url END) AS pages, "
         "SUM(param != '') AS params FROM points GROUP BY target_id")}
@@ -739,7 +747,8 @@ def _surface_of(target, sort="", state="", show_all=False):
     표면 자동 수집이 남긴 상태·점수·근거를 묶음마다 붙이고(11-20 2단계), 고른 대로 거르고 줄 세운다.
     없는 경로(404·가짜 200)는 기본으로 숨긴다 — 보이면 '찔러 볼 곳' 처럼 읽힌다.
     """
-    groups, totals = [], {"endpoints": 0, "params": 0, "hidden": 0, "hidden_params": 0, **{v: 0 for v in VERDICTS}}
+    groups, totals = [], {"endpoints": 0, "params": 0, "shown_params": 0, "hidden": 0, "hidden_params": 0,
+                          **{v: 0 for v in VERDICTS}}
     if not target:
         return groups, totals
     suggest_mods = _suggest_modules(target)
@@ -790,6 +799,8 @@ def _surface_of(target, sort="", state="", show_all=False):
             totals["hidden_params"] = totals.get("hidden_params", 0) + len(gr["params"])
             continue
         keep.append(gr)
+    # 화면에 실제로 보이는(= 고를 수 있는) 파라미터 수. totals["params"] 는 숨긴 것까지 센 전체다
+    totals["shown_params"] = sum(len(gr["params"]) for gr in keep)
     totals["states"] = sorted({e["state"] for gr in groups for e in gr["ends"]}, key=list(dv.STATES).index)
     if sort == "risk" or (not sort and any(gr["risk"] for gr in keep)):
         keep.sort(key=lambda gr: (-gr["risk"], gr["path"]))

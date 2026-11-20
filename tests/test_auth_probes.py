@@ -3,8 +3,6 @@
 노션 '웹 서비스 취약점 목록' 의 AUTH 15건·Insecure Design 3건을 보고 만든 모듈들이다.
 가짜 서버를 세워 '인증 있이·없이 견주기', '번호 바꿔 보기', '잇달아 보내 막히는지' 를 본다.
 """
-import pytest
-
 from dashboard import core
 from dashboard.core import Point, Response
 from modules import authz_probe, idor_probe, rate_limit_probe
@@ -173,10 +171,13 @@ def test_rate_limit_block_that_an_ip_header_undoes_is_vuln(monkeypatch):
     assert c.verdict == "vuln" and "X-Forwarded-For 로 우회" in c.title
 
 
-def test_rate_limit_post_needs_the_send_word(monkeypatch):
-    _server(monkeypatch, lambda url, h: (200, "ok"))
-    with pytest.raises(ValueError, match="SEND"):
-        rate_limit_probe.run(T, [_end()], {"method": "POST", "tries": "3"})
+def test_rate_limit_post_runs_without_a_confirm_box(monkeypatch):
+    """확인 칸은 뺐다(11-20 사용자 지시) — 계정이 잠길 수 있다는 경고는 설명에 남는다."""
+    assert "잠길 수 있습니다" in rate_limit_probe.META["description"]
+    sent = _server(monkeypatch, lambda url, h: (200, "ok"))
+    c = rate_limit_probe.run(T, [_end()], {"method": "POST", "tries": "3"})[0]
+    assert c.verdict == "vuln" and len(sent) == 3
+    assert all(m == "POST" for m, _u, _h in sent)
 
 
 def test_rate_limit_post_body_is_read_line_by_line():

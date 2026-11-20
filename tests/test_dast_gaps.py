@@ -7,8 +7,6 @@ import base64
 import json
 import time
 
-import pytest
-
 from dashboard import core
 from dashboard.core import Point, Response
 from modules import jndi_probe, jwt_probe, upload_probe
@@ -146,9 +144,14 @@ def test_jwt_an_already_expired_token_is_said_out_loud(monkeypatch):
     assert "2. 인증" in hit[0].evidence and "IDOR" in hit[0].evidence
 
 
-def test_upload_needs_the_ack_word(monkeypatch):
-    with pytest.raises(ValueError, match="UPLOAD"):
-        upload_probe.run(T, [_end()], {})
+def test_upload_warns_that_files_stay_even_without_a_confirm_box(monkeypatch):
+    """확인 칸은 뺐다(11-20 사용자 지시) — 없앤 것은 문턱이고, 남는다는 경고는 그대로다."""
+    assert "남습니다" in upload_probe.META["description"]
+    assert "직접 지우세요" in upload_probe.META["description"]
+    _ctx(monkeypatch)
+    _server(monkeypatch, lambda url, m, h, b: (400, ""))
+    c = upload_probe.run(T, [_end()], {})[0]          # 글자를 적지 않아도 돈다
+    assert c.verdict == "safe"
 
 
 def test_upload_builds_multipart_that_keeps_the_raw_filename():
@@ -161,7 +164,7 @@ def test_upload_builds_multipart_that_keeps_the_raw_filename():
 def test_upload_runnable_extension_accepted_is_vuln(monkeypatch):
     _ctx(monkeypatch)
     _server(monkeypatch, lambda url, m, h, b: (200, "올렸습니다"))
-    c = upload_probe.run(T, [_end()], {"upload_ack": "UPLOAD"})[0]
+    c = upload_probe.run(T, [_end()], {})[0]
     assert c.verdict == "vuln" and ".jsp" in c.title and c.severity == "critical"
 
 
@@ -176,7 +179,7 @@ def test_upload_path_in_the_name_accepted_is_vuln(monkeypatch):
             return 400, "확장자 불가"
         return 200, "올렸습니다"
     _server(monkeypatch, h)
-    c = upload_probe.run(T, [_end()], {"upload_ack": "UPLOAD"})[0]
+    c = upload_probe.run(T, [_end()], {})[0]
     assert c.verdict == "vuln" and "경로 조작" in c.title and "③ 심화" in c.evidence
 
 
@@ -191,29 +194,30 @@ def test_upload_everything_blocked_is_safe(monkeypatch):
         del hd  # Content-Type 은 보지 않는다 — 이름으로 가린다
         return (200, "올렸습니다") if ok else (400, "안 됩니다")
     _server(monkeypatch, h)
-    c = upload_probe.run(T, [_end()], {"upload_ack": "UPLOAD"})[0]
+    c = upload_probe.run(T, [_end()], {})[0]
     assert c.verdict == "safe" and "모두 막힘" in c.evidence
 
 
 def test_upload_says_what_to_fix_when_even_a_txt_fails(monkeypatch):
     _ctx(monkeypatch)
     _server(monkeypatch, lambda url, m, h, b: (400, "lectureId 가 없습니다"))
-    c = upload_probe.run(T, [_end()], {"upload_ack": "UPLOAD"})[0]
+    c = upload_probe.run(T, [_end()], {})[0]
     assert c.verdict == "safe" and "HAR" in c.evidence and "칸 이름" in c.evidence
 
 
 def test_upload_sends_the_extra_fields(monkeypatch):
     _ctx(monkeypatch)
     sent = _server(monkeypatch, lambda url, m, h, b: (400, ""))
-    upload_probe.run(T, [_end()], {"upload_ack": "UPLOAD", "extra": "lectureId=103\ntitle=점검"})
+    upload_probe.run(T, [_end()], {"extra": "lectureId=103\ntitle=점검"})
     assert b'name="lectureId"' in sent[0]["body"] and b"103" in sent[0]["body"]
 
 
 # ── Log4j 치환 점검 ─────────────────────────────────────────
 
-def test_jndi_needs_the_ack_word():
-    with pytest.raises(ValueError, match="JNDI"):
-        jndi_probe.run(T, [_end()], {})
+def test_jndi_warns_about_the_outbound_connection_without_a_confirm_box():
+    """확인 칸은 뺐다(11-20 사용자 지시). 바깥으로 연결하게 만든다는 말은 설명에 남는다."""
+    d = jndi_probe.META["description"]
+    assert "바깥으로 연결" in d and "문서용 대역" in d
 
 
 def test_jndi_substitution_coming_back_is_vuln(monkeypatch):
@@ -226,7 +230,7 @@ def test_jndi_substitution_coming_back_is_vuln(monkeypatch):
             return 500, "오류: " + ua[5:-1]          # 치환해서 적는 서버
         return 500, "오류: " + ua                     # 값을 그대로 되돌려 준다
     _server(monkeypatch, h)
-    c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")], {"jndi_ack": "JNDI"})[0]
+    c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")], {})[0]
     assert c.verdict == "vuln" and "치환이 살아 있음" in c.title and c.severity == "critical"
 
 
@@ -238,14 +242,14 @@ def test_jndi_slow_answer_to_a_blackhole_lookup_is_potential(monkeypatch):
             return 200, "ok", 1.2                    # 연결을 기다리는 척
         return 200, "ok"
     _server(monkeypatch, h)
-    c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")], {"jndi_ack": "JNDI"})[0]
+    c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")], {})[0]
     assert c.verdict == "potential" and "응답 지연" in c.title
 
 
 def test_jndi_nothing_observable_is_safe_and_says_so(monkeypatch):
     _ctx(monkeypatch)
     _server(monkeypatch, lambda url, m, h, b: (200, "정적인 화면"))
-    c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")], {"jndi_ack": "JNDI"})[0]
+    c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")], {})[0]
     assert c.verdict == "safe" and "리스너로 한 번 더 보는 게 확실하다" in c.evidence
 
 
@@ -262,7 +266,7 @@ def test_jndi_a_dead_answer_to_the_lookup_is_vuln(monkeypatch):
             raise OSError("The read operation timed out")
         return 200, "ok"
     _server(monkeypatch, h)
-    c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")], {"jndi_ack": "JNDI"})[0]
+    c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")], {})[0]
     assert c.verdict == "vuln" and "응답이 끊김" in c.title
     assert "한 번 더 보내도 끊김" in c.evidence
 
@@ -278,7 +282,7 @@ def test_jndi_a_dead_answer_only_once_is_potential(monkeypatch):
                 raise OSError("timed out")
         return 200, "ok"
     _server(monkeypatch, h)
-    c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")], {"jndi_ack": "JNDI"})[0]
+    c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")], {})[0]
     assert c.verdict == "potential" and "확정 안 됨" in c.title
 
 
@@ -289,7 +293,7 @@ def test_jndi_a_slow_address_is_not_called_vulnerable(monkeypatch):
     def h(url, m, hd, body):
         raise OSError("timed out")
     _server(monkeypatch, h)
-    c = jndi_probe.run(T, [_end("https://sesacedu.store/slow")], {"jndi_ack": "JNDI"})[0]
+    c = jndi_probe.run(T, [_end("https://sesacedu.store/slow")], {})[0]
     assert c.verdict == "safe" and "기준 응답을 받지 못함" in c.evidence
 
 
@@ -303,7 +307,7 @@ def test_jndi_listener_result_is_left_to_the_listener(monkeypatch):
     _ctx(monkeypatch)
     _server(monkeypatch, lambda url, m, h, b: (200, "정적인 화면"))
     c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")],
-                       {"jndi_ack": "JNDI", "listener": "13.125.54.149:389"})[0]
+                       {"listener": "13.125.54.149:389"})[0]
     assert "걸려 온 조회가 있는지 직접 보세요" in c.evidence and "이 모듈은 못 봅니다" in c.evidence
     assert c.verdict == "safe" and "리스너 확인 필요" in c.title
 
@@ -322,3 +326,19 @@ def test_the_new_modules_are_registered_with_the_notion_vocabulary(app):
     assert mods["jwt_probe"].vuln == "AUTH" and mods["jwt_probe"].stage == "check"
     assert mods["upload_probe"].vuln == "FILE" and mods["upload_probe"].unit == "endpoint"
     assert mods["jndi_probe"].vuln == "RCE" and mods["jndi_probe"].unit == "endpoint"
+
+
+def test_jndi_tries_every_header_not_just_the_first(monkeypatch):
+    """11-20 실측: 사용자 웹 /login 은 User-Agent 가 아니라 다른 헤더로도 터질 수 있다.
+
+    로그에 적히는 자리가 주소마다 다르다. 첫 헤더만 보고 '안전' 이라 하면 나머지를 놓친다.
+    """
+    _ctx(monkeypatch)
+
+    def h(url, m, hd, body):
+        if "jndi" in hd.get("X-Api-Version", ""):   # 네 번째 헤더에서만 터진다
+            raise OSError("timed out")
+        return 200, "ok"
+    _server(monkeypatch, h)
+    c = jndi_probe.run(T, [_end("https://sesacedu.store/login")], {})[0]
+    assert c.verdict == "vuln" and "X-Api-Version" in c.title
