@@ -72,7 +72,7 @@
     </figure>
   </div>
 
-  {# ── 유형·항목·상태·모듈별(11-20 사용자 요청: 위험도 말고 다른 항목으로도) ──
+  {# ── 유형·항목·상태별·진단 일정(11-20 사용자 요청: 위험도 말고 다른 항목으로도) ──
      결과는 그 모듈의 첫 KISA 코드로 분류해 한 번만 센다. 0건 줄은 왜 0인지 적는다 —
      '점검했는데 없음' 과 '점검할 모듈이 없음' 은 보고서에서 뜻이 전혀 다르다. #}
   {% set st_label = {"found": "발견", "clear": "점검·없음", "ready": "모듈 있음·미실행", "none": "모듈 없음"} %}
@@ -115,15 +115,34 @@
           {% for g in bd.status %}<li><i class="sw st-{{ g.status }}" aria-hidden="true"></i>{{ g.label }} <b>{{ g.n }}</b></li>{% endfor %}
         </ul>
       </figure>
+      {# ── 진단 일정(11-20 사용자 요청: 모듈별 칸 대신, 날짜·요일별 작업량을 색 농도로) ── #}
       <figure class="panel chart">
-        <figcaption>모듈별 발견 <span class="sub">— 미조치 상위</span></figcaption>
-        <div class="hstack">
-          {% for r in bd.modules %}
-          <div class="hs-row hs-wide">
-            <span class="hs-name" title="{{ r.name }}">{{ r.name }}</span>
-            <div class="hs-track"><span class="hs-bar" style="width: {{ r.pct }}%"></span><span class="hs-num">{{ r.n }}</span></div>
-          </div>
-          {% else %}<p class="sub small">아직 결과가 없습니다.</p>{% endfor %}
+        <figcaption>진단 일정 <span class="sub">— {{ cal.start[5:] }} ~ {{ cal.end[5:] }}, 하루 한 칸 · 진할수록 모듈을 많이 돌린 날</span></figcaption>
+        <div class="cal" style="--weeks: {{ cal.weeks | length }}">
+          <span class="cal-corner"></span>
+          {% for w in cal.weeks %}<span class="cal-month">{% if w.month %}{{ w.month | int }}월{% endif %}</span>{% endfor %}
+          {% for i in range(7) %}
+          <span class="cal-wd">{{ cal.weekdays[i] if i in (0, 2, 4) else "" }}</span>
+          {% for w in cal.weeks %}{% set c = w.cells[i] %}
+          <span class="cal-day lv-{{ c.level }}{{ ' out' if not c.in_period }}{{ ' mark' if c.mark }}{{ ' deadline' if c.deadline }}{{ ' today' if c.today }}"
+                title="{{ c.md }}({{ c.wd }}){% if c.mark %} · {{ c.mark }}{% endif %}{% if c.today %} · 오늘{% endif %}&#10;모듈 실행 {{ c.runs }}번 · 요청 {{ '{:,}'.format(c.requests) }} · 새 결과 {{ c.found }}건"></span>
+          {% endfor %}
+          {% endfor %}
+        </div>
+        <div class="cal-foot">
+          <span class="sub small">
+            진단한 날 <b>{{ cal.active_days }}</b>일 · 모듈 실행 <b>{{ cal.total_runs }}</b>번
+            {% if cal.top %} · 가장 많이 돌린 날 <b>{{ cal.top.md }}({{ cal.top.wd }})</b> {{ cal.top.runs }}번{% endif %}
+            {% if cal.next %} · <b>{{ cal.next.label }}</b> {{ cal.next.md }}{% if cal.next.days == 0 %} 오늘{% else %} D-{{ cal.next.days }}{% endif %}{% endif %}
+          </span>
+          <span class="cal-legend">
+            <span class="sub small">적음</span>
+            {% for i in range(5) %}<i class="cal-day lv-{{ i }}" aria-hidden="true"></i>{% endfor %}
+            <span class="sub small">많음</span>
+            <i class="cal-day lv-0 deadline" aria-hidden="true"></i><span class="sub small">마감</span>
+            <i class="cal-day lv-0 mark" aria-hidden="true"></i><span class="sub small">주간보고</span>
+            <i class="cal-day lv-0 today" aria-hidden="true"></i><span class="sub small">오늘</span>
+          </span>
         </div>
       </figure>
     </div>

@@ -50,7 +50,7 @@ def overview(db, targets):
     }
 
 
-# ── 진단 통계(11-20 추가): 맨 위 전체 숫자 · 유형별 · 주요정보통신기반시설 항목별 · 상태별 · 모듈별 ──
+# ── 진단 통계(11-20 추가): 맨 위 전체 숫자 · 유형별 · 주요정보통신기반시설 항목별 · 상태별 ──
 #
 # 결과 하나는 그 결과를 낸 모듈의 META["kisa"] 첫 코드로 분류한다. 코드를 둘 단 모듈(예: 입력값
 # 넣어 보기 XS·SI)도 결과를 두 번 세지 않으려는 것이다 — 합이 전체 건수와 맞아야 한다.
@@ -82,7 +82,7 @@ def activity(db, targets):
 
 
 def breakdown(db, targets, modules):
-    """유형(OWASP 2025)·항목(KISA 21)·처리 상태·모듈별 건수와 점검 범위."""
+    """유형(OWASP 2025)·항목(KISA 21)·처리 상태별 건수와 점검 범위."""
     ids = [t["id"] for t in targets]
     m = _in(ids)
     ran = {r[0] for r in db.execute(f"SELECT DISTINCT module_id FROM runs WHERE target_id IN ({m})", ids)}
@@ -97,7 +97,6 @@ def breakdown(db, targets, modules):
     unclassified = {s: 0 for s in SEVERITIES}
     kisa_found = {c: 0 for c in standards.KISA}
     by_status = {k: 0 for k in STATUSES}
-    by_module = {}
     for r in rows:
         if r["status"] in by_status:
             by_status[r["status"]] += r["c"]
@@ -109,7 +108,6 @@ def breakdown(db, targets, modules):
             kisa_found[code] += r["c"]
         else:
             unclassified[r["severity"]] += r["c"]
-        by_module[r["module_id"]] = by_module.get(r["module_id"], 0) + r["c"]
 
     def state(mods, found):
         if found:
@@ -138,8 +136,6 @@ def breakdown(db, targets, modules):
     cover = {s: sum(1 for r in kisa_rows if r["state"] == s) for s in ("found", "clear", "ready", "none")}
 
     status_total = sum(by_status.values()) or 1
-    mod_top = sorted(by_module.items(), key=lambda kv: -kv[1])[:6]
-    mod_max = mod_top[0][1] if mod_top else 1
     return {
         "owasp": owasp_rows,
         "unclassified": {"total": un_total, "segments": [
@@ -148,6 +144,75 @@ def breakdown(db, targets, modules):
         "kisa_cover": cover,
         "status": [{"status": k, "label": v, "n": by_status[k], "pct": by_status[k] * 100 / status_total}
                    for k, v in STATUSES.items()],
-        "modules": [{"id": mid, "name": modules[mid].name if mid in modules else mid, "n": n, "pct": n * 100 / mod_max}
-                    for mid, n in mod_top],
+    }
+
+
+# ── 진단 일정(11-20 추가): 날짜·요일별 진단 활동을 GitHub 잔디처럼 색 농도로 ──
+#
+# 한 칸이 하루, 세로가 요일(월~일), 가로가 주다. 색이 진할수록 그날 모듈을 많이 돌렸다.
+# 기간은 프로젝트 팩의 PROJECT["schedule"] 에서 온다. 마감일(보고회 등)과 매주 반복 일정은 테두리로 표시한다.
+# 시각은 KST ISO 로 저장돼 있어(core.now_iso) 앞 10글자가 곧 KST 날짜다.
+
+from datetime import date, timedelta  # noqa: E402
+
+WEEKDAYS = "월화수목금토일"
+
+
+def _daily(db, sql, ids):
+    m = _in(ids)
+    return {r[0]: r[1] for r in db.execute(sql.format(m=m), ids)}
+
+
+def calendar(db, targets, schedule=None, today=None):
+    today = today or date.today()
+    schedule = schedule or {}
+    start = date.fromisoformat(schedule["start"]) if schedule.get("start") else today - timedelta(weeks=7)
+    end = date.fromisoformat(schedule["end"]) if schedule.get("end") else today
+    first = start - timedelta(days=start.weekday())          # 그 주 월요일부터
+    last = end + timedelta(days=6 - end.weekday())           # 그 주 일요일까지
+
+    ids = [t["id"] for t in targets]
+    day = "substr({col}, 1, 10)"
+    runs = _daily(db, f"SELECT {day.format(col='started_at')} d, COUNT(*) FROM runs WHERE target_id IN ({{m}}) GROUP BY d", ids)
+    reqs = _daily(db, f"SELECT {day.format(col='created_at')} d, COUNT(*) FROM exchanges WHERE target_id IN ({{m}}) GROUP BY d", ids)
+    found = _daily(db, f"SELECT {day.format(col='created_at')} d, COUNT(*) FROM findings WHERE target_id IN ({{m}}) GROUP BY d", ids)
+
+    marks = {m["date"]: m["label"] for m in schedule.get("marks", [])}
+    weekly = schedule.get("weekly") or {}
+    busiest = max(runs.values(), default=0)
+
+    def level(n):
+        if not n:
+            return 0
+        # 가장 많이 돌린 날을 4 로 놓고 네 단계로 나눈다 — 하루 한 번도 1 단계로 보이게 올림한다
+        return min(4, max(1, -(-n * 4 // busiest)))
+
+    weeks, d = [], first
+    while d <= last:
+        week = []
+        for _ in range(7):
+            key = d.isoformat()
+            label = marks.get(key, "")
+            if not label and weekly and d.weekday() == weekly.get("weekday") and start <= d <= end:
+                label = weekly.get("label", "")
+            week.append({
+                "date": key, "md": d.strftime("%m-%d"), "wd": WEEKDAYS[d.weekday()],
+                "runs": runs.get(key, 0), "requests": reqs.get(key, 0), "found": found.get(key, 0),
+                "level": level(runs.get(key, 0)), "in_period": start <= d <= end,
+                "mark": label, "deadline": key in marks, "today": d == today,
+            })
+            d += timedelta(days=1)
+        weeks.append({"cells": week, "month": week[0]["date"][5:7] if week[0]["date"][8:10] <= "07" or not weeks else ""})
+
+    active = [c for w in weeks for c in w["cells"] if c["runs"]]
+    top = max(active, key=lambda c: c["runs"], default=None)
+    upcoming = sorted((k, v) for k, v in marks.items() if k >= today.isoformat())
+    nxt = None
+    if upcoming:
+        k, v = upcoming[0]
+        nxt = {"label": v, "md": k[5:], "days": (date.fromisoformat(k) - today).days}
+    return {
+        "weeks": weeks, "weekdays": WEEKDAYS, "start": start.isoformat(), "end": end.isoformat(),
+        "active_days": len(active), "top": top, "next": nxt,
+        "total_runs": sum(runs.get(c["date"], 0) for w in weeks for c in w["cells"]),
     }

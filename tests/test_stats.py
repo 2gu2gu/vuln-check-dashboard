@@ -151,7 +151,6 @@ def test_findings_are_counted_once_by_their_first_kisa_code(app, typed):
     assert ow["A03"]["state"] == "none"
     status = {g["status"]: g["n"] for g in bd["status"]}
     assert status == {"open": 4, "confirmed": 0, "fixed": 1, "false_positive": 0}
-    assert bd["modules"][0]["n"] == 1 and len(bd["modules"]) == 4
 
 
 def test_activity_totals(app, typed):
@@ -164,7 +163,35 @@ def test_activity_totals(app, typed):
 def test_results_page_shows_totals_and_breakdowns(client, typed):
     page = client.get(f"/?target={typed}").get_data(as_text=True)
     for word in ("전체 결과", "모듈 실행", "보낸 요청", "모은 엔드포인트",
-                 "취약점 유형별", "처리 상태별", "모듈별 발견", "21항목 점검 현황"):
+                 "취약점 유형별", "처리 상태별", "진단 일정", "21항목 점검 현황"):
         assert word in page, word
     assert 'class="kisa-cell cov-found"' in page and 'class="kisa-cell cov-none"' in page
     assert "built-in method" not in page  # kisa_cover.clear 가 dict.clear 로 읽히던 실수
+
+
+# ── 진단 일정(11-20) ──────────────────────────────────────────
+
+def test_calendar_covers_the_project_weeks_and_marks_deadlines(app, typed):
+    from datetime import date
+    sched = {"start": "2026-10-06", "end": "2026-11-23",
+             "marks": [{"date": "2026-11-23", "label": "최종보고회"}], "weekly": {"weekday": 2, "label": "주간활동보고"}}
+    with app.app_context():
+        db = get_db()
+        cal = stats.calendar(db, db.execute("SELECT * FROM targets").fetchall(), sched, today=date(2026, 11, 20))
+    days = {c["date"]: c for w in cal["weeks"] for c in w["cells"]}
+    # 10-06(화) 이 든 주의 월요일 10-05 부터 11-23(월) 주 일요일 11-29 까지 — 8주
+    assert len(cal["weeks"]) == 8 and min(days) == "2026-10-05" and max(days) == "2026-11-29"
+    assert not days["2026-10-05"]["in_period"] and days["2026-10-06"]["in_period"]
+    assert all(len(w["cells"]) == 7 and w["cells"][0]["wd"] == "월" for w in cal["weeks"])
+    # typed 는 11-20 에 결과 5건을 만든다(실행도 5번). 날짜 없는 실행 한 번은 달력에 안 들어간다
+    assert days["2026-11-20"]["runs"] == 5 and days["2026-11-20"]["level"] == 4 and days["2026-11-20"]["today"]
+    assert days["2026-11-23"]["deadline"] and days["2026-11-18"]["mark"] == "주간활동보고"
+    assert cal["next"] == {"label": "최종보고회", "md": "11-23", "days": 3}
+    assert not days["2026-11-29"]["in_period"]
+
+
+def test_sesacedu_pack_has_the_project_period(app):
+    from dashboard import routes
+    with app.test_request_context():
+        sched = routes._projects()["sesacedu"].schedule
+    assert sched["start"] == "2026-10-06" and sched["end"] == "2026-11-23"

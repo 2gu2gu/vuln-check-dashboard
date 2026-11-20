@@ -113,8 +113,9 @@ def results():
     charts = stats.overview(db, real) if target else None
     act = stats.activity(db, real) if target else None
     bd = stats.breakdown(db, real, _modules()) if target else None
+    cal = stats.calendar(db, real, _project_of(target).schedule) if target else None
     return render_template("results.html", target=target, targets=targets, findings=data, charts=charts,
-                           act=act, bd=bd,
+                           act=act, bd=bd, cal=cal,
                            counts=counts, modules=_modules_for(target), severities=SEVERITIES,
                            args=request.args, cvss_metrics=cvss.METRICS)
 
