@@ -175,7 +175,7 @@ def test_the_surface_page_says_which_module_will_run(app, client):
     client.post("/modules/surface_import/run",
                 data={"target_id": tid, "urls": "https://sesacedu.store/courses?category=web"},
                 follow_redirects=True)
-    page = client.get(f"/surface?target={tid}").get_data(as_text=True)
+    page = client.get(f"/targets?target={tid}").get_data(as_text=True)
     assert 'class="panel probe-bar"' in page, "지점 고르는 줄이 안 그려졌습니다"
     bar = page.split('class="panel probe-bar"', 1)[-1].split('<div class="table-wrap">', 1)[0]
     assert "무엇으로 점검할지" in bar

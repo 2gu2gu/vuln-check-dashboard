@@ -109,7 +109,7 @@ def seeded(app, client):
 
 def test_collect_then_surface_page(client, seeded):
     tid, ids = seeded
-    page = client.get(f"/surface?target={tid}").get_data(as_text=True)
+    page = client.get(f"/targets?target={tid}").get_data(as_text=True)
     assert "/courses" in page and "category" in page and "입력값 반사 확인" in page
     assert set(ids) == {"category", "level", "title", "body"}
 
@@ -156,7 +156,7 @@ def test_probe_module_not_runnable_from_modules_tab(client, seeded):
     tid, _ = seeded
     page = client.post("/modules/reflection_check/run", data={"target_id": tid, "confirm": "yes"},
                        follow_redirects=True).get_data(as_text=True)
-    assert "표면 탭에서" in page
+    assert "대상 탭에서" in page
 
 
 def test_rerun_check_module_does_not_duplicate(app, client, monkeypatch, fake_fetch):
@@ -189,7 +189,7 @@ def test_only_selected_probe_params_are_shown(app, client):
     client.post("/modules/surface_import/run",
                 data={"target_id": tid, "urls": "https://sesacedu.store/courses?category=web"},
                 follow_redirects=True)
-    html = client.get(f"/surface?target={tid}").get_data(as_text=True)
+    html = client.get(f"/targets?target={tid}").get_data(as_text=True)
     blocks = re.findall(r'<div class="probe-params" data-for="([^"]+)"([^>]*)>', html)
     assert len(blocks) >= 2                      # 지점 점검 모듈이 여럿이다
     shown = [mid for mid, attrs in blocks if "hidden" not in attrs]
@@ -221,7 +221,7 @@ def test_wordlist_select_honours_module_default(app, client):
     mods = client.get(f"/modules?target={tid}").get_data(as_text=True)
     assert selected(mods, r'action="[^"]*content_discovery/run".*?</form>').endswith("|web-common.txt")
 
-    surf = client.get(f"/surface?target={tid}").get_data(as_text=True)
+    surf = client.get(f"/targets?target={tid}").get_data(as_text=True)
     assert selected(surf, r'data-for="payload_probe".*?</div>').endswith("|payload-reflect.txt")
 
 
@@ -247,7 +247,7 @@ def test_surface_explains_when_no_parameters(app, client):
         tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
     client.post("/modules/surface_import/run",
                 data={"target_id": tid, "urls": "https://sesacedu.store/login"}, follow_redirects=True)
-    html = client.get(f"/surface?target={tid}").get_data(as_text=True)
+    html = client.get(f"/targets?target={tid}").get_data(as_text=True)
     assert "고를 수 있는 지점이 없습니다" in html
     assert 'id="pick-all"' in html and 'class="panel probe-bar" hidden' in html
 
@@ -260,6 +260,40 @@ def test_surface_shows_the_bar_once_a_parameter_exists(app, client):
     client.post("/modules/surface_import/run",
                 data={"target_id": tid, "urls": "https://sesacedu.store/backend/lectures?keyword=a"},
                 follow_redirects=True)
-    html = client.get(f"/surface?target={tid}").get_data(as_text=True)
+    html = client.get(f"/targets?target={tid}").get_data(as_text=True)
     assert "고를 수 있는 지점이 없습니다" not in html
     assert 'name="point"' in html
+
+
+# ── 표면을 대상 탭에 합침(11-20) ───────────────────────────────
+
+def test_clicking_a_target_shows_its_points(client, seeded):
+    """대상 이름을 누르면 그 대상이 모은 페이지·파라미터가 대상 탭 아래에 뜬다."""
+    tid, _ = seeded
+    page = client.get(f"/targets?target={tid}").get_data(as_text=True)
+    assert f'href="/targets?target={tid}#surface"' in page
+    assert 'id="surface"' in page and 'id="probe-form"' in page
+    assert '<tr class="on">' in page
+
+
+def test_probe_returns_to_targets_tab(client, seeded):
+    tid, _ = seeded
+    r = client.post("/surface/probe", data={"target_id": tid, "module_id": "reflection_check", "confirm": "yes"})
+    assert r.headers["Location"].endswith(f"/targets?target={tid}#surface")
+
+
+# ── 모듈 카드: 펴지 않아도 실행 버튼이 보인다(11-20) ──────────────
+
+def test_run_button_sits_outside_the_folded_body(client, seeded):
+    import re
+    tid, _ = seeded
+    page = client.get(f"/modules?target={tid}").get_data(as_text=True)
+    card = re.search(r'data-mod="surface_crawl".*?</article>', page, re.S).group(0)
+    quick, body = card.split('class="mod-body"', 1)
+    assert 'form="run-surface_crawl"' in quick and ">수집</button>" in quick
+    assert 'id="run-surface_crawl"' in body and "<button" not in body
+    # 능동 모듈의 '자체 환경 확인' 도 접힌 쪽에 있고 같은 폼으로 간다
+    active = re.search(r'data-mod="content_discovery".*?</article>', page, re.S).group(0)
+    assert 'name="confirm" value="yes" form="run-content_discovery"' in active.split('class="mod-body"', 1)[0]
+    probe = re.search(r'data-mod="reflection_check".*?</article>', page, re.S).group(0)
+    assert "지점 골라 점검" in probe.split('class="mod-body"', 1)[0]

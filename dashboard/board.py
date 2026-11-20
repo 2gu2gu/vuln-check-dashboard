@@ -36,9 +36,9 @@ def _why_not(mod, needs_rows):
         n = missing[0]
         return BLOCKED, f"{n['label']}{(' ' + n['name']) if n['name'] else ''} 가 없습니다"
     if mod.stage == "probe":
-        return ELSEWHERE, "표면 탭에서 지점을 골라 돌립니다"
+        return ELSEWHERE, "대상 탭에서 지점을 골라 돌립니다"
     if mod.stage == "tool":
-        return ELSEWHERE, "도구 탭에서 값을 넣고 돌립니다"
+        return ELSEWHERE, "탐색 탭에서 값을 넣고 돌립니다"
     return READY, ""
 
 

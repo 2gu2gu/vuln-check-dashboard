@@ -207,7 +207,7 @@ def test_imported_points_land_on_surface(app, client):
         "target_id": tid, "module_id": "import_tool_output",
         "output": "https://sesacedu.store/admin\nhttps://evil.example/x"}, follow_redirects=True).get_data(as_text=True)
     assert "표면에 1개" in page and "범위 밖 1개 제외" in page
-    assert "/admin" in client.get(f"/surface?target={tid}").get_data(as_text=True)
+    assert "/admin" in client.get(f"/targets?target={tid}").get_data(as_text=True)
 
 
 def test_wordlist_field_rejects_unknown_choice(app, client):

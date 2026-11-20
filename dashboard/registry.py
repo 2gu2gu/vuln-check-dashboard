@@ -19,7 +19,9 @@ KINDS = ("passive", "active")
 # probe:   run(target, points, params) → [Check]  수집된 지점 단위 점검
 # tool:    run(target, params) → ToolResult  도구 탭에서 값을 넣고 바로 결과를 보는 것
 STAGES = ("collect", "check", "probe", "tool")
-STAGE_LABEL = {"collect": "표면 수집", "check": "대상 점검", "probe": "지점 점검", "tool": "도구"}
+STAGE_LABEL = {"collect": "표면 수집", "check": "대상 점검", "probe": "지점 점검", "tool": "탐색"}
+# 모듈 카드의 실행 버튼 글자. 단계마다 하는 일이 달라 '실행' 하나로 두지 않는다.
+RUN_VERB = {"collect": "수집", "check": "점검", "probe": "지점 골라 점검", "tool": "실행"}
 GENERAL = "general"  # 어느 프로젝트에도 속하지 않는 대상
 # 연습용 묶음 이름. 프로젝트 이름을 쓰지 않는 것이 요점이다 — 점검 범위가 아니다.
 PRACTICE_LABEL = "연습용 — 실서버 아님"
