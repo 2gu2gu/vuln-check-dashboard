@@ -69,7 +69,31 @@
           <span class="sub small">고치기</span>
         {%- else %}<span class="sub">없음</span> <span class="hdr-cue">넣기</span>{% endif -%}
       </summary>
+      {# 인증 방식(11-20 사용자 요청) — 하나를 고르면 그 칸만 보인다(:has, 자바스크립트 없이).
+         어느 방식이든 결국 '이름: 값' 한 줄이라 아래 '직접 입력' 칸에 함께 쌓인다 #}
+      <form method="post" action="{{ url_for('dash.target_auth', tid=t.id) }}" class="auth-ways">
+        {{ csrf_field() }}
+        <div class="auth-pick">
+          {% for w in auth_ways %}
+          <label class="auth-chip"><input type="radio" name="way" value="{{ w.id }}"
+                 {{ 'checked' if loop.first }}> {{ w.label }}</label>
+          {% endfor %}
+        </div>
+        {% for w in auth_ways %}
+        <div class="auth-fields" data-way="{{ w.id }}">
+          <div class="login-row">
+            {% for f in w.fields %}
+            <input name="{{ f.name }}" type="{{ 'password' if f.secret else 'text' }}" autocomplete="off"
+                   placeholder="{{ f.ph or f.label }}" aria-label="{{ w.label }} {{ f.label }}">
+            {% endfor %}
+            <button class="btn ghost" type="submit">넣기</button>
+          </div>
+          <small class="sub">{{ w.help }}</small>
+        </div>
+        {% endfor %}
+      </form>
       <form method="post" action="{{ url_for('dash.target_headers', tid=t.id) }}">
+        <b class="small">직접 입력</b>
         {{ csrf_field() }}
         <textarea name="headers" rows="3" class="mono" placeholder="Cookie: JSESSIONID=...&#10;Authorization: Bearer ...">{{ header_text[t.id] }}</textarea>
         <small class="sub">한 줄에 '이름: 값'. 저장하면 기존 값을 모두 바꿉니다. 이 대상 주소로 가는 요청에만 붙습니다.
@@ -112,7 +136,7 @@
 </div>
 
 <section class="cards">
-  <div class="card"><small>엔드포인트</small><strong>{{ totals.endpoints }}</strong></div>
+  <div class="card"><small>엔드포인트</small><strong>{{ totals.endpoints }}</strong>{% if totals.hidden %}<small>없는 경로 {{ totals.hidden }}개는 빼고 셈</small>{% endif %}</div>
   <div class="card"><small>파라미터</small><strong>{{ totals.params }}</strong></div>
   {% for v in ("vuln", "potential", "safe") %}
   <div class="card">{{ verdict(v) }}<strong>{{ totals[v] }}</strong><small>판정 수</small></div>

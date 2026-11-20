@@ -32,6 +32,11 @@ def _project_of(target):
     return _projects().get(target["project"]) or _projects()[GENERAL]
 
 
+def _shown(mods):
+    """화면에 띄울 모듈만 — 다른 모듈의 부품(hidden)은 뺀다. 실행·검증은 _modules_for 그대로 쓴다."""
+    return {k: m for k, m in mods.items() if not m.hidden}
+
+
 def _modules_for(target):
     """대상이 있으면 범용 + 그 프로젝트 전용 중 역할이 맞는 것, 없으면 전부."""
     return modules_for(_modules(), target["project"], target["role"]) if target else _modules()
@@ -297,11 +302,13 @@ def targets():
     groups, totals = _surface_of(picked, sort=request.args.get("sort", ""), state=request.args.get("state", ""),
                                  show_all=request.args.get("show") == "all")
     point_counts = {row["target_id"]: {"pages": row["pages"], "params": row["params"]} for row in get_db().execute(
-        "SELECT target_id, COUNT(DISTINCT url) AS pages, SUM(param != '') AS params FROM points GROUP BY target_id")}
+        "SELECT target_id, COUNT(DISTINCT CASE WHEN state NOT IN ('not_found', 'soft_404') THEN url END) AS pages, "
+        "SUM(param != '') AS params FROM points GROUP BY target_id")}
     return render_template("targets.html", target=target, targets=targets, picked=picked, point_counts=point_counts,
                            header_names=names, header_text=header_text, logins=logins,
-                           groups=groups, totals=totals, probes=_probe_modules(target),
-                           collectors=[m for m in _modules_for(target).values() if m.stage == "collect"],
+                           auth_ways=login_mod.AUTH_WAYS,
+                           groups=groups, totals=totals, probes=_shown(_probe_modules(target)),
+                           collectors=[m for m in _shown(_modules_for(target)).values() if m.stage == "collect"],
                            verdicts=VERDICTS, states=dv.STATES, source_label=dv.SOURCE_LABEL, args=request.args,
                            surl=_surface_link(target))
 
@@ -345,6 +352,25 @@ def target_headers(tid):
     return redirect(url_for("dash.targets", target=tid))
 
 
+@bp.post("/targets/<int:tid>/auth")
+def target_auth(tid):
+    """손으로 넣는 인증(Bearer·쿠키·Basic·API 키) — 고른 방식대로 헤더 한 줄을 만들어 넣는다."""
+    db = get_db()
+    t = db.execute("SELECT * FROM targets WHERE id = ?", [tid]).fetchone() or abort(404)
+    back = url_for("dash.targets", target=tid)
+    try:
+        name, line = login_mod.auth_line(request.form.get("way", ""), request.form)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(back)
+    db.execute("UPDATE targets SET headers = ? WHERE id = ?",
+               [login_mod.replace_line(t["headers"], name, line), tid])
+    db.commit()
+    # 값은 가리지 않는다 — 자체 실습 환경이고, 안 보이면 맞게 들어갔는지 확인할 수 없다(요청 기록도 같은 기준)
+    flash(f"인증 헤더에 넣었습니다 — {line}", "ok")
+    return redirect(back)
+
+
 @bp.post("/targets/<int:tid>/login")
 def target_login(tid):
     """로그인해서 토큰을 받아 이 대상의 인증 헤더에 넣는다. 비밀번호는 저장하지 않는다."""
@@ -386,7 +412,7 @@ def target_login(tid):
 @bp.get("/modules")
 def modules():
     target, targets = _current_target()
-    available = _modules_for(target)
+    available = _shown(_modules_for(target))
     project = _project_of(target) if target else None
     # 묶는 기준은 취약점 하나만 둔다(11-20 사용자 결정). 단계·전술·분야 탭은 뺐다.
     way = "vuln"
@@ -619,6 +645,16 @@ def module_run(mid):
         if stop:
             return stop
         values = {p["name"]: request.form.get(p["name"], p.get("default", "")) for p in mod.params}
+        pid = request.form.get("point", type=int)
+        if mod.takes_point and pid:
+            # 팝업에서 고른 지점 하나 — 그 주소·파라미터로 때린다(심화 모듈, 11-20)
+            row = get_db().execute("SELECT * FROM points WHERE id = ? AND target_id = ? AND param != ''",
+                                   [pid, t["id"]]).fetchone()
+            if not row:
+                flash("고른 지점을 찾지 못했습니다", "error")
+                return redirect(back)
+            values.update(point_url=row["url"], point_param=row["param"], point_place=row["place"],
+                          point_sample=row["sample"])
         try:
             params = _check_types(mod, values)
         except ValueError as e:
@@ -665,7 +701,7 @@ def module_panel(mid):
     mod = _modules_for(target).get(mid) if target else _modules().get(mid)
     if not mod:
         abort(404)
-    groups, totals = _surface_of(target) if (target and mod.stage == "probe") else ([], {})
+    groups, totals = _surface_of(target) if (target and (mod.stage == "probe" or mod.takes_point)) else ([], {})
     back = url_for("dash.modules", target=target["id"] if target else None, open=mid)
     return render_template("module_panel.html", mod=mod, target=target, groups=groups, totals=totals,
                            verdicts=VERDICTS, source_label=dv.SOURCE_LABEL, tactic_name=TACTIC_NAME, back=back,
@@ -683,7 +719,7 @@ MISSING = ("not_found", "soft_404")
 
 def _suggest_modules(target):
     """추천 점검 키 → 이 대상에서 쓸 수 있는 모듈 [(id, 이름, 단계)]. 없으면 빈 목록."""
-    mods = _modules_for(target).values()
+    mods = _shown(_modules_for(target)).values()
     want = {"INJECT": lambda m: m.stage == "probe" and (getattr(m, "vuln", "") in ("XSS", "SQL") or m.id == "payload_probe"),
             "FILE": lambda m: getattr(m, "vuln", "") == "FILE" and m.stage in ("probe", "tool")}
     return {k: [(m.id, m.name, m.stage) for m in mods if f(m)] for k, f in want.items()}
@@ -715,11 +751,16 @@ def _surface_of(target, sort="", state="", show_all=False):
     by_url = {}
     for p in db.execute("SELECT * FROM points WHERE target_id = ? ORDER BY url, method, place, param", [target["id"]]):
         grp = by_url.setdefault(p["url"], {"url": p["url"], "path": urlsplit(p["url"]).path or "/",
-                                           "methods": set(), "sources": set(), "params": [], "ends": [], "risk": 0})
+                                           "methods": set(), "sources": set(), "params": [], "ends": [], "risk": 0,
+                                           "any_id": p["id"], "checks": []})
         grp["methods"].add(p["method"])
         grp["sources"].update(s for s in p["source"].split(",") if s)
         grp["risk"] = max(grp["risk"], p["risk"] or 0)
         if not p["param"]:
+            # 주소 단위 점검(보안 헤더·정보 노출)의 판정은 파라미터 없는 줄에 붙는다
+            grp["checks"] += [{"module": _modules()[c["module_id"]].name if c["module_id"] in _modules() else c["module_id"],
+                               "verdict": c["verdict"], "evidence": c["evidence"], "exchange_id": c["exchange_id"]}
+                              for c in checks.get(p["id"], [])]
             if p["state"]:
                 grp["ends"].append({"method": p["method"], "state": p["state"], "status": p["status"],
                                     "risk": p["risk"], "ev": _evidence(p["evidence"])})
@@ -734,11 +775,14 @@ def _surface_of(target, sort="", state="", show_all=False):
         for c in checks.get(p["id"], []):
             totals[c["verdict"]] += 1
     groups = list(by_url.values())
-    totals["endpoints"] = len(groups)
     keep = []
     for gr in groups:
         states = {e["state"] for e in gr["ends"]}
         gr["missing"] = bool(states) and states <= set(MISSING)
+        # 엔드포인트 수는 있는 주소만 센다 — 없는 경로(404·가짜 200)까지 세면 '30개인데 파라미터 9개' 처럼
+        # 부풀어 보였다(사용자 지적 11-20). 숨긴 수는 hidden 으로 따로 보인다
+        if not gr["missing"]:
+            totals["endpoints"] += 1
         if state and state not in states:
             continue
         if gr["missing"] and not show_all and state not in MISSING:
@@ -792,8 +836,20 @@ def surface_probe():
         return redirect(back)
 
     marks = ",".join("?" * len(ids))
-    rows = db.execute(f"SELECT * FROM points WHERE target_id = ? AND param != '' AND id IN ({marks})", [t["id"], *ids]).fetchall()
     points = []
+    if mod.unit == "endpoint":
+        # 주소 하나에 한 번. 판정은 그 주소의 파라미터 없는 줄(GET)에 남긴다 — 없으면 만든다
+        urls = sorted({r["url"] for r in db.execute(f"SELECT url FROM points WHERE target_id = ? AND id IN ({marks})",
+                                                      [t["id"], *ids])})
+        for url in urls:
+            db.execute("INSERT OR IGNORE INTO points (target_id, method, url, param, place, source, module_id, first_seen, last_seen) "
+                       "VALUES (?, 'GET', ?, '', 'path', '', ?, ?, ?)", [t["id"], url, mod.id, now_iso(), now_iso()])
+            pid = db.execute("SELECT id FROM points WHERE target_id = ? AND method = 'GET' AND url = ? AND param = '' AND place = 'path'",
+                             [t["id"], url]).fetchone()["id"]
+            points.append(Point(method="GET", url=url, param="", place="path", id=pid))
+        db.commit()
+    rows = [] if mod.unit == "endpoint" else db.execute(
+        f"SELECT * FROM points WHERE target_id = ? AND param != '' AND id IN ({marks})", [t["id"], *ids]).fetchall()
     for r in rows:
         siblings = db.execute("SELECT param, sample FROM points WHERE target_id = ? AND url = ? AND method = ? AND place = ? "
                               "AND param != ''", [t["id"], r["url"], r["method"], r["place"]])
@@ -819,7 +875,8 @@ def surface_probe():
                 p = c.point
                 _save_finding(mod, t["id"], Finding(
                     title=c.title or mod.name, severity=c.severity or mod.severity, evidence=c.evidence,
-                    location=f"{p.url} ({p.place}: {p.param})", recommendation=c.recommendation, response=c.response))
+                    location=f"{p.url} ({p.place}: {p.param})" if p.param else p.url,
+                    recommendation=c.recommendation, response=c.response))
         skipped = len(points) - len(checks)
         return (f"지점 {len(checks)}개 — " + " · ".join(f"{VERDICTS[v]} {n}" for v, n in counts.items())
                 + (f", 건너뜀 {skipped}" if skipped else ""))
@@ -898,7 +955,7 @@ def _tool_run_row(target, mod, run_id=None):
 
 
 def _tool_page(target, targets, mod, values, run=None):
-    tools = _tool_modules(target)
+    tools = _shown(_tool_modules(target))
     # 도는 중인 도구는 화면에도 적는다. 결과 자리가 비어 있으면 아무 일도 없던 것 같다.
     live = [j for j in jobs.listing(target["id"]) if j["live"] and j["module_id"] in tools] if target else []
     result = json.loads(run["result"]) if run is not None and run["result"] else None
@@ -912,7 +969,7 @@ def _tool_page(target, targets, mod, values, run=None):
 @bp.get("/tools")
 def tools():
     target, targets = _current_target()
-    tools_ = _tool_modules(target)
+    tools_ = _shown(_tool_modules(target))
     mod = tools_.get(request.args.get("tool") or "") or (next(iter(tools_.values())) if tools_ else None)
     values = {p["name"]: p.get("default", "") for p in mod.params} if mod else {}
     run = _tool_run_row(target, mod, request.args.get("run", type=int))
@@ -1027,7 +1084,7 @@ def _attack_columns(target):
     columns = []
     for tid, en, ko in TACTICS:
         cells = {}
-        for mod in _modules_for(target).values():
+        for mod in _shown(_modules_for(target)).values():
             for a in mod.attack:
                 if a["tactic"] == tid:
                     cell = cells.setdefault(a["technique"], {"technique": a["technique"], "name": a.get("name", ""),
@@ -1057,7 +1114,7 @@ def scenario():
         found = db.execute(
             "SELECT * FROM findings WHERE target_id = ? AND status IN ('open', 'confirmed') "
             "ORDER BY " + SEVERITY_ORDER_SQL, [target["id"]]).fetchall()
-        rows = board.build(found, list(_modules_for(target).values()), _technique_tactic(),
+        rows = board.build(found, list(_shown(_modules_for(target)).values()), _technique_tactic(),
                            lambda m: module_needs(m, target))
         head = board.summary(rows)
         cands = cve.candidates(db, target, found, current_app.config["PROJECTS_PKG"])

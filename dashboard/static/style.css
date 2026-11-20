@@ -1013,3 +1013,18 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
 .mp-table { max-height: 62vh; overflow: auto; }
 .mp-table tr.mp-sug td { background: var(--accent-soft); }
 .sg-dot { font-size: 10px; font-weight: 700; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 6px; }
+
+/* 인증 방식 칸(11-20) — 고른 방식의 입력칸만 보인다. 고르는 줄과 '직접 입력' 은 선으로 나눈다 */
+.auth-ways { display: flex; flex-direction: column; gap: 6px; margin-top: 8px;
+             padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.auth-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.auth-chip { display: flex; align-items: center; gap: 4px; font-size: 12px; padding: 4px 8px;
+             border: 1px solid var(--line); border-radius: 999px; cursor: pointer; }
+.auth-chip:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.auth-fields { display: flex; flex-direction: column; gap: 4px; }
+/* 고르지 않은 방식은 접는다. :has 를 못 읽는 브라우저에서는 전부 보이고, 그래도 쓸 수 있다 */
+.auth-ways:has(.auth-pick input:checked) .auth-fields { display: none; }
+.auth-ways:has(input[value="bearer"]:checked) .auth-fields[data-way="bearer"],
+.auth-ways:has(input[value="cookie"]:checked) .auth-fields[data-way="cookie"],
+.auth-ways:has(input[value="basic"]:checked) .auth-fields[data-way="basic"],
+.auth-ways:has(input[value="apikey"]:checked) .auth-fields[data-way="apikey"] { display: flex; }

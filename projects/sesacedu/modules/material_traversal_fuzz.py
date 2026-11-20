@@ -145,7 +145,8 @@ import re
 from flask import current_app, has_app_context
 
 from dashboard.core import Finding, ToolResult, excerpt as _excerpt, fetch
-from dashboard.payloads import ENCODINGS, traversal
+from dashboard.payloads import ENCODINGS, POINT_PARAMS, spot_or, traversal
+from projects.sesacedu.modules.material_traversal import url_for_payload
 from dashboard import wordlists
 from projects.sesacedu.fs_knowledge import describe
 from projects.sesacedu.fs_tree import _size, _tree
@@ -167,12 +168,13 @@ META = {
     "kind": "active",
     "roles": ["user_web", "practice"],
     "stage": "tool",
+    "takes_point": True,  # 팝업에서 고른 지점에 때린다(11-20)
     "severity": "high",
     "attack": [
         {"tactic": "TA0007", "technique": "T1083", "name": "File and Directory Discovery"},
         {"tactic": "TA0043", "technique": "T1595.003", "name": "Active Scanning: Wordlist Scanning"},
     ],
-    "description": "**심화** — 경로 조작 점검(지점)에서 취약을 확인한 뒤 씁니다. 씨앗(패키지 기본 경로)이나 사전으로 경로를 때려 응답 코드로 "
+    "description": "**심화** — 경로 조작 점검에서 취약으로 나온 **지점을 고르면 그 자리에**(안 고르면 강의 자료 다운로드에) 씁니다. 씨앗(패키지 기본 경로)이나 사전으로 경로를 때려 응답 코드로 "
                    "디렉터리 구조를 그립니다. 읽히는 설정 파일은 **거기 적힌 경로를 "
                    "캐내려고 내용을 받지만**, 결과에는 경로만 올립니다. 받은 내용은 "
                    "요청 기록에서 그대로 볼 수 있습니다.",
@@ -251,6 +253,7 @@ META = {
         {"name": "scheme", "need": "required", "label": "인코딩", "type": "select", "default": "double-full",
          "options": [{"value": k, "label": v} for k, v in ENCODINGS.items()]},
         {"name": "lecture", "need": "required", "label": "강의 번호", "default": "123"},
+        *POINT_PARAMS,
     ],
 }
 
@@ -291,6 +294,8 @@ def check_material(walker):
 
     요청 한 번이면 추측을 사실로 바꿀 수 있어서 교정 앞에 둔다.
     """
+    if isinstance(walker.lecture, tuple):
+        return True, "고른 지점이라 강의 자료 등록 확인은 건너뜀"
     walker.left -= 1
     walker.sent += 1
     try:
@@ -308,7 +313,7 @@ def check_material(walker):
 def _send(target, lecture, depth, scheme, path):
     """경로 하나를 때린다. 파일 내용은 기록하지 않는다(구조만 본다)."""
     payload = traversal(path, depth, scheme)
-    url = target.url + PATH.format(lecture=lecture, payload=payload)
+    url = url_for_payload(target, lecture, payload)
     # 아래 r.body 는 경로를 수확하는 동안만 쓰고 버린다(결과에는 경로만 올린다).
     # 요청 기록에는 받은 그대로 남는다.
     #
@@ -873,7 +878,7 @@ def _auth_failed(target, lecture, scheme, walker):
 def run(target, params):
     mode = params.get("mode", "pipeline")
     scheme = params.get("scheme", "double-full")
-    lecture = params.get("lecture", "123")
+    lecture = spot_or(params, params.get("lecture", "123"))  # 고른 지점이면 (주소, 파라미터)
     # `auto`·`Auto`·`AUTO` 는 물론, **숫자가 아닌 아무 글자도** 자동으로 본다 —
     # 터뜨리는 것보다 재는 쪽이 안전하다(재기 자체가 네 요청이면 끝난다).
     depth_raw = str(params.get("depth") or "auto").strip()
@@ -1195,7 +1200,7 @@ def run(target, params):
             title="경로 조작 퍼징으로 서버 구조 확인 (읽힌 파일 %d · 디렉터리 %d)"
                   % (len(readable), len(dirs)),
             severity="high",
-            location=target.url + PATH.format(lecture=lecture, payload="<" + scheme + ">"),
+            location=url_for_payload(target, lecture, "<" + scheme + ">"),
             evidence=("인코딩 %s · 올라갈 단계 %s · 보낸 요청 %d건 · 때린 경로 %d개\n"
                       "단계: %s\n"
                       "읽힘 %d · 디렉터리 %d · 못 들어감 %d\n\n"
@@ -1228,7 +1233,7 @@ def run(target, params):
         findings.append(Finding(
             title="민감 파일 노출: %s" % n["path"],
             severity=n["severity"],
-            location=target.url + PATH.format(lecture=lecture, payload="<" + scheme + ">"),
+            location=url_for_payload(target, lecture, "<" + scheme + ">"),
             evidence="%s · %s · 응답 %s · 출처 %s\n%s\n\n%s"
                      % (n["path"], _size(n["size"]), n["status"], SOURCE_LABEL[n["source"]],
                         n["note"] or "표에 없는 경로입니다 — 무엇인지는 사람이 확인하세요.",

@@ -3,6 +3,7 @@ from dashboard.core import Finding, fetch, join
 
 META = {
     "id": "http_security_headers",
+    "hidden": True,  # 주소마다 보는 header_probe 로 바뀌었다(11-20) — 목록에서 뺀다. 주소로 부르면 그대로 돈다
     "name": "HTTP 보안 헤더",
     "category": "설정 점검",
     "kisa": ["SN", "CC"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)

@@ -20,7 +20,7 @@ from dashboard.core import Check
 
 META = {
     "id": "sesacedu_xss_probe",
-    "name": "새싹에듀 XSS 후보 탐색 (반사·저장·DOM)",
+    "name": "새싹에듀 XSS 조합 넣어 보기 (심화)",
     "category": "입력 검증",
     "kisa": ["XS"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
     "vuln": "XSS",
@@ -33,7 +33,7 @@ META = {
          "name": "Command and Scripting Interpreter: JavaScript"},
     ],
     "description": (
-        "반사형은 GET 쿼리를 점검합니다. 저장형은 테스트 폼을 한 번 제출하고 별도 "
+        "**심화** — XSS 점검·저장형 XSS 점검에서 후보가 남은 뒤 조합을 늘려 볼 때 씁니다. 반사형은 GET 쿼리를 점검합니다. 저장형은 테스트 폼을 한 번 제출하고 별도 "
         "GET 으로 읽습니다. DOM 기반은 같은 출처 스크립트에서 소스→싱크 패턴을 정적으로 "
         "찾는 후보 탐지입니다. 실제 실행 여부는 모든 모드에서 별도 검증이 필요합니다."
     ),

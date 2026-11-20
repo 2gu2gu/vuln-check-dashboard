@@ -7,6 +7,7 @@ from dashboard.core import Point, fetch
 
 META = {
     "id": "surface_crawl",
+    "hidden": True,  # 표면 수집(surface_collect)이 부품으로 쓴다 — 목록에 따로 안 띄운다(11-20)
     "name": "페이지 따라가며 수집",
     "category": "표면 수집",
     "kind": "passive",

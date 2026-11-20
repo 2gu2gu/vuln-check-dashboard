@@ -182,6 +182,6 @@ def test_the_surface_page_says_which_module_will_run(app, client):
     assert '<select name="module_id" id="probe-module">' in bar
     # 고를 수 있는 모듈 이름이 실제로 적혀 있다
     with app.app_context():
-        probes = [m.name for m in app.config["MODULES"].values() if m.stage == "probe"]
+        probes = [m.name for m in app.config["MODULES"].values() if m.stage == "probe" and not m.hidden]
     assert probes and all(n in bar for n in probes)
     assert "선택 지점 점검" in page

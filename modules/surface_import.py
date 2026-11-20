@@ -6,6 +6,7 @@ from modules.surface_crawl import _query_points, _split
 
 META = {
     "id": "surface_import",
+    "hidden": True,  # 표면 수집(surface_collect)이 부품으로 쓴다 — 목록에 따로 안 띄운다(11-20)
     "name": "URL 목록 가져오기",
     "category": "표면 수집",
     "kind": "passive",

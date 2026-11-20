@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from dashboard import core
 from dashboard.core import Point, Response
-from modules import sqli_probe, traversal_probe, xss_probe
+from modules import sqli_probe, stored_xss_probe, traversal_probe, xss_probe
 
 T = core.Target(id=1, name="t", url="https://sesacedu.store")
 
@@ -244,3 +244,265 @@ def test_jobs_poll_hands_over_finished_runs_once(app, client, monkeypatch):
     first = client.get(f"/jobs?target={tid}").json["done"]
     assert [j["module_id"] for j in first] == ["sqli_probe"]
     assert client.get(f"/jobs?target={tid}").json["done"] == []      # 한 번만 알린다
+
+
+# ── 표면 수집 하나로(11-20) ──────────────────────────────────────
+
+def test_old_collectors_are_hidden_but_still_runnable(app, client):
+    tid = _seed_points(app, client)                     # surface_import 로 넣는다 — 숨겨도 돈다
+    page = client.get(f"/modules?target={tid}").get_data(as_text=True)
+    assert 'data-mod="surface_collect"' in page
+    for old in ("surface_crawl", "surface_discover", "surface_import", "har_import", "content_discovery"):
+        assert f'data-mod="{old}"' not in page, old
+    with app.app_context():
+        from dashboard.db import get_db
+        assert get_db().execute("SELECT COUNT(*) FROM points WHERE param = 'keyword'").fetchone()[0] == 1
+
+
+def test_surface_collect_reads_pasted_formats(monkeypatch):
+    from modules import surface_collect
+    assert surface_collect.paste_kind('{"log": {"entries": []}}') == "har"
+    assert surface_collect.paste_kind("/admin                (Status: 200) [Size: 10]") == "tool"
+    assert surface_collect.paste_kind("https://sesacedu.store/a?x=1") == "urls"
+    pts = surface_collect.run(T, {"mode": "paste", "paste": "https://sesacedu.store/a?x=1\n/b?y=2"})
+    assert {(p.param) for p in pts} >= {"x", "y"}
+
+
+def test_surface_collect_runs_steps_in_order(monkeypatch):
+    from modules import content_discovery, surface_collect, surface_discover
+    order = []
+    monkeypatch.setattr(surface_discover, "run", lambda t, p: order.append("auto") or [])
+    monkeypatch.setattr(content_discovery, "run", lambda t, p: order.append("hidden") or [])
+    surface_collect.run(T, {"mode": "deep", "paste": "https://sesacedu.store/a?x=1"})
+    assert order == ["auto", "hidden"]
+    order.clear()
+    surface_collect.run(T, {"mode": "auto"})
+    assert order == ["auto"]
+
+
+def test_endpoint_count_leaves_out_missing_paths(app, client):
+    """없는 경로(404·가짜 200)는 엔드포인트 수에서 뺀다 — '30개인데 파라미터 9개' 처럼 부풀었다(11-20)."""
+    from tests.test_app import add_target, target_id
+    from dashboard.db import get_db
+    add_target(client, "https://sesacedu.store", name="사용자 웹")
+    tid = target_id(app, "https://sesacedu.store")
+    with app.app_context():
+        db = get_db()
+        for url, st in (("https://sesacedu.store/ok", "exists"), ("https://sesacedu.store/gone", "not_found")):
+            db.execute("INSERT INTO points (target_id, method, url, param, place, source, first_seen, last_seen, state) "
+                       "VALUES (?, 'GET', ?, '', 'path', 'js', 'x', 'x', ?)", [tid, url, st])
+        db.commit()
+    page = client.get(f"/targets?target={tid}").get_data(as_text=True)
+    assert "<small>엔드포인트</small><strong>1</strong>" in page and "없는 경로 1개는 빼고 셈" in page
+    assert "페이지 1 ·" in page
+
+
+# ── 주소 단위 점검(11-20): 정보 노출 · 보안 헤더 ──────────────────
+
+def _ep(url="https://sesacedu.store/api"):
+    return Point(method="GET", url=url, param="", place="path")
+
+
+def _hserver(monkeypatch, handler):
+    def fetch(url, method="GET", headers=None, **_kw):
+        status, hdrs, body = handler(url, method, headers or {})
+        return Response(url=url, status=status, headers=hdrs, body=body)
+    monkeypatch.setattr(core, "fetch", fetch)
+
+
+def test_info_leak_finds_stack_trace_in_deep_stage(monkeypatch):
+    from modules import info_leak_probe
+    def h(url, method, headers):
+        if "%7B" in url:
+            return 500, [], "java.lang.IllegalArgumentException at org.apache.catalina.Foo(Foo.java:1)"
+        return 200, [("Server", "nginx")], "<html>ok</html>"
+    _hserver(monkeypatch, h)
+    c = info_leak_probe.run(T, [_ep()], {})[0]
+    assert c.verdict == "vuln" and "스택 트레이스" in c.title and "③ 심화" in c.evidence
+
+
+def test_info_leak_version_header_is_potential(monkeypatch):
+    from modules import info_leak_probe
+    _hserver(monkeypatch, lambda url, method, h: (200, [("Server", "nginx/1.24.0")], "ok"))
+    c = info_leak_probe.run(T, [_ep()], {})[0]
+    assert c.verdict == "potential" and "Server" in c.title
+
+
+def test_header_probe_flags_cors_reflecting_any_origin(monkeypatch):
+    from modules import header_probe
+    full = [("Strict-Transport-Security", "max-age=1"), ("X-Content-Type-Options", "nosniff"),
+            ("Referrer-Policy", "no-referrer"), ("Content-Type", "application/json")]
+    def h(url, method, headers):
+        extra = [("Access-Control-Allow-Origin", headers["Origin"]), ("Access-Control-Allow-Credentials", "true")] \
+            if headers.get("Origin") else []
+        return 200, full + extra, "{}"
+    _hserver(monkeypatch, h)
+    c = header_probe.run(T, [_ep()], {})[0]
+    assert c.verdict == "vuln" and "CORS" in c.title and "④ 우회" in c.evidence
+
+
+def test_header_probe_all_good_is_safe(monkeypatch):
+    from modules import header_probe
+    full = [("Strict-Transport-Security", "max-age=1"), ("X-Content-Type-Options", "nosniff"),
+            ("Referrer-Policy", "no-referrer"), ("Content-Type", "application/json")]
+    _hserver(monkeypatch, lambda url, method, h: (200, full, "{}"))
+    assert header_probe.run(T, [_ep()], {})[0].verdict == "safe"
+
+
+def test_endpoint_module_runs_once_per_address_and_stores_on_it(app, client, monkeypatch):
+    tid = _seed_points(app, client)                     # /backend/lectures?keyword&size — 파라미터 둘, 주소 하나
+    _hserver(monkeypatch, lambda url, method, h: (200, [("Server", "nginx/1.24.0")], "ok"))
+    with app.app_context():
+        from dashboard.db import get_db
+        ids = [r["id"] for r in get_db().execute("SELECT id FROM points WHERE param != ''")]
+    r = client.post("/surface/probe", headers=FETCH, data={"target_id": tid, "module_id": "info_leak_probe",
+                                                           "point": ids, "confirm": "yes"})
+    assert r.json["ok"]
+    with app.app_context():
+        from dashboard.db import get_db
+        rows = get_db().execute("SELECT p.param, pc.verdict FROM point_checks pc JOIN points p ON p.id = pc.point_id "
+                                "WHERE pc.module_id = 'info_leak_probe'").fetchall()
+    assert [(r["param"], r["verdict"]) for r in rows] == [("", "potential")]    # 주소 하나에 한 번
+    html = client.get(f"/modules/info_leak_probe/panel?target={tid}&partial=1").get_data(as_text=True)
+    assert "모은 주소" in html and "/backend/lectures" in html
+
+
+# ── 심화 모듈은 고른 지점에(11-20) ──────────────────────────────────
+
+PICK = {"point_url": "https://sesacedu.store/backend/search", "point_param": "id", "point_place": "query",
+        "point_sample": "7"}
+
+
+def test_deep_sqli_hits_the_picked_point_by_response_shape(monkeypatch):
+    from projects.sesacedu.modules import lecture_sqli
+    sent = []
+
+    def fetch(url, **_kw):
+        sent.append(url)
+        v = _q(url, "id")
+        return Response(url=url, status=200, body="row " * (30 if "1=1" in v else 2))
+    monkeypatch.setattr(lecture_sqli, "fetch", fetch)
+    r = lecture_sqli.run(T, {"mode": "probe", "dbms": "sqlite", "limit": "5", "offset": "0",
+                             "context": "number", **PICK})
+    assert r.summary.startswith("주입됩니다") and "/backend/search (query: id)" in r.summary
+    assert all(u.startswith("https://sesacedu.store/backend/search?id=7%20AND%20") for u in sent)
+    assert r.findings[0].location == "https://sesacedu.store/backend/search (query: id)"
+
+
+def test_deep_traversal_hits_the_picked_point(monkeypatch):
+    from projects.sesacedu.modules import material_traversal
+    sent = []
+    monkeypatch.setattr(material_traversal, "fetch",
+                        lambda url, **kw: sent.append(url) or Response(url=url, status=200, body="root:x:0:0"))
+    material_traversal.run(T, {"paths": "etc/passwd", "scheme": "none", "depth": "2", "lecture": "123",
+                               "point_url": "https://sesacedu.store/files", "point_param": "name"})
+    assert sent[0].startswith("https://sesacedu.store/files?name=") and "lectures" not in sent[0]
+
+
+def test_deep_module_popup_picks_one_point_and_run_fills_it(app, client, monkeypatch):
+    from projects.sesacedu.modules import lecture_sqli
+    tid = _seed_points(app, client)
+    html = client.get(f"/modules/sesacedu_lecture_sqli/panel?target={tid}&partial=1").get_data(as_text=True)
+    assert 'type="radio" name="point"' in html and 'class="mp-all"' not in html
+    monkeypatch.setattr(lecture_sqli, "fetch", lambda url, **kw: Response(url=url, status=200, body="x"))
+    with app.app_context():
+        from dashboard.db import get_db
+        pid = get_db().execute("SELECT id FROM points WHERE param = 'keyword'").fetchone()["id"]
+    client.post("/modules/sesacedu_lecture_sqli/run", headers=FETCH,
+                data={"target_id": tid, "point": pid, "confirm": "yes", "mode": "probe", "dbms": "sqlite"})
+    with app.app_context():
+        from dashboard.db import get_db
+        import json
+        params = json.loads(get_db().execute("SELECT params FROM runs WHERE module_id = 'sesacedu_lecture_sqli'")
+                            .fetchone()["params"])
+    assert params["point_url"] == "https://sesacedu.store/backend/lectures" and params["point_param"] == "keyword"
+
+
+# ── 저장형 XSS 지점 점검(11-20) ─────────────────────────────────
+
+def _write_point(param="content"):
+    return Point(method="POST", url="https://sesacedu.store/backend/posts", param=param, place="form",
+                 sample="hi", fields={param: "hi"})
+
+
+def test_stored_xss_needs_write_ack():
+    try:
+        stored_xss_probe.run(T, [_write_point()], {"write_ack": ""})
+    except ValueError as e:
+        assert "WRITE" in str(e)
+    else:
+        raise AssertionError("쓰기 허용 없이 돌면 안 된다")
+
+
+def test_stored_xss_stops_when_nothing_is_stored(monkeypatch):
+    sent = _server(monkeypatch, lambda url: (200, "아무것도 남지 않음"))
+    c = stored_xss_probe.run(T, [_write_point()], {"write_ack": "WRITE"})[0]
+    assert c.verdict == "safe" and "후보 제외" in c.evidence
+    assert len(sent) == 2                                   # 쓰기 한 번 + 다시 읽기 한 번
+
+
+def test_stored_xss_found_when_payload_survives_the_read(monkeypatch):
+    kept = []
+
+    def handler(url):
+        if url.endswith("/backend/posts") and kept:          # 다시 읽기 — 마지막으로 쓴 값이 보인다
+            return 200, "<div>" + kept[-1] + "</div>"
+        return 200, "등록됨"
+    sent = []
+
+    def fetch(url, method="GET", data=None, **_kw):
+        sent.append((method, url))
+        if method == "POST":
+            kept.append((data or {}).get("content", ""))
+            return Response(url=url, status=200, body="등록됨")
+        status, body = handler(url)
+        return Response(url=url, status=status, body=body)
+    monkeypatch.setattr(core, "fetch", fetch)
+    c = stored_xss_probe.run(T, [_write_point()], {"write_ack": "WRITE"})[0]
+    assert c.verdict == "vuln" and "저장형 XSS 후보" in c.title
+    assert "② 기본" in c.evidence and "③ 심화" not in c.evidence
+
+
+def test_stored_xss_reads_the_given_urls(monkeypatch):
+    seen = []
+
+    def fetch(url, method="GET", **_kw):
+        seen.append(url)
+        return Response(url=url, status=200, body="")
+    monkeypatch.setattr(core, "fetch", fetch)
+    stored_xss_probe.run(T, [_write_point()], {"write_ack": "WRITE",
+                                                  "read_urls": "https://sesacedu.store/board\n"})
+    assert "https://sesacedu.store/board" in seen
+
+
+# ── 인증 방식 여러 가지(11-20 사용자 요청) ───────────────────────────
+
+def test_auth_ways_make_the_header_line(app, client):
+    from tests.test_app import add_target, target_id
+    add_target(client, "https://sesacedu.store", name="사용자 웹")
+    tid = target_id(app, "https://sesacedu.store")
+    page = client.get(f"/targets?target={tid}").get_data(as_text=True)
+    for label in ("Bearer 토큰", "쿠키 주입", "Basic 인증", "API 키"):
+        assert label in page
+    client.post(f"/targets/{tid}/auth", data={"way": "bearer", "token": "Bearer abc"}, follow_redirects=True)
+    client.post(f"/targets/{tid}/auth", data={"way": "cookie", "cookie": "JSESSIONID=1"}, follow_redirects=True)
+    with app.app_context():
+        from dashboard.db import get_db
+        text = get_db().execute("SELECT headers FROM targets WHERE id = ?", [tid]).fetchone()["headers"]
+    assert text.splitlines() == ["Authorization: Bearer abc", "Cookie: JSESSIONID=1"]   # 둘 다 남는다
+    client.post(f"/targets/{tid}/auth", data={"way": "basic", "ident": "a@b.c", "secret": "pw"},
+                follow_redirects=True)
+    with app.app_context():
+        from dashboard.db import get_db
+        text = get_db().execute("SELECT headers FROM targets WHERE id = ?", [tid]).fetchone()["headers"]
+    assert "Authorization: Basic YUBiLmM6cHc=" in text and "Cookie: JSESSIONID=1" in text   # 같은 이름만 바뀐다
+    r = client.post(f"/targets/{tid}/auth", data={"way": "apikey", "name": "X API", "value": "k"},
+                    follow_redirects=True)
+    assert "헤더 이름은" in r.get_data(as_text=True)
+
+
+def test_old_point_modules_are_tidied(app, client):
+    tid = _seed_points(app, client)
+    page = client.get(f"/modules?target={tid}").get_data(as_text=True)
+    assert 'data-mod="reflection_check"' not in page            # XSS 점검 ① 이 같은 일을 한다
+    assert "사전으로 입력값 넣어 보기 (심화)" in page and "새싹에듀 XSS 조합 넣어 보기 (심화)" in page

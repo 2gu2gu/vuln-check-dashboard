@@ -10,6 +10,7 @@ from modules.surface_discover import _to_points
 
 META = {
     "id": "har_import",
+    "hidden": True,  # 표면 수집(surface_collect)이 부품으로 쓴다 — 목록에 따로 안 띄운다(11-20)
     "name": "HAR 가져오기",
     "category": "표면 수집",
     "kind": "passive",

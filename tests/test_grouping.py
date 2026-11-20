@@ -118,7 +118,7 @@ def test_collapsed_card_still_says_what_is_inside(app, client):
     add_target(client)
     html = client.get("/modules").get_data(as_text=True)
     assert "눌러서 펴기" in html
-    assert "입력칸" in html
+    assert "설정" in html
 
 
 def test_a_module_with_unmet_needs_says_so_before_opening(app, client):
@@ -133,7 +133,7 @@ def test_the_body_holds_the_form_not_the_header(app, client):
     import re
     add_target(client)
     html = client.get("/modules").get_data(as_text=True)
-    card = re.search(r'<article class="panel mod" data-mod="http_security_headers">.*?</article>', html, re.S).group(0)
+    card = re.search(r'<article class="panel mod" data-mod="surface_collect">.*?</article>', html, re.S).group(0)
     head, body = card.split('class="mod-body"', 1)
     assert "<form" not in head and "<form" in body
 
