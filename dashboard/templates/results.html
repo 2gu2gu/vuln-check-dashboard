@@ -20,19 +20,10 @@
       {%- if cal and cal.next %} — {{ cal.next.label }}까지 <b>{% if cal.next.days == 0 %}D-DAY{% else %}D-{{ cal.next.days }}{% endif %}</b>{% endif %}
       <span class="sub small">· 대상 {{ act.targets }}곳 합계, 연습용 제외</span></p>
   </div>
-  {# 숫자 칸(레퍼런스 Mosaic·Creator Dashboard): 큰 숫자 + 이번 주 vs 지난주 + 최근 14일 스파크라인 #}
-  {% macro delta(d, unit='') -%}
-    {%- if d.diff > 0 %}<span class="dpill up">▲ {{ "{:,}".format(d.diff) }}{{ unit }}</span>
-    {%- elif d.diff < 0 %}<span class="dpill down">▼ {{ "{:,}".format(-d.diff) }}{{ unit }}</span>
-    {%- else %}<span class="dpill">변화 없음</span>{% endif %}
-    <span class="sub small">지난주 대비</span>
-  {%- endmacro %}
-  {% macro spark(points) -%}
-    <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><polyline points="{{ points }}"/></svg>
-  {%- endmacro %}
+  {# 숫자 칸 넷. 모듈 실행·보낸 요청 칸, 지난주 대비 변화·스파크라인, 결과 누적 추이 그림은 뺐다(사용자 결정 11-20) #}
   <div class="totals">
     <div class="tot tot-main"><small>전체 결과</small><strong>{{ act.findings }}</strong>
-      <span class="tot-line">{{ delta(tr.delta.findings, '건') }}</span>{{ spark(tr.spark.findings) }}</div>
+      <span class="sub small">미조치 {{ act.open }} · 검토 {{ ov.reviewed_pct }}%</span></div>
     <div class="tot"><small>Critical · High</small><strong>{{ crit + high }}</strong>
       <span class="sub small">Critical {{ crit }} · High {{ high }}</span>
       <span class="ratio"><i style="width: {{ ((crit + high) * 100 / (ov.total or 1)) | round(1) }}%"></i></span>
@@ -40,35 +31,10 @@
     <div class="tot"><small>KISA 21항목 중 발견</small><strong>{{ bd.kisa_cover["found"] }}<span class="unit"> / 21</span></strong>
       <span class="ratio"><i style="width: {{ (bd.kisa_cover['found'] * 100 / 21) | round(1) }}%"></i><i class="r2" style="width: {{ (bd.kisa_cover['clear'] * 100 / 21) | round(1) }}%"></i></span>
       <span class="sub small">점검·없음 {{ bd.kisa_cover["clear"] }} · 모듈 없음 {{ bd.kisa_cover["none"] }}</span></div>
-    <div class="tot tot-act"><small>모듈 실행</small><strong>{{ act.runs }}</strong>
-      <span class="tot-line">{{ delta(tr.delta.runs, '번') }}</span>{{ spark(tr.spark.runs) }}</div>
-    <div class="tot tot-act"><small>보낸 요청</small><strong>{{ "{:,}".format(act.requests) }}</strong>
-      <span class="tot-line">{{ delta(tr.delta.requests) }}</span>{{ spark(tr.spark.requests) }}</div>
-    <div class="tot tot-act"><small>모은 엔드포인트</small><strong>{{ act.endpoints }}</strong>
+    <div class="tot"><small>모은 엔드포인트</small><strong>{{ act.endpoints }}</strong>
       <span class="sub small">파라미터 {{ act.params }} · 모듈 {{ act.modules_used }}종 사용</span></div>
   </div>
 
-  {# 결과 누적 추이(레퍼런스 Security Watch 'Exposure over 90 days'): 보고회 날과 오늘을 세로선으로 #}
-  <figure class="panel chart trend">
-    <figcaption>결과 누적 추이 <span class="sub">— {{ tr.start }} ~ {{ tr.end }}, 지금까지 {{ tr.total }}건</span></figcaption>
-    <div class="trend-box">
-      <svg viewBox="0 0 {{ tr.w }} {{ tr.h }}" preserveAspectRatio="none" class="trend-svg" role="img" aria-label="결과 누적 추이">
-        <line class="grid" x1="0" x2="{{ tr.w }}" y1="{{ tr.h - 6 }}" y2="{{ tr.h - 6 }}"/>
-        <line class="grid" x1="0" x2="{{ tr.w }}" y1="12" y2="12"/>
-        {% if tr.area %}<path class="area" d="{{ tr.area }}"/><polyline class="line" points="{{ tr.line }}"/>{% endif %}
-      </svg>
-      {% for m in tr.marks %}<span class="tmark tmark-{{ m.kind }}" style="left: {{ m.pct }}%"><span>{{ m.label }}</span></span>{% endfor %}
-      {% if tr.today_pct is not none %}<span class="tmark tmark-today" style="left: {{ tr.today_pct }}%"><span>오늘</span></span>{% endif %}
-      <span class="tval">{{ tr.top }}</span>
-    </div>
-    <div class="trend-axis"><span>{{ tr.start }}</span><span>{{ tr.end }}</span></div>
-    <details class="as-table"><summary class="sub small">표로 보기</summary>
-      <div class="table-wrap"><table class="grid">
-        <thead><tr><th>날짜</th><th class="num">새 결과</th><th class="num">누적</th></tr></thead>
-        <tbody>{% for r in tr.rows if r.new %}<tr><td>{{ r.md }}</td><td class="num">{{ r.new }}</td><td class="num">{{ r.cum }}</td></tr>{% else %}<tr><td colspan="3" class="sub">기간 안에 새 결과가 없습니다</td></tr>{% endfor %}</tbody>
-      </table></div>
-    </details>
-  </figure>
 
   <div class="chart-row">
     <figure class="panel chart">
