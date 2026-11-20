@@ -3,7 +3,7 @@ import re
 import sqlite3
 from urllib.parse import urlsplit
 
-from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify, redirect,
+from flask import (Blueprint, Response, abort, current_app, flash, g, get_flashed_messages, jsonify, redirect,
                    render_template, request, url_for)
 
 from . import board, campaign, cve, cvss, discovery as dv, grouping, jobs, login as login_mod, needs, runfiles, scope, stats, wordlists
@@ -199,9 +199,29 @@ def _jobs_for_page():
 
 @bp.get("/jobs")
 def jobs_list():
-    """우측 드로어가 물어보는 자리. 도는 것이 위, 그 아래 최근 끝난 것."""
+    """우측 드로어가 물어보는 자리. 도는 것이 위, 그 아래 최근 끝난 것.
+
+    done 은 막 끝나 아직 안 알린 것 — 화면을 새로 그리지 않아도 끝났다는 알림이 뜨게(11-20).
+    """
     target = request.args.get("target", type=int)
-    return {"jobs": _with_result_links(jobs.listing(target)), "live": jobs.live_count(), "max": jobs.MAX_LIVE}
+    return {"jobs": _with_result_links(jobs.listing(target)), "live": jobs.live_count(), "max": jobs.MAX_LIVE,
+            "done": _with_result_links(jobs.take_announcements(target))}
+
+
+@bp.after_request
+def _stay_on_page(resp):
+    """실행을 화면에서 fetch 로 보냈으면 페이지를 넘기지 않는다(사용자 결정 11-20).
+
+    모듈을 돌릴 때마다 화면이 새로 그려지고, 고른 값이 초기화되고, 결과 탭으로 넘어갔다.
+    라우트는 그대로 두고 — 넘길 곳(redirect)과 남길 말(flash)을 그대로 쓴다 — fetch 로 온 POST 의
+    redirect 만 JSON 으로 바꿔 돌려준다. 화면은 그 말을 알림으로 띄우고 제자리에 있는다.
+    """
+    if (request.method == "POST" and request.headers.get("X-Requested-With") == "fetch"
+            and 300 <= resp.status_code < 400):
+        msgs = [{"category": c, "message": m} for c, m in get_flashed_messages(with_categories=True)]
+        return jsonify({"ok": not any(x["category"] == "error" for x in msgs), "messages": msgs,
+                        "location": resp.headers.get("Location", "")})
+    return resp
 
 
 @bp.post("/jobs/<int:run_id>/cancel")

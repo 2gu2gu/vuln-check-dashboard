@@ -190,3 +190,57 @@ def test_modules_page_cards_open_the_panel(app, client):
     html = client.get(f"/modules?target={tid}&open=xss_probe").get_data(as_text=True)
     assert f'data-panel="/modules/xss_probe/panel?target={tid}&amp;partial=1"' in html
     assert 'id="mod-dialog"' in html and 'data-open="xss_probe"' in html
+
+
+def test_cards_do_not_reopen_from_memory():
+    """펼친 카드를 기억해 다시 펴면, 카드를 눌러도 팝업만 열리고 접히지 않았다(사용자 지적 11-20)."""
+    from pathlib import Path
+    js = (Path(__file__).resolve().parent.parent / "dashboard/static/app.js").read_text(encoding="utf-8")
+    assert 'localStorage.removeItem("modOpen")' in js
+    assert 'localStorage.setItem("modOpen"' not in js and "if (open[card.dataset.mod]) set(card, true" not in js
+
+
+def test_panel_has_select_all_boxes(app, client):
+    tid = _seed_points(app, client)
+    html = client.get(f"/modules/sqli_probe/panel?target={tid}&partial=1").get_data(as_text=True)
+    assert 'class="mp-all"' in html and 'class="mp-group"' in html
+
+
+# ── 실행해도 화면을 넘기지 않는다(11-20) ─────────────────────────
+
+FETCH = {"X-Requested-With": "fetch"}
+
+
+def test_background_run_answers_json_instead_of_redirect(app, client, monkeypatch):
+    from dashboard.core import Response
+    tid = _seed_points(app, client)
+    monkeypatch.setattr(core, "fetch", lambda url, **kw: Response(url=url, status=200, body="same"))
+    with app.app_context():
+        from dashboard.db import get_db
+        pid = get_db().execute("SELECT id FROM points WHERE param = 'keyword'").fetchone()["id"]
+    r = client.post("/surface/probe", headers=FETCH, data={"target_id": tid, "module_id": "sqli_probe", "point": pid,
+                                                           "confirm": "yes", "sqli_probe__methods": "GET"})
+    assert r.status_code == 200 and r.is_json and r.json["ok"] is True
+
+
+def test_background_run_error_comes_back_as_message(app, client):
+    tid = _seed_points(app, client)
+    r = client.post("/surface/probe", headers=FETCH, data={"target_id": tid, "module_id": "sqli_probe"})
+    assert r.json["ok"] is False and any("지점을 고르세요" in m["message"] for m in r.json["messages"])
+    # 화면에서 보낸 것이 아니면(fetch 표시 없음) 예전처럼 넘긴다
+    r = client.post("/surface/probe", data={"target_id": tid, "module_id": "sqli_probe"})
+    assert r.status_code == 302
+
+
+def test_jobs_poll_hands_over_finished_runs_once(app, client, monkeypatch):
+    from dashboard.core import Response
+    tid = _seed_points(app, client)
+    monkeypatch.setattr(core, "fetch", lambda url, **kw: Response(url=url, status=200, body="same"))
+    with app.app_context():
+        from dashboard.db import get_db
+        pid = get_db().execute("SELECT id FROM points WHERE param = 'keyword'").fetchone()["id"]
+    client.post("/surface/probe", headers=FETCH, data={"target_id": tid, "module_id": "sqli_probe", "point": pid,
+                                                       "confirm": "yes", "sqli_probe__methods": "GET"})
+    first = client.get(f"/jobs?target={tid}").json["done"]
+    assert [j["module_id"] for j in first] == ["sqli_probe"]
+    assert client.get(f"/jobs?target={tid}").json["done"] == []      # 한 번만 알린다
