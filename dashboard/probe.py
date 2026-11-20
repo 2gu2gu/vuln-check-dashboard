@@ -71,3 +71,49 @@ def judge_reflection(body: str, token: str, sent: str):
     if j >= 0:
         return "potential", _context(body, j), _excerpt(body, j, len(token) + 12)
     return "safe", "", ""
+
+
+# ── 단계 점검(11-20 사용자 결정) ────────────────────────────────
+# 지점마다 취약점 종류별로 ① 받는 구간인지 먼저 보고(후보 고르기), 후보로 남은 지점에만
+# ② 기본 페이로드 → ③ 심화 페이로드 → ④ 우회 페이로드 순서로 넣는다. 하나라도 확인되면 멈춘다.
+# 받는 구간이 아니면 거기서 끝내 요청을 아낀다.
+
+STAGES = ("screen", "basic", "deep", "bypass")
+STAGE_LABEL = {"screen": "① 받는 구간", "basic": "② 기본", "deep": "③ 심화", "bypass": "④ 우회"}
+
+
+class Ladder:
+    """한 지점의 단계 점검 기록. 모듈은 단계마다 try_payloads 를 부르고 끝에 check() 로 판정을 만든다."""
+
+    def __init__(self, point):
+        self.point = point
+        self.lines = []
+        self.verdict, self.response, self.title, self.stage = "safe", None, "", ""
+
+    def note(self, stage, text):
+        self.lines.append(f"{STAGE_LABEL[stage]} {text}")
+
+    def hit(self, stage, response, title, note=""):
+        self.verdict, self.response, self.title, self.stage = "vuln", response, title, stage
+        if note:
+            self.note(stage, note)
+
+    def maybe(self, stage, response, note):
+        if self.verdict == "safe":
+            self.verdict, self.response, self.stage = "potential", response, stage
+        self.note(stage, note)
+
+    @property
+    def done(self):
+        return self.verdict == "vuln"
+
+    def try_payloads(self, stage, payloads, confirm):
+        """payloads: [(값, 설명)]. confirm(응답, 값) 이 (제목, 메모) 를 돌려주면 확인된 것."""
+        for value, kind in payloads:
+            r = send(self.point, value)
+            self.note(stage, f"{kind}: {request_line(self.point, value)} → {r.status} · {len(r.body)}B")
+            got = confirm(r, value)
+            if got:
+                self.hit(stage, r, got[0], got[1])
+                return True
+        return False

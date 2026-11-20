@@ -575,6 +575,12 @@ def _save_points(mod, tid, points):
     return new, skipped
 
 
+def _back(default):
+    """폼이 'back' 을 실어 보냈으면 그리로 돌아간다(모듈 팝업 → 같은 팝업). 이 서버 안 경로만 받는다."""
+    b = request.form.get("back", "")
+    return b if b.startswith("/") and not b.startswith("//") else default
+
+
 @bp.post("/modules/<mid>/run")
 def module_run(mid):
     mod = _modules().get(mid) or abort(404)
@@ -588,7 +594,7 @@ def module_run(mid):
     if mod.stage == "tool":
         # 도구도 다른 모듈처럼 이 화면에서 바로 뒤로 보낸다. 결과 표는 끝난 뒤
         # 도구 탭에서 연다(드로어·토스트에서 이어지는 링크).
-        back = url_for("dash.modules", target=t["id"])
+        back = _back(url_for("dash.modules", target=t["id"]))
         stop = _guard(mod, t, back)
         if stop:
             return stop
@@ -615,7 +621,7 @@ def module_run(mid):
             new, skipped = _save_points(mod, t["id"], points)
             return f"지점 {len(points) - skipped}개 수집(새로 {new})" + (f", 범위 밖 {skipped}개 제외" if skipped else "")
         _execute_bg(mod, t, params, call)
-        return redirect(_surface_url(t["id"]))
+        return redirect(_back(_surface_url(t["id"])))
 
     def call(target):
         results = mod.run(target, params) or []
@@ -625,7 +631,25 @@ def module_run(mid):
         new = sum(_save_finding(mod, t["id"], f) for f in results)
         return f"{len(results)}건 발견(새로 {new})"
     _execute_bg(mod, t, params, call)
-    return redirect(url_for("dash.results", target=t["id"]))
+    return redirect(_back(url_for("dash.results", target=t["id"])))
+
+
+# ── 모듈 팝업(11-20 사용자 결정) ─────────────────────────────────
+# 모듈은 취약점별로 수집한 지점에 '전부 때리는' 구조다. 모듈을 누르면 팝업이 떠서 왼쪽에 그 모듈의
+# 설정·실행, 오른쪽에 이 대상이 모은 지점 표가 나온다. 지점 점검 모듈은 거기서 지점을 골라 바로 돌린다.
+# 팝업 안의 폼은 back 으로 '같은 팝업이 열린 모듈 화면' 을 실어 보내 실행 뒤 그 자리로 돌아온다.
+
+@bp.get("/modules/<mid>/panel")
+def module_panel(mid):
+    target, targets = _current_target()
+    mod = _modules_for(target).get(mid) if target else _modules().get(mid)
+    if not mod:
+        abort(404)
+    groups, totals = _surface_of(target) if (target and mod.stage == "probe") else ([], {})
+    back = url_for("dash.modules", target=target["id"] if target else None, open=mid)
+    return render_template("module_panel.html", mod=mod, target=target, groups=groups, totals=totals,
+                           verdicts=VERDICTS, source_label=dv.SOURCE_LABEL, tactic_name=TACTIC_NAME, back=back,
+                           partial=request.args.get("partial") == "1", targets=targets)
 
 
 # ── 표면(수집된 지점) — 화면은 대상 탭 아래 ─────────────────────────────────────────
@@ -732,7 +756,7 @@ def surface():
 def surface_probe():
     db = get_db()
     t = db.execute("SELECT * FROM targets WHERE id = ?", [request.form.get("target_id", type=int)]).fetchone() or abort(404)
-    back = _surface_url(t["id"])
+    back = _back(_surface_url(t["id"]))
     mod = _probe_modules(t).get(request.form.get("module_id", "")) or abort(404)
     ids = request.form.getlist("point", type=int)
     if not ids:

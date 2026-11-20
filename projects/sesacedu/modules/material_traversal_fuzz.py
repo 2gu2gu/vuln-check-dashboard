@@ -172,7 +172,7 @@ META = {
         {"tactic": "TA0007", "technique": "T1083", "name": "File and Directory Discovery"},
         {"tactic": "TA0043", "technique": "T1595.003", "name": "Active Scanning: Wordlist Scanning"},
     ],
-    "description": "씨앗(패키지 기본 경로)이나 사전으로 경로를 때려 응답 코드로 "
+    "description": "**심화** — 경로 조작 점검(지점)에서 취약을 확인한 뒤 씁니다. 씨앗(패키지 기본 경로)이나 사전으로 경로를 때려 응답 코드로 "
                    "디렉터리 구조를 그립니다. 읽히는 설정 파일은 **거기 적힌 경로를 "
                    "캐내려고 내용을 받지만**, 결과에는 경로만 올립니다. 받은 내용은 "
                    "요청 기록에서 그대로 볼 수 있습니다.",

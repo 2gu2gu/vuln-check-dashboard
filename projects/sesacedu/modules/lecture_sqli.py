@@ -19,7 +19,7 @@ from dashboard.payloads import DBMS, DBMS_OPTIONS, ensure_select_only
 
 META = {
     "id": "sesacedu_lecture_sqli",
-    "name": "강의 목록 SQL 주입",
+    "name": "강의 목록 SQL 주입 (심화)",
     "category": "SQL 주입",
     "kisa": ["SI"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
     # 노션 '웹 서비스 취약점 목록' 의 취약점 유형 — 검색어가 질의문으로 섞여 들어가 참·거짓으로 DB 를 읽는 것
@@ -34,7 +34,8 @@ META = {
         {"tactic": "TA0009", "technique": "T1005", "name": "Data from Local System"},
         {"tactic": "TA0006", "technique": "T1552", "name": "Unsecured Credentials"},
     ],
-    "description": "테이블 목록부터 컬럼·값까지 눌러 들어가며 읽습니다. 참·거짓 차이로 한 글자씩 읽어서 느립니다.",
+    "description": "**심화** — SQL 주입 점검(지점)에서 /backend/lectures 의 keyword 가 취약으로 나온 뒤 씁니다. "
+                   "테이블 목록부터 컬럼·값까지 눌러 들어가며 읽습니다. 참·거짓 차이로 한 글자씩 읽어서 느립니다.",
     "params": [
         {"name": "mode", "need": "required", "label": "무엇을 볼지", "type": "select", "default": "probe",
          "options": [
