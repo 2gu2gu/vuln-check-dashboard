@@ -10,6 +10,8 @@
 {# 심화 모듈(takes_point)은 지점 표에서 하나만 고른다 — 안 고르면 모듈의 원래 주소에 때린다 #}
 {% set picks = mod.takes_point and not is_probe %}
 {% set with_table = is_probe or picks %}
+{# 이 모듈이 실제로 고를 수 있는 줄 — 주소 단위는 주소 묶음, 파라미터 단위는 파라미터가 있는 묶음 #}
+{% set pickable = groups if (mod.unit == "endpoint" and is_probe) else (groups | selectattr('params') | list) %}
 <div class="mp" data-mod="{{ mod.id }}">
   <header class="mp-head">
     <div>
@@ -52,7 +54,7 @@
     {% if with_table %}
     <section class="mp-surface">
       <div class="mp-tools">
-        <b>{{ target.name }}</b> <span class="sub small">— {% if mod.unit == "endpoint" %}모은 주소 {{ totals.endpoints or 0 }}개{% else %}모은 지점 {{ totals.params or 0 }}개{% endif %}</span>
+        <b>{{ target.name }}</b> <span class="sub small">— {% if mod.unit == "endpoint" %}고를 주소 {{ pickable | length }}개{% else %}고를 지점 {{ pickable | map(attribute='params') | map('length') | sum }}개{% endif %}</span>
         {% if picks %}<span class="sub small">— 때릴 지점 하나를 고르세요(안 고르면 원래 주소)</span>{% endif %}
         <span class="mp-pick">
           {% if not picks %}<button type="button" class="btn ghost small-btn" data-pick="all">전체</button>
@@ -62,6 +64,20 @@
       </div>
       {% if not groups %}
         {{ empty("모은 지점이 없습니다", "모듈 탭의 표면 수집 모듈을 먼저 돌리세요.", url_for('dash.modules', target=target.id), "모듈로") }}
+      {% elif not pickable %}
+        {# 모은 것은 있는데 이 모듈이 고를 줄이 없을 때. React·Next.js 화면에서 흔하다(지적 11-20) #}
+        <div class="callout">
+          <b>이 모듈이 고를 지점이 없습니다 — 모은 주소에 파라미터가 하나도 없습니다.</b>
+          지점 점검은 <b>파라미터 한 칸에 값을 넣어 보는</b> 방식이라 넣을 칸이 있어야 돕니다.
+          React·Next.js 로 만든 화면은 링크에 파라미터가 드러나지 않아 자동 수집으로는 거의 안 잡힙니다.
+          <p>이렇게 모읍니다.</p>
+          <ol>
+            <li>브라우저 개발자도구(F12) → 네트워크에서 <b>로그인하고 화면을 눌러 다닌 뒤</b> HAR 로 저장합니다.</li>
+            <li>모듈 탭의 <b>표면 수집</b> 에 그 HAR 을 붙여 넣습니다 — 실제로 오간 요청의 파라미터가 그대로 들어옵니다.</li>
+            <li>그래도 비면 <b>보안 헤더 점검</b>·<b>정보 노출 점검</b> 처럼 <b>주소마다</b> 보는 모듈을 쓰세요.</li>
+          </ol>
+          <a class="btn ghost" href="{{ url_for('dash.modules', target=target.id, open='surface_collect') }}">표면 수집 열기</a>
+        </div>
       {% else %}
       <div class="table-wrap mp-table">
       {% if mod.unit == "endpoint" %}
@@ -69,7 +85,7 @@
       <table class="grid surface">
         <thead><tr><th><input type="checkbox" class="mp-all" aria-label="전체 선택" title="전체 선택"></th><th>메서드</th><th>주소</th><th>상태</th><th>이 모듈 판정</th><th>다른 점검</th></tr></thead>
         <tbody>
-        {% for gr in groups %}
+        {% for gr in pickable %}
           {% set mine = gr.checks | selectattr('module', 'equalto', mod.name) | list %}
           <tr>
             <td><input type="checkbox" name="point" value="{{ gr.any_id }}" form="mp-form" data-suggest="1" aria-label="{{ gr.path }} 선택"></td>
@@ -88,7 +104,7 @@
       {% else %}
       <table class="grid surface">
         <thead><tr><th>{% if not picks %}<input type="checkbox" class="mp-all" aria-label="전체 선택" title="전체 선택">{% endif %}</th><th>메서드</th><th>파라미터</th><th>위치</th><th>발견 값</th><th>이 모듈 판정</th><th>다른 점검</th></tr></thead>
-        {% for gr in groups if gr.params %}{# 파라미터 없는 주소는 지점 점검을 걸 자리가 없다 #}
+        {% for gr in pickable %}{# 파라미터 없는 주소는 지점 점검을 걸 자리가 없다 #}
         <tbody>
           <tr class="ep"><td>{% if not picks %}<input type="checkbox" class="mp-group" aria-label="{{ gr.path }} 파라미터 전체 선택" title="이 주소의 파라미터 전체">{% endif %}</td><td class="mono nowrap">{{ gr.methods | sort | join(" · ") }}</td>
             <td colspan="5"><span class="mono">{{ gr.path }}</span> <span class="sub small">{{ gr.params | length }}개 파라미터</span></td></tr>

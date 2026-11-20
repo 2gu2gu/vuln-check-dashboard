@@ -251,7 +251,9 @@ def test_surface_explains_when_no_parameters(app, client):
                 data={"target_id": tid, "urls": "https://sesacedu.store/login"}, follow_redirects=True)
     html = client.get(f"/targets?target={tid}").get_data(as_text=True)
     assert "고를 수 있는 지점이 없습니다" in html
-    assert 'id="pick-all"' in html and 'class="panel probe-bar" hidden' in html
+    # 파라미터가 없어도 주소 단위 모듈(보안 헤더·정보 노출)은 돌릴 수 있어 막대는 띄운다(11-20)
+    assert 'id="pick-all"' in html and 'class="panel probe-bar" hidden' not in html
+    assert 'data-unit="endpoint"' in html
 
 
 def test_surface_shows_the_bar_once_a_parameter_exists(app, client):
