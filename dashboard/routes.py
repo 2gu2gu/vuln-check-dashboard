@@ -500,11 +500,20 @@ def _load_cache(tid, mid):
         "SELECT key, value FROM tool_cache WHERE target_id = ? AND module_id = ?", [tid, mid])}
 
 
+CACHEABLE = (str, int, float, bytes, type(None))
+
+
 def _save_cache(tid, mid, cache):
+    """모듈이 남긴 고를 저장한다. 고는 **빠르게 하자는 것** 이지 결과가 아니다 —
+    모듈이 글자가 아닌 것을 넣어 두었으면 그 줄만 버린다. 11-21 에 튜플 열쇠 하나가
+    이미 끝난 실행의 결과까지 통째로 날렸다(sqlite 가 묶음을 거부한다)."""
     db, now = get_db(), now_iso()
+    rows = [(tid, mid, k, v, now) for k, v in cache.items()
+            if isinstance(k, str) and isinstance(v, CACHEABLE)]
+    if len(rows) != len(cache):
+        current_app.logger.warning("tool_cache: 저장할 수 없는 항목 %d개를 건너뜀 (%s)", len(cache) - len(rows), mid)
     db.executemany("INSERT INTO tool_cache (target_id, module_id, key, value, created_at) VALUES (?,?,?,?,?) "
-                   "ON CONFLICT (target_id, module_id, key) DO UPDATE SET value = excluded.value",
-                   [(tid, mid, k, v, now) for k, v in cache.items()])
+                   "ON CONFLICT (target_id, module_id, key) DO UPDATE SET value = excluded.value", rows)
     db.commit()
 
 
