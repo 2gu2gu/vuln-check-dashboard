@@ -15,8 +15,17 @@ def target_id(app, url):
 
 
 def test_pages_render_empty(client):
-    for path in ("/", "/targets", "/modules", "/surface", "/attack", "/scenario", "/help"):
+    for path in ("/", "/targets", "/modules", "/attack", "/scenario", "/help"):
         assert client.get(path).status_code == 200, path
+
+
+def test_old_surface_url_goes_to_targets(client):
+    """표면 탭은 대상 탭에 합쳤다(11-20). 옛 주소는 대상 탭의 그 자리로 보낸다."""
+    r = client.get("/surface?target=3")
+    assert r.status_code == 302 and r.headers["Location"].endswith("/targets?target=3#surface")
+    # 왼쪽 메뉴에서 표면은 빠지고, 도구는 '탐색' 으로 이름이 바뀌었다
+    page = client.get("/targets").get_data(as_text=True)
+    assert 'href="/surface' not in page and "</svg>탐색" in page and "</svg>도구" not in page
 
 
 def test_help_link_points_to_current_screen(client):

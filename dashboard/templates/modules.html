@@ -18,18 +18,6 @@
   {{ empty("대상을 먼저 등록하세요", "모듈은 등록된 대상에만 실행됩니다.", url_for('dash.targets'), "대상 등록") }}
 {% endif %}
 
-<div class="by-tabs" role="tablist" aria-label="묶는 기준">
-  <span class="sub small">묶는 기준</span>
-  {% for key, label, hint in ways %}
-  <a class="by-tab {{ 'on' if key == way }}" role="tab" aria-selected="{{ 'true' if key == way else 'false' }}"
-     title="{{ hint }}"
-     href="{{ url_for('dash.modules', target=target.id if target else none, by=key) }}">{{ label }}</a>
-  {% endfor %}
-  <span class="sub small by-hint">
-    {%- for key, label, hint in ways %}{% if key == way %}{{ hint }}{% endif %}{% endfor -%}
-  </span>
-</div>
-
 <div class="mod-layout">
   <nav class="side-drawer" id="mod-drawer" aria-label="묶음 건너뛰기">
     <div class="side-head">
@@ -68,12 +56,28 @@
       <span class="mod-cue">
         {%- if blocked %}<span class="cue-todo">준비할 것 {{ blocked | length }}개</span>
         {%- elif not target %}대상을 먼저 고르세요
-        {%- elif m.stage == "probe" %}표면 탭에서 실행
-        {%- elif m.params %}입력칸 {{ m.params | length }}개 · 눌러서 펴기
-        {%- else %}눌러서 펴기{% endif -%}
+        {%- elif m.stage == "probe" %}대상 탭에서 지점을 골라 실행
+        {%- elif m.params %}설정 {{ m.params | length }}개 · 눌러서 펴기
+        {%- else %}설명 · 눌러서 펴기{% endif -%}
         <span class="chev" aria-hidden="true">⌄</span>
       </span>
     </button>
+    {# 실행 버튼은 접힌 채로도 보인다(11-20 사용자 요청) — 기본값으로 바로 돌리고,
+       값을 바꾸려면 펴서 고친다. 버튼은 펼친 쪽의 폼(run-<id>)을 form= 으로 가리킨다. #}
+    {% if target %}
+    <div class="mod-quick">
+      {% if m.stage == "probe" %}
+      <a class="btn ghost" href="{{ url_for('dash.targets', target=target.id) }}#surface">지점 골라 점검 →</a>
+      {% elif blocked %}
+      <button class="btn" type="button" disabled title="준비할 것을 먼저 채우세요 — 눌러서 펴면 보입니다">{{ RUN_VERB[m.stage] }}</button>
+      {% else %}
+      {% if m.kind == "active" %}
+      <label class="check"><input type="checkbox" name="confirm" value="yes" form="run-{{ m.id }}"> 자체 환경({{ target.name }}) 확인</label>
+      {% endif %}
+      <button class="btn" type="submit" form="run-{{ m.id }}" title="{{ target.name }} 에 {{ RUN_VERB[m.stage] }}">{{ RUN_VERB[m.stage] }}</button>
+      {% endif %}
+    </div>
+    {% endif %}
     <div class="mod-body" id="body-{{ m.id }}" hidden>
     <div class="tags">
       {% for a in m.attack %}
@@ -81,18 +85,14 @@
       {% endfor %}
     </div>
     {% if target %}{{ needs_block(module_needs(m, target), target) }}{% endif %}
-    {% if target and m.stage == "probe" %}
-    <div class="run"><a class="btn ghost" href="{{ url_for('dash.surface', target=target.id) }}">표면 탭에서 지점을 골라 실행 →</a></div>
-    {% elif target %}
-    {# 도구도 이 자리에서 뒤로 보낸다 — 결과 표는 끝난 뒤 도구 탭에서 연다 #}
-    <form method="post" action="{{ url_for('dash.module_run', mid=m.id) }}" class="run" data-run="bg">
+    {% if target and m.stage != "probe" %}
+    {# 탐색 모듈도 이 자리에서 뒤로 보낸다 — 결과 표는 끝난 뒤 탐색 탭에서 연다.
+       누르는 버튼과 '자체 환경 확인' 은 위 .mod-quick 에 있다. #}
+    <form method="post" action="{{ url_for('dash.module_run', mid=m.id) }}" class="run" id="run-{{ m.id }}" data-run="bg">
       {{ csrf_field() }}
       <input type="hidden" name="target_id" value="{{ target.id }}">
       {% for p in m.params %}{{ param_input(p) }}{% endfor %}
-      {% if m.kind == "active" %}
-      <label class="check"><input type="checkbox" name="confirm" value="yes"> 자체 환경({{ target.name }})임을 확인했습니다</label>
-      {% endif %}
-      <button class="btn" type="submit">{{ "수집" if m.stage == "collect" else "실행" }} → {{ target.name }}</button>
+      {% if m.params %}<small class="sub">값을 바꾼 뒤 위의 <b>{{ RUN_VERB[m.stage] }}</b> 을 누르세요.</small>{% endif %}
     </form>
     {% endif %}
     <footer class="sub mono small">{{ m.source }}</footer>

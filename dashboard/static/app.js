@@ -149,6 +149,17 @@
       if (btn) btn.addEventListener("click", function () {
         set(card, card.querySelector(".mod-body").hidden, true);
       });
+      // 접힌 채로 누른 실행 버튼. 필수 칸이 비어 있으면 브라우저는 숨은 칸이라
+      // 아무 말 없이 막는다 — 펴서 그 칸을 보여 준 뒤 알린다.
+      var quick = card.querySelector(".mod-quick button[form]");
+      if (quick) quick.addEventListener("click", function (e) {
+        var form = document.getElementById(quick.getAttribute("form"));
+        if (form && !form.checkValidity()) {
+          e.preventDefault();
+          set(card, true, true);
+          form.reportValidity();
+        }
+      });
     });
   })();
 

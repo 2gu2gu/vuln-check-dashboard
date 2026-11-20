@@ -630,3 +630,13 @@ html { scroll-behavior: smooth; }
 .find-count { min-width: 44px; }
 ::highlight(find) { background: var(--find); color: var(--mark-ink); }
 ::highlight(find-at) { background: var(--find-at); color: var(--mark-ink); }
+
+/* ── 대상 탭: 고른 대상 줄 + 그 아래 모은 지점(옛 표면 탭, 11-20 합침) ── */
+.grid.targets tr.on td { background: var(--accent-soft); }
+.grid.targets tr.on td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.surface-sec { margin-top: 28px; }
+
+/* ── 모듈 카드: 접힌 채로도 보이는 실행 줄 ── */
+.mod-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.mod-quick label.check { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.mod-quick .btn[disabled] { opacity: .45; cursor: not-allowed; }

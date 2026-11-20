@@ -8,7 +8,7 @@ from markupsafe import Markup, escape
 
 from . import db, wordlists
 from .core import SEVERITY_LABEL, fmt_kst
-from .registry import group_targets, load_catalog
+from .registry import RUN_VERB, group_targets, load_catalog
 
 __version__ = "0.2.0"
 
@@ -102,7 +102,7 @@ def create_app(test_config=None):
     def csrf_field():
         return Markup('<input type="hidden" name="_csrf" value="%s">' % escape(csrf_token()))
 
-    app.jinja_env.globals.update(SEVERITY_LABEL=SEVERITY_LABEL, STATUSES=db.STATUSES, PROJECTS=app.config["PROJECTS"],
+    app.jinja_env.globals.update(SEVERITY_LABEL=SEVERITY_LABEL, RUN_VERB=RUN_VERB, STATUSES=db.STATUSES, PROJECTS=app.config["PROJECTS"],
                                  csrf_token=csrf_token, csrf_field=csrf_field, VERSION=__version__,
                                  wordlist_options=wordlists.available)
 

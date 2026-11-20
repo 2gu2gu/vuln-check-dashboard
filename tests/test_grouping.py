@@ -21,7 +21,7 @@ def add_target(client, url="https://sesacedu.store"):
 def test_default_is_stage_in_the_order_people_use_it():
     """단계가 기본인 이유는 그게 쓰는 순서라서다 — 표면 모으고 → 찔러 보고 → 보고."""
     rows = grouping.group([mod("a", stage="tool"), mod("b", stage="collect"), mod("c", stage="probe")])
-    assert [r["label"] for r in rows] == ["표면 수집", "지점 점검", "도구"]
+    assert [r["label"] for r in rows] == ["표면 수집", "지점 점검", "탐색"]
 
 
 def test_unknown_way_falls_back_to_stage():
@@ -81,18 +81,14 @@ def test_shipped_modules_use_the_vocabulary(app):
 
 # ── 화면 ──────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("way, want", [
-    ("stage", "단계"), ("tactic", "전술"), ("category", "분야"), ("vuln", "취약점"),
-])
-def test_tab_is_marked_on(client, way, want):
+# 모듈 화면은 취약점으로만 묶는다(11-20 사용자 결정). 단계·전술·분야 탭은 뺐다.
+
+@pytest.mark.parametrize("way", ["", "stage", "tactic", "category", "vuln"])
+def test_modules_page_groups_by_vuln_only(client, way):
     html = client.get(f"/modules?by={way}").get_data(as_text=True)
-    assert f'class="by-tab on" role="tab" aria-selected="true"' in html
-    assert f">{want}</a>" in html
-
-
-def test_page_defaults_to_stage(client):
-    html = client.get("/modules").get_data(as_text=True)
-    assert "표면 수집" in html and 'aria-selected="true"' in html
+    assert 'class="by-tabs"' not in html
+    # 취약점 어휘의 '기타' 묶음이 늘 있다 — 표면 수집 모듈이 거기 들어간다
+    assert "<h2>기타</h2>" in html and "<h2>표면 수집</h2>" not in html
 
 
 def test_left_drawer_lists_the_groups(app, client):

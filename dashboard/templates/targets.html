@@ -1,8 +1,10 @@
 {% extends "base.html" %}
+{% from "_macros.html" import empty, verdict, param_input %}
 {% block title %}대상{% endblock %}
 {% block content %}
 <h1>대상</h1>
-<p class="lead">점검할 서버를 여기에 등록합니다 — 한 줄이 서버 하나입니다.</p>
+<p class="lead">점검할 서버를 여기에 등록합니다 — 한 줄이 서버 하나입니다.
+  <b>이름을 누르면</b> 그 대상에서 모은 페이지·파라미터가 아래에 뜨고, 거기서 지점을 골라 점검합니다.</p>
 <dl class="facts">
   <dt>프로젝트</dt><dd>점검할 서비스 한 벌. 그 프로젝트에 허락된 주소만 등록됩니다 — 오타 하나로 남의 서버에 요청이 나가는 일을 막습니다.</dd>
   <dt>점검 대상</dt><dd>그 서비스의 어느 서버인지(사용자 웹·관리자 웹 등). 모듈이 요청을 보낼 수 있는 호스트와 포트가 여기서 정해집니다.</dd>
@@ -49,12 +51,14 @@
   <thead><tr><th>프로젝트</th><th>점검 대상</th><th>이름</th><th>주소</th><th>인증 헤더</th><th>메모</th><th>등록</th><th></th></tr></thead>
   <tbody>
   {% for t in targets %}
-    <tr>
+    <tr class="{{ 'on' if target and t.id == target.id }}">
       {% set tp = PROJECTS[t.project] if t.project in PROJECTS else none %}
       <td>{% if tp and tp.is_practice(t.role) %}<span class="practice-badge" title="연습용으로 띄운 가짜 서버입니다. 실제 서비스가 아닙니다.">연습용</span>
           {%- else %}<span class="proj-badge">{{ tp.name if tp else t.project ~ " (팩 없음)" }}</span>{% endif %}</td>
       <td class="sub">{{ PROJECTS[t.project].role_name(t.role) if t.project in PROJECTS else t.role }}</td>
-      <td><a href="{{ url_for('dash.results', target=t.id) }}">{{ t.name }}</a></td>
+      <td><a href="{{ url_for('dash.targets', target=t.id) }}#surface"
+             title="이 대상에서 모은 페이지·파라미터 보기"
+             {{ 'aria-current="true"' | safe if target and t.id == target.id }}>{{ t.name }}</a></td>
       <td class="mono">{{ t.url }}</td>
       <td>
         <details class="hdr-edit" id="hdr-{{ t.id }}">
@@ -112,5 +116,108 @@
   </tbody>
 </table>
 </div>
+{% endif %}
+
+{# ── 표면: 고른 대상이 모은 페이지·파라미터(옛 표면 탭, 11-20 합침) ── #}
+{% if target %}
+<section id="surface" class="surface-sec">
+<div class="group-head"><h2>{{ target.name }} — 모은 페이지·파라미터</h2>
+  <span class="sub small">수집 모듈이 모은 엔드포인트·파라미터입니다. 지점을 골라 점검 모듈을 돌리면 지점마다 취약 · 잠재 · 안전으로 판정하고, 취약은 결과 탭에도 올라갑니다.</span></div>
+
+<section class="cards">
+  <div class="card"><small>엔드포인트</small><strong>{{ totals.endpoints }}</strong></div>
+  <div class="card"><small>파라미터</small><strong>{{ totals.params }}</strong></div>
+  {% for v in ("vuln", "potential", "safe") %}
+  <div class="card">{{ verdict(v) }}<strong>{{ totals[v] }}</strong><small>판정 수</small></div>
+  {% endfor %}
+</section>
+
+{% if not groups %}
+  {{ empty("수집된 지점이 없습니다",
+           "모듈 탭의 표면 수집 모듈(" ~ (collectors | map(attribute='name') | join(', ') or '없음') ~ ")을 먼저 돌리세요.",
+           url_for('dash.modules', target=target.id), "모듈로 가기") }}
+{% else %}
+<form method="post" action="{{ url_for('dash.surface_probe') }}" id="probe-form" data-run="bg">
+  {{ csrf_field() }}
+  <input type="hidden" name="target_id" value="{{ target.id }}">
+  {% if not totals.params %}
+  <div class="callout">
+    <b>고를 수 있는 지점이 없습니다 — 모은 주소에 파라미터가 하나도 없습니다.</b>
+    지점 점검 모듈은 <b>파라미터 한 칸에 값을 넣어 보는</b> 방식이라, 값을 넣을 칸이 있어야 돌아갑니다.
+    주소만 있고 <code>?keyword=…</code> 같은 칸이 없으면 넣을 자리가 없습니다.
+    <p>React·Next.js 로 만든 화면은 링크에 파라미터가 드러나지 않는 일이 흔합니다. 이럴 때는 이렇게 합니다.</p>
+    <ol>
+      <li>브라우저 개발자도구 <b>네트워크</b> 탭(또는 Burp)에서 그 화면이 실제로 부르는 API 주소를 복사합니다.</li>
+      <li>모듈 탭의 <a href="{{ url_for('dash.modules', target=target.id) }}"><b>URL 목록 가져오기</b></a> 에
+        <code>https://…/backend/lectures?size=1&amp;keyword=a</code> 처럼 <b>파라미터까지 붙여</b> 넣습니다.</li>
+      <li>폼을 보내는 자리는 <code>POST 주소 a=1&amp;b=2</code> 형태로 적으면 본문 파라미터로 등록됩니다.</li>
+    </ol>
+  </div>
+  {% endif %}
+  <div class="panel probe-bar" {{ 'hidden' if not totals.params }}>
+    <label class="check"><input type="checkbox" id="pick-all"> 전체 선택</label>
+    <span class="sub" id="picked">0개 선택</span>
+    {% if probes %}
+    {# 무엇으로 점검하는지가 안 보여서 "모듈 선택이 없잖아" 소리를 들었다(11-05).
+       이름표가 없으면 그냥 설정 하나로 읽힌다. 고른 지점 → 무엇으로 → 그 모듈의 칸 순서로 읽히게 한다. #}
+    <label class="field probe-pick">
+      <span class="field-name">무엇으로 점검할지
+        <span class="req-mark req" title="비워 두면 안 됩니다">필수</span>
+      </span>
+      <select name="module_id" id="probe-module">
+        {% for m in probes.values() %}<option value="{{ m.id }}" data-kind="{{ m.kind }}">{{ m.name }}</option>{% endfor %}
+      </select>
+      <small class="sub">고른 지점마다 이 모듈이 값을 한 번씩 넣어 봅니다. 아래 칸은 <b>고른 모듈의 것</b>입니다.</small>
+    </label>
+    {% for m in probes.values() %}
+    <div class="probe-params" data-for="{{ m.id }}" {{ 'hidden' if not loop.first }}>
+      {% for p in m.params %}{{ param_input(p, m.id ~ "__") }}{% endfor %}
+    </div>
+    {% endfor %}
+    <label class="check"><input type="checkbox" name="confirm" value="yes"> 자체 환경({{ target.name }})임을 확인했습니다</label>
+    <button class="btn" type="submit">선택 지점 점검</button>
+    {% else %}
+    <span class="sub">이 대상에 쓸 지점 점검 모듈이 없습니다.</span>
+    {% endif %}
+  </div>
+
+  <div class="table-wrap">
+  <table class="grid surface">
+    <thead><tr><th></th><th>메서드</th><th>파라미터</th><th>위치</th><th>발견 값</th><th>출처</th><th>판정</th></tr></thead>
+    {% for gr in groups %}
+    <tbody>
+      <tr class="ep">
+        <td></td>
+        <td class="mono nowrap">{{ gr.methods | sort | join(" · ") }}</td>
+        <td colspan="5"><span class="mono">{{ gr.path }}</span>
+          <span class="sub small">{{ gr.params | length }}개 파라미터 · {{ gr.sources | reject("equalto", "") | sort | join(", ") }}</span></td>
+      </tr>
+      {% for p in gr.params %}
+      <tr>
+        <td><input type="checkbox" name="point" value="{{ p.id }}" aria-label="{{ gr.path }} {{ p.param }} 선택"></td>
+        <td class="mono sub">{{ p.method }}</td>
+        <td class="mono">{{ p.param }}</td>
+        <td class="sub">{{ {"query": "쿼리", "form": "폼 본문", "path": "경로"}[p.place] }}</td>
+        <td class="mono sub loc" title="{{ p.sample }}">{{ p.sample }}</td>
+        <td class="sub">{{ p.source }}</td>
+        <td>{% for c in p.checks %}
+          {% if c.exchange_id %}<a class="vchip" href="{{ url_for('dash.history_detail', xid=c.exchange_id) }}" title="눌러서 요청·응답 보기&#10;{{ c.evidence }}">{{ verdict(c.verdict) }}<small>{{ c.module }} ↗</small></a>
+          {% else %}<span class="vchip" title="{{ c.evidence }}">{{ verdict(c.verdict) }}<small>{{ c.module }}</small></span>{% endif %}
+        {% else %}<span class="sub small">미점검</span>{% endfor %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    {% endfor %}
+  </table>
+  </div>
+</form>
+
+<form method="post" action="{{ url_for('dash.surface_clear') }}" class="clear-form" data-confirm="{{ target.name }} 의 수집 지점과 판정을 모두 지울까요? 결과 탭의 결과는 남습니다.">
+  {{ csrf_field() }}
+  <input type="hidden" name="target_id" value="{{ target.id }}">
+  <button class="btn ghost danger" type="submit">수집 지점 비우기</button>
+</form>
+{% endif %}
+</section>
 {% endif %}
 {% endblock %}

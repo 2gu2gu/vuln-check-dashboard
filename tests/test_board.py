@@ -72,7 +72,7 @@ def test_an_unknowable_need_does_not_block():
     assert rows([], [mod("a", needs=[need])])[0]["suggest"][0]["state"] == board.READY
 
 
-@pytest.mark.parametrize("stage, word", [("probe", "표면 탭"), ("tool", "도구 탭")])
+@pytest.mark.parametrize("stage, word", [("probe", "대상 탭"), ("tool", "탐색 탭")])
 def test_modules_that_run_elsewhere_say_where(stage, word):
     s = rows([], [mod("a", stage=stage)])[0]["suggest"][0]
     assert s["state"] == board.ELSEWHERE and word in s["why"]

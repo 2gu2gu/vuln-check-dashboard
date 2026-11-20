@@ -262,8 +262,14 @@ def targets():
     # 지금 들어 있는 값을 그대로 넘긴다 — 토큰을 확인하고 복사할 수 있어야 한다.
     # 빈 칸으로 두면 편집하다가 모르고 지우는 일도 생긴다.
     header_text = {row["id"]: (row["headers"] or "") for row in targets}
+    # 표면 탭을 여기로 합쳤다(11-20 사용자 결정). 대상을 누르면 그 대상이 모은
+    # 페이지·파라미터와 지점 점검이 목록 아래에 뜬다.
+    groups, totals = _surface_of(target)
     return render_template("targets.html", target=target, targets=targets,
-                           header_names=names, header_text=header_text, logins=logins)
+                           header_names=names, header_text=header_text, logins=logins,
+                           groups=groups, totals=totals, probes=_probe_modules(target),
+                           collectors=[m for m in _modules_for(target).values() if m.stage == "collect"],
+                           verdicts=VERDICTS)
 
 
 @bp.post("/targets/<int:tid>/delete")
@@ -348,7 +354,8 @@ def modules():
     target, targets = _current_target()
     available = _modules_for(target)
     project = _project_of(target) if target else None
-    way = request.args.get("by", grouping.DEFAULT_WAY)
+    # 묶는 기준은 취약점 하나만 둔다(11-20 사용자 결정). 단계·전술·분야 탭은 뺐다.
+    way = "vuln"
     rows = grouping.group(list(available.values()), way)
     runs = get_db().execute(
         "SELECT runs.*, targets.name AS target_name, "
@@ -359,7 +366,6 @@ def modules():
     return render_template("modules.html", rows=rows, all_modules=_modules(), project=project,
                            hidden=len(_modules()) - len(available), errors=current_app.config["MODULE_ERRORS"],
                            target=target, targets=targets, runs=runs, tactic_name=TACTIC_NAME,
-                           ways=grouping.WAYS, way=way if way in grouping.KEYS else grouping.DEFAULT_WAY,
                            missing=grouping.empty_groups(way, rows), total=len(available))
 
 
@@ -556,8 +562,8 @@ def module_run(mid):
         flash("대상을 먼저 고르세요", "error")
         return redirect(url_for("dash.modules"))
     if mod.stage == "probe":
-        flash(f"{mod.name} 은 지점 점검 모듈입니다. 표면 탭에서 지점을 골라 실행하세요", "error")
-        return redirect(url_for("dash.surface", target=t["id"]))
+        flash(f"{mod.name} 은 지점 점검 모듈입니다. 대상 탭에서 지점을 골라 실행하세요", "error")
+        return redirect(_surface_url(t["id"]))
     if mod.stage == "tool":
         # 도구도 다른 모듈처럼 이 화면에서 바로 뒤로 보낸다. 결과 표는 끝난 뒤
         # 도구 탭에서 연다(드로어·토스트에서 이어지는 링크).
@@ -588,7 +594,7 @@ def module_run(mid):
             new, skipped = _save_points(mod, t["id"], points)
             return f"지점 {len(points) - skipped}개 수집(새로 {new})" + (f", 범위 밖 {skipped}개 제외" if skipped else "")
         _execute_bg(mod, t, params, call)
-        return redirect(url_for("dash.surface", target=t["id"]))
+        return redirect(_surface_url(t["id"]))
 
     def call(target):
         results = mod.run(target, params) or []
@@ -601,48 +607,57 @@ def module_run(mid):
     return redirect(url_for("dash.results", target=t["id"]))
 
 
-# ── 표면(수집된 지점) ─────────────────────────────────────────
+# ── 표면(수집된 지점) — 화면은 대상 탭 아래 ─────────────────────────────────────────
 
 def _probe_modules(target):
     return {k: m for k, m in _modules_for(target).items() if m.stage == "probe"}
 
 
+def _surface_of(target):
+    """대상 하나가 모은 지점을 주소별로 묶는다 → (묶음 목록, 개수)."""
+    groups, totals = [], {"endpoints": 0, "params": 0, **{v: 0 for v in VERDICTS}}
+    if not target:
+        return groups, totals
+    db = get_db()
+    checks = {}
+    for c in db.execute("SELECT pc.* FROM point_checks pc JOIN points p ON p.id = pc.point_id WHERE p.target_id = ?",
+                        [target["id"]]):
+        checks.setdefault(c["point_id"], []).append(c)
+    by_url = {}
+    for p in db.execute("SELECT * FROM points WHERE target_id = ? ORDER BY url, method, place, param", [target["id"]]):
+        grp = by_url.setdefault(p["url"], {"url": p["url"], "path": urlsplit(p["url"]).path or "/",
+                                           "methods": set(), "sources": set(), "params": []})
+        grp["methods"].add(p["method"])
+        grp["sources"].add(p["source"])
+        if p["param"]:
+            grp["params"].append({**dict(p), "checks": [
+                {"module": _modules()[c["module_id"]].name if c["module_id"] in _modules() else c["module_id"],
+                 "verdict": c["verdict"], "evidence": c["evidence"], "exchange_id": c["exchange_id"]}
+                for c in checks.get(p["id"], [])]})
+            totals["params"] += 1
+            for c in checks.get(p["id"], []):
+                totals[c["verdict"]] += 1
+    groups = list(by_url.values())
+    totals["endpoints"] = len(groups)
+    return groups, totals
+
+
+def _surface_url(tid):
+    return url_for("dash.targets", target=tid) + "#surface"
+
+
 @bp.get("/surface")
 def surface():
-    target, targets = _current_target()
-    groups, totals = [], {"endpoints": 0, "params": 0, **{v: 0 for v in VERDICTS}}
-    if target:
-        db = get_db()
-        checks = {}
-        for c in db.execute("SELECT pc.* FROM point_checks pc JOIN points p ON p.id = pc.point_id WHERE p.target_id = ?",
-                            [target["id"]]):
-            checks.setdefault(c["point_id"], []).append(c)
-        by_url = {}
-        for p in db.execute("SELECT * FROM points WHERE target_id = ? ORDER BY url, method, place, param", [target["id"]]):
-            grp = by_url.setdefault(p["url"], {"url": p["url"], "path": urlsplit(p["url"]).path or "/",
-                                               "methods": set(), "sources": set(), "params": []})
-            grp["methods"].add(p["method"])
-            grp["sources"].add(p["source"])
-            if p["param"]:
-                grp["params"].append({**dict(p), "checks": [
-                    {"module": _modules()[c["module_id"]].name if c["module_id"] in _modules() else c["module_id"],
-                     "verdict": c["verdict"], "evidence": c["evidence"], "exchange_id": c["exchange_id"]}
-                    for c in checks.get(p["id"], [])]})
-                totals["params"] += 1
-                for c in checks.get(p["id"], []):
-                    totals[c["verdict"]] += 1
-        groups = list(by_url.values())
-        totals["endpoints"] = len(groups)
-    return render_template("surface.html", groups=groups, totals=totals, probes=_probe_modules(target),
-                           collectors=[m for m in _modules_for(target).values() if m.stage == "collect"],
-                           verdicts=VERDICTS, target=target, targets=targets)
+    """옛 표면 탭 주소. 즐겨찾기·옛 링크가 끊기지 않게 대상 탭의 그 자리로 보낸다."""
+    tid = request.args.get("target", type=int)
+    return redirect(_surface_url(tid) if tid else url_for("dash.targets") + "#surface")
 
 
 @bp.post("/surface/probe")
 def surface_probe():
     db = get_db()
     t = db.execute("SELECT * FROM targets WHERE id = ?", [request.form.get("target_id", type=int)]).fetchone() or abort(404)
-    back = url_for("dash.surface", target=t["id"])
+    back = _surface_url(t["id"])
     mod = _probe_modules(t).get(request.form.get("module_id", "")) or abort(404)
     ids = request.form.getlist("point", type=int)
     if not ids:
@@ -700,10 +715,10 @@ def surface_clear():
     db.execute("DELETE FROM points WHERE target_id = ?", [tid])
     db.commit()
     flash("수집된 지점을 비웠습니다(결과 탭의 결과는 남음)", "ok")
-    return redirect(url_for("dash.surface", target=tid))
+    return redirect(_surface_url(tid))
 
 
-# ── 도구(값을 넣고 결과 표를 보는 모듈) ──────────────────────
+# ── 탐색(값을 넣고 결과 표를 보는 모듈, 옛 이름 도구 · 코드 이름 tool) ───────────────────────
 #
 # 전에는 도구만 요청 안에서 끝까지 돌았다(그 자리에서 결과를 그리려고). 모듈 탭에서
 # 누르면 돌지도 않고 도구 탭으로 넘어갔고, 도구 탭에서는 끝날 때까지 화면이 멈췄다.

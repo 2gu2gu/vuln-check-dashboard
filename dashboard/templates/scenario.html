@@ -57,7 +57,7 @@
       <div class="bd-kind bd-k-todo">제안 {{ r.suggest | length }} <span class="sub">— 아직 안 돌린 모듈</span></div>
       {% for s in r.suggest %}
       <a class="bd-card todo {{ s.state }}"
-         href="{{ url_for('dash.surface' if s.mod.stage == 'probe' else ('dash.tools' if s.mod.stage == 'tool' else 'dash.modules'),
+         href="{{ url_for('dash.targets' if s.mod.stage == 'probe' else ('dash.tools' if s.mod.stage == 'tool' else 'dash.modules'),
                           target=target.id, tool=s.mod.id if s.mod.stage == 'tool' else none) }}">
         <div class="bd-card-top">
           <span class="stage stage-{{ s.mod.stage }}">{{ s.stage }}</span>
