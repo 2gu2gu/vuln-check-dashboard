@@ -45,10 +45,14 @@ def path_ids(url: str, skip: str = ""):
 
     한 실행 안에서는 같은 주소를 두 번 찾지 않는다(core.run_cache).
     """
+    # 고의 열쇠·값은 그대로 DB 에 들어간다 — 글자만 쓴다(11-21: 튜플 열쇠로 실행 하나를 통째로 날렸다)
     cache = core.run_cache()
-    key = ("path_ids", url, skip)
+    key = f"path_ids	{url}	{skip}"
     if key in cache:
-        return cache[key]
+        try:
+            return json.loads(cache[key])
+        except (TypeError, ValueError):
+            pass
     found, prefix = {}, ""
     for seg in urlsplit(url).path.strip("/").split("/"):
         if not (seg.startswith("{") and seg.endswith("}")):
@@ -78,7 +82,7 @@ def path_ids(url: str, skip: str = ""):
         else:
             found[name] = "1"
         prefix += "/" + found[name]
-    cache[key] = found
+    cache[key] = json.dumps(found, ensure_ascii=False)
     return found
 
 

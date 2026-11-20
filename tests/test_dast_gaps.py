@@ -418,3 +418,33 @@ def test_the_confirm_boxes_are_all_gone():
                 sesacedu_forum_stored_xss, sesacedu_xss):
         names = {p["name"] for p in mod.META.get("params", [])}
         assert not {n for n in names if n.endswith("_ack")}, mod.META["id"]
+
+
+def test_tool_cache_skips_what_sqlite_cannot_store(app):
+    """고는 빠르게 하자는 것이지 결과가 아니다 — 저장 못 할 항목 하나가 실행을 날리면 안 된다.
+
+    11-21: path_ids 가 튜플 열쇠를 남겨 이미 끝난 IDOR 실행의 결과가 통째로 사라졌다.
+    """
+    from dashboard import routes
+    from dashboard.db import get_db
+    from tests.test_app import add_target, target_id
+    with app.test_client() as c:
+        add_target(c, "https://sesacedu.store", name="t")
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+        routes._save_cache(tid, "mod", {"ok": "값", ("튜플",): "x", "dict": {"a": 1}})
+        rows = {r["key"]: r["value"] for r in get_db().execute("SELECT key, value FROM tool_cache")}
+    assert rows == {"ok": "값"}
+
+
+def test_path_ids_cache_survives_a_round_trip_through_sqlite(monkeypatch):
+    """찾아 둔 번호는 글자로 저장돼야 다음 모듈이 다시 읽는다."""
+    from dashboard import probe
+    store = {}
+    monkeypatch.setattr(core, "run_cache", lambda: store)
+    monkeypatch.setattr(core, "fetch", lambda url, **_k: Response(
+        url=url, status=200 if url.endswith("/lectures/1") else 404, body="x" * 50))
+    url = "https://sesacedu.store/backend/lectures/{lid}"
+    first = probe.path_ids(url, skip="")
+    assert all(isinstance(k, str) and isinstance(v, str) for k, v in store.items())
+    assert probe.path_ids(url, skip="") == first          # 두 번째는 고에서 읽는다
