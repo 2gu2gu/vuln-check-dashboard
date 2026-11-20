@@ -276,3 +276,34 @@ def test_idor_does_not_call_a_spa_shell_an_open_resource(monkeypatch):
     assert out == [] or out[0].verdict == "safe"
     ev = "" if not out else out[0].evidence
     assert out == [] or ("화면 틀(SPA 껍데기)" in ev and "HAR" in ev)
+
+
+def test_authz_header_trick_is_not_a_hit_when_the_root_just_answers(monkeypatch):
+    """11-21 실측: /backend/mypage 등 12건이 'X-Original-URL 로 차단 통과' 로 잘못 적혔다.
+
+    뒷단이 헤더를 안 따르면 GET / 이 그냥 첫 화면(앱 껍데기)을 돌려준다. 그게 401 과 다르다고
+    '따랐다' 고 하면 안 된다.
+    """
+    _ctx(monkeypatch)
+    SHELL = "<!doctype html>앱 껍데기" * 10
+
+    def handler(url, h):
+        if url.rstrip("/").endswith("sesacedu.store"):
+            return 200, SHELL            # 헤더가 있든 없든 첫 화면
+        return (200, "내 정보" * 50) if h.get("Authorization") else (401, "")
+    _server(monkeypatch, handler)
+    c = authz_probe.run(T, [_end("https://sesacedu.store/backend/mypage")], {})[0]
+    assert c.verdict == "safe"
+    assert "헤더를 넣으나 빼나 첫 화면이 그대로 옴" in c.evidence
+
+
+def test_authz_header_trick_still_catches_a_backend_that_follows_it(monkeypatch):
+    _ctx(monkeypatch)
+
+    def handler(url, h):
+        if url.rstrip("/").endswith("sesacedu.store"):
+            return (200, "비밀 정보" * 50) if h.get("X-Original-URL") else (200, "첫 화면")
+        return (200, "내 정보" * 50) if h.get("Authorization") else (403, "")
+    _server(monkeypatch, handler)
+    c = authz_probe.run(T, [_end("https://sesacedu.store/backend/mypage")], {})[0]
+    assert c.verdict == "vuln" and "차단 통과" in c.title
