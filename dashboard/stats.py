@@ -254,3 +254,67 @@ def calendar(db, targets, schedule=None, today=None, weeks_n=None):
         "active_days": len(active), "top": top, "next": nxt,
         "total_runs": sum(c["runs"] for w in weeks for c in w["cells"]),
     }
+
+
+# ── 결과 추이·주간 변화(11-20, 노션 '대시보드 딸깍이 제작' 레퍼런스: Security Watch·Mosaic·Creator Dashboard) ──
+#
+# 숫자 칸에는 '이번 주 vs 지난주' 변화와 최근 14일 스파크라인을, 따로 결과 누적 추이 면적 그래프를 그린다.
+# 그래프 좌표는 여기서 계산해 SVG 경로 글자로 넘긴다 — 템플릿이 숫자 계산을 하지 않게.
+
+def _spark(values, w=100, h=24):
+    """값 목록 → SVG polyline points. 모두 0 이면 바닥에 깔린 선."""
+    if not values:
+        return ""
+    top = max(values) or 1
+    step = w / max(1, len(values) - 1)
+    return " ".join(f"{i * step:.1f},{h - 2 - (v / top) * (h - 4):.1f}" for i, v in enumerate(values))
+
+
+def _delta(series, today):
+    """최근 7일 합과 그 앞 7일 합."""
+    days = [(today - timedelta(days=i)).isoformat() for i in range(14)]
+    now = sum(series.get(d, 0) for d in days[:7])
+    before = sum(series.get(d, 0) for d in days[7:])
+    return {"now": now, "before": before, "diff": now - before}
+
+
+def trend(db, targets, schedule=None, today=None):
+    today = today or date.today()
+    schedule = schedule or {}
+    end = date.fromisoformat(schedule["end"]) if schedule.get("end") else today
+    start = date.fromisoformat(schedule["start"]) if schedule.get("start") else end - timedelta(days=48)
+    ids = [t["id"] for t in targets]
+    day = "substr({col}, 1, 10)"
+    found = _daily(db, f"SELECT {day.format(col='created_at')} d, COUNT(*) FROM findings WHERE target_id IN ({{m}}) GROUP BY d", ids)
+    runs = _daily(db, f"SELECT {day.format(col='started_at')} d, COUNT(*) FROM runs WHERE target_id IN ({{m}}) GROUP BY d", ids)
+    reqs = _daily(db, f"SELECT {day.format(col='created_at')} d, COUNT(*) FROM exchanges WHERE target_id IN ({{m}}) GROUP BY d", ids)
+
+    # 추이: 기간 첫날부터 끝날(최종보고회)까지 가로축, 값은 오늘까지만. 기간 전 결과는 첫날 값에 더한다.
+    span = [(start + timedelta(days=i)) for i in range((end - start).days + 1)]
+    before = sum(v for d, v in found.items() if d < start.isoformat())
+    cum, total, rows = [], before, []
+    for d in span:
+        if d > today:
+            break
+        total += found.get(d.isoformat(), 0)
+        cum.append(total)
+        rows.append({"md": d.strftime("%m/%d"), "new": found.get(d.isoformat(), 0), "cum": total})
+    W, H = 600, 140
+    top = max(cum + [1])
+    step = W / max(1, len(span) - 1)
+    pts = [(i * step, H - 6 - (v / top) * (H - 18)) for i, v in enumerate(cum)]
+    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+    area = (f"M0,{H} L" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts) + f" L{pts[-1][0]:.1f},{H} Z") if pts else ""
+
+    def xpct(d):
+        return round((d - start).days / max(1, len(span) - 1) * 100, 2)
+    marks = [{"label": m["label"], "pct": xpct(date.fromisoformat(m["date"])), "kind": m.get("kind", "")}
+             for m in schedule.get("marks", []) if start <= date.fromisoformat(m["date"]) <= end]
+    last14 = [(today - timedelta(days=13 - i)).isoformat() for i in range(14)]
+    return {
+        "w": W, "h": H, "line": line, "area": area, "top": top, "rows": rows,
+        "today_pct": xpct(today) if start <= today <= end else None, "marks": marks,
+        "start": start.strftime("%m/%d"), "end": end.strftime("%m/%d"), "total": total,
+        "spark": {k: _spark([s.get(d, 0) for d in last14]) for k, s in (("findings", found), ("runs", runs), ("requests", reqs))},
+        "delta": {k: _delta(s, today) for k, s in (("findings", found), ("runs", runs), ("requests", reqs))},
+    }

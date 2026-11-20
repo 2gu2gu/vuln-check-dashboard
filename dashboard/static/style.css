@@ -965,3 +965,46 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
 .cal-sum .dday { color: var(--hit); }
 .cal-src { margin: 0; text-align: center; }
 .add-target { margin-bottom: 12px; }
+
+/* ── 결과 탭 레퍼런스 반영(11-20): 상태 문장 · 주간 변화 · 스파크라인 · 비율 막대 · 누적 추이 · 도넛 ──
+   노션 '대시보드 딸깍이 제작' 의 레퍼런스(Security Watch·Mosaic·Creator Dashboard)에서 그래프 모양만 가져왔다.
+   색은 '보고서 디자인 레퍼런스' 대로 바탕·먹·포인트 셋 — 스파크라인·추이는 포인트색, 상태 막대만 위험도 색. */
+.ov-status { border-left: 4px solid var(--ok-bar, var(--accent)); padding: 2px 0 2px 14px; }
+.ov-status h2 { margin: 0 0 2px; font-size: 20px; letter-spacing: -0.02em; }
+.ov-status p { margin: 0; font-size: 14px; color: var(--sub); }
+.ov-status p b { color: var(--text); font-variant-numeric: tabular-nums; }
+.ov-status.ov-alert { --ok-bar: var(--sv-critical); }
+.ov-status.ov-warn { --ok-bar: var(--sv-high); }
+.tot { position: relative; overflow: hidden; }
+.tot-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dpill { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+         background: var(--surface-2); border: 1px solid var(--line); color: var(--sub); font-variant-numeric: tabular-nums; }
+.dpill.up { color: var(--text); border-color: var(--accent); }
+.dpill.down { color: var(--sub); }
+.spark { display: block; width: 100%; height: 26px; margin-top: 6px; }
+.spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.ratio { display: flex; gap: 2px; height: 6px; border-radius: 3px; background: var(--cal-0); overflow: hidden; margin: 6px 0 2px; }
+.ratio i { display: block; height: 100%; background: var(--sv-critical); }
+.tot:nth-child(3) .ratio i { background: var(--sv-high); }
+.ratio i.r2 { background: var(--cov-clear-ink); opacity: .55; }
+
+.trend { margin: 0; }
+.trend-box { position: relative; height: 150px; }
+.trend-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.trend-svg .grid { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.trend-svg .area { fill: var(--accent-soft); }
+.trend-svg .line { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.tmark { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--sub); }
+.tmark > span { position: absolute; top: 0; left: 4px; font-size: 11px; color: var(--sub); white-space: nowrap; background: var(--surface); padding: 0 3px; }
+.tmark-final { border-left: 2px solid var(--text); } .tmark-final > span { color: var(--text); font-weight: 700; left: auto; right: 4px; }
+.tmark-today { border-left: 2px solid var(--accent); } .tmark-today > span { color: var(--accent); font-weight: 700; top: 18px; }
+.tval { position: absolute; left: 0; top: 2px; font-size: 11px; color: var(--sub); }  /* 세로축 위 끝 값 — 오른쪽은 최종보고회 표시와 겹친다 */
+.trend-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--sub); margin-top: 2px; }
+
+.donut-row { display: flex; align-items: center; gap: 22px; }
+.donut { width: 128px; height: 128px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.donut-hole { width: 84px; height: 84px; border-radius: 50%; background: var(--surface); display: flex; flex-direction: column;
+              align-items: center; justify-content: center; }
+.donut-hole strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.donut-hole small { font-size: 11px; color: var(--sub); }
+.legend-list a { color: var(--text); display: inline-flex; align-items: center; gap: 6px; }
