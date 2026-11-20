@@ -86,7 +86,8 @@ def run(target, points, params):
             for stage, payloads in stages(t).items():
                 if lad.try_payloads(stage, payloads, confirm):
                     break
-            if not lad.done:
+            # 인코딩된 채로 돌아오는 화면은 잠재가 아니다 — 깨뜨릴 수 없다(11-20 사용자 확인 요청)
+            if not lad.done and not lad.encoded_only():
                 lad.maybe("bypass", r0, "표식은 돌아오지만 특수문자는 걸러짐 — 필터가 있음. 다른 모양으로 더 볼 곳")
         out.append(Check(point=p, verdict=lad.verdict, evidence="\n".join(lad.lines), response=lad.response or r0,
                          title=lad.title, recommendation=_REC))

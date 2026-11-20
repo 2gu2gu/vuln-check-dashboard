@@ -87,7 +87,7 @@ def run(target, points, params):
             for stage, payloads in stages(t).items():
                 if lad.try_payloads(stage, payloads, confirm):
                     break
-            if not lad.done:
+            if not lad.done and not lad.encoded_only():
                 lad.maybe("bypass", w0, "표식은 남지만 특수문자는 걸러짐 — 저장 전·출력 때 필터가 있음")
         out.append(Check(point=p, verdict=lad.verdict, evidence="\n".join(lad.lines), response=lad.response or w0,
                          title=lad.title, severity="high" if lad.verdict == "vuln" else "medium", recommendation=_REC))

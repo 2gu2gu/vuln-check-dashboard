@@ -118,6 +118,22 @@ def test_xss_escaped_is_potential(monkeypatch):
     assert c.verdict == "potential" and "필터가 있음" in c.evidence
 
 
+def test_xss_value_echoed_still_encoded_is_safe_not_potential(monkeypatch):
+    """경로 변수를 풀지 않고 응답에 담는 화면(Next.js 라우터 묶음) — 스크립트 블록 안이어도 깨뜨릴 수 없다.
+
+    11-20 관리자 웹 `/users/{userId}` 등 4곳을 브라우저로 확인한 결과를 모듈에 넣은 것이다.
+    """
+    p = Point(method="GET", url="https://sesacedu.store/users/{userId}", param="userId", place="path",
+              sample="1", fields={})
+    _server(monkeypatch, lambda url: (200, '<script>self.__next_f.push([1,"{\\"params\\":{\\"userId\\":\\"'
+                                           + url.rsplit("/", 1)[-1] + '\\"}}"])</script>'))
+    c = xss_probe.run(T, [p], {})[0]
+    assert c.verdict == "safe"
+    assert "퍼센트 인코딩된 채로만 돌아옴" in c.evidence
+    assert "스크립트 블록" in c.evidence  # 받는 구간은 스크립트 블록이라고 적되, 실행되지 않는다고 결론낸다
+    assert "필터가 있음" not in c.evidence
+
+
 def test_point_modules_are_registered_by_vuln(app):
     from dashboard import routes
     with app.test_request_context():
