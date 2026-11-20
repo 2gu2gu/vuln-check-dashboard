@@ -104,3 +104,67 @@ def test_practice_targets_are_left_out_of_the_overview(app, client):
     page = client.get(f"/?target={target_id(app, 'https://sesacedu.store')}").get_data(as_text=True)
     overview = page.split('id="ov-title"', 1)[1].split("— 결과 목록", 1)[0]
     assert "사용자 웹" in overview and "연습" not in overview.replace("연습용 제외", "")
+
+
+# ── 진단 통계(11-20 추가) ──────────────────────────────────────
+
+def _tagged_finding(db, tid, module_id, severity, status="open"):
+    run = db.execute("INSERT INTO runs (target_id, module_id, started_at, status) VALUES (?, ?, '2026-11-20', 'done')",
+                     [tid, module_id]).lastrowid
+    db.execute("INSERT INTO findings (run_id, target_id, module_id, title, severity, status, created_at) "
+               "VALUES (?, ?, ?, 't', ?, ?, '2026-11-20')", [run, tid, module_id, severity, status])
+
+
+@pytest.fixture
+def typed(app, client):
+    add_target(client, "https://sesacedu.store", name="사용자 웹")
+    tid = target_id(app, "https://sesacedu.store")
+    with app.app_context():
+        db = get_db()
+        _tagged_finding(db, tid, "sesacedu_lecture_sqli", "critical")         # SI → A05
+        _tagged_finding(db, tid, "payload_probe", "medium")                    # XS·SI → 첫 코드 XS → A05
+        _tagged_finding(db, tid, "sesacedu_material_traversal", "high")        # FD → A01
+        _tagged_finding(db, tid, "port_check", "medium")                       # 코드 없음 → 분류 없음
+        _tagged_finding(db, tid, "http_security_headers", "low", "fixed")      # 조치됨 — 미조치에서 빠짐
+        db.execute("INSERT INTO runs (target_id, module_id, started_at, status) VALUES (?, 'tech_fingerprint', 'x', 'done')", [tid])
+        db.commit()
+    return tid
+
+
+
+
+def test_findings_are_counted_once_by_their_first_kisa_code(app, typed):
+    from dashboard import routes
+    with app.test_request_context():
+        mods = routes._modules()
+        db = get_db()
+        bd = stats.breakdown(db, db.execute("SELECT * FROM targets").fetchall(), mods)
+    ow = {r["key"]: r for r in bd["owasp"]}
+    assert ow["A05"]["total"] == 2 and ow["A01"]["total"] == 1
+    assert bd["unclassified"]["total"] == 1
+    # 합이 미조치 전체와 맞아야 한다 — 두 번 세지 않는다
+    assert sum(r["total"] for r in bd["owasp"]) + bd["unclassified"]["total"] == 4
+    kisa = {r["code"]: r for r in bd["kisa"]}
+    assert kisa["SI"]["state"] == "found" and kisa["XS"]["found"] == 1 and kisa["FD"]["found"] == 1
+    # 돌렸는데 결과가 없으면 '점검·없음', 모듈이 없으면 '모듈 없음'
+    assert kisa["IL"]["state"] == "clear" and kisa["CF"]["state"] == "none"
+    assert ow["A03"]["state"] == "none"
+    status = {g["status"]: g["n"] for g in bd["status"]}
+    assert status == {"open": 4, "confirmed": 0, "fixed": 1, "false_positive": 0}
+    assert bd["modules"][0]["n"] == 1 and len(bd["modules"]) == 4
+
+
+def test_activity_totals(app, typed):
+    with app.app_context():
+        db = get_db()
+        act = stats.activity(db, db.execute("SELECT * FROM targets").fetchall())
+    assert act["findings"] == 5 and act["open"] == 4 and act["runs"] == 6 and act["modules_used"] == 6
+
+
+def test_results_page_shows_totals_and_breakdowns(client, typed):
+    page = client.get(f"/?target={typed}").get_data(as_text=True)
+    for word in ("전체 결과", "모듈 실행", "보낸 요청", "모은 엔드포인트",
+                 "취약점 유형별", "처리 상태별", "모듈별 발견", "21항목 점검 현황"):
+        assert word in page, word
+    assert 'class="kisa-cell cov-found"' in page and 'class="kisa-cell cov-none"' in page
+    assert "built-in method" not in page  # kisa_cover.clear 가 dict.clear 로 읽히던 실수

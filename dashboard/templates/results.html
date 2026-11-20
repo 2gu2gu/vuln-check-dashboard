@@ -12,13 +12,22 @@
 {% set ov = charts %}
 <section class="overview" aria-labelledby="ov-title">
   <div class="ov-head">
-    <h2 id="ov-title">점검 현황</h2>
-    <p class="ov-line">
-      미조치 <b>{{ ov.total }}</b>건
-      {% for s in ("critical", "high") %}<span class="ov-sep">·</span>{{ SEVERITY_LABEL[s] }} <b>{{ ov.totals[s] }}</b>{% endfor %}
-      <span class="ov-sep">·</span>검토 <b>{{ ov.reviewed_pct }}%</b>{% if ov.unreviewed %} <span class="sub">(미확인 {{ ov.unreviewed }}건)</span>{% endif %}
-      <span class="sub small">— 대상 {{ ov.rows | length }}곳, 연습용 제외</span>
-    </p>
+    <h2 id="ov-title">점검 현황 <span class="sub small">— 대상 {{ act.targets }}곳 합계, 연습용 제외</span></h2>
+  </div>
+  {# 맨 위 전체 숫자(11-20 사용자 요청). 왼쪽 셋은 '무엇이 남았나', 오른쪽 넷은 '얼마나 진단했나' #}
+  <div class="totals">
+    <div class="tot tot-main"><small>전체 결과</small><strong>{{ act.findings }}</strong>
+      <span class="sub small">미조치 {{ act.open }} · 검토 {{ ov.reviewed_pct }}%</span></div>
+    <div class="tot"><small>Critical · High</small><strong>{{ ov.totals.critical + ov.totals.high }}</strong>
+      <span class="sub small">Critical {{ ov.totals.critical }} · High {{ ov.totals.high }}</span></div>
+    <div class="tot"><small>KISA 21항목 중 발견</small><strong>{{ bd.kisa_cover["found"] }}<span class="unit"> / 21</span></strong>
+      <span class="sub small">점검·없음 {{ bd.kisa_cover["clear"] }} · 모듈 없음 {{ bd.kisa_cover["none"] }}</span></div>
+    <div class="tot tot-act"><small>모듈 실행</small><strong>{{ act.runs }}</strong>
+      <span class="sub small">모듈 {{ act.modules_used }}종</span></div>
+    <div class="tot tot-act"><small>보낸 요청</small><strong>{{ "{:,}".format(act.requests) }}</strong>
+      <span class="sub small">요청 기록에 남은 것</span></div>
+    <div class="tot tot-act"><small>모은 엔드포인트</small><strong>{{ act.endpoints }}</strong>
+      <span class="sub small">파라미터 {{ act.params }}</span></div>
   </div>
 
   <div class="chart-row">
@@ -62,6 +71,80 @@
       </ul>
     </figure>
   </div>
+
+  {# ── 유형·항목·상태·모듈별(11-20 사용자 요청: 위험도 말고 다른 항목으로도) ──
+     결과는 그 모듈의 첫 KISA 코드로 분류해 한 번만 센다. 0건 줄은 왜 0인지 적는다 —
+     '점검했는데 없음' 과 '점검할 모듈이 없음' 은 보고서에서 뜻이 전혀 다르다. #}
+  {% set st_label = {"found": "발견", "clear": "점검·없음", "ready": "모듈 있음·미실행", "none": "모듈 없음"} %}
+  <div class="chart-row">
+    <figure class="panel chart">
+      <figcaption>취약점 유형별 <span class="sub">— OWASP Top 10 2025, 미조치 건수</span></figcaption>
+      <div class="hstack">
+        {% for r in bd.owasp %}
+        <div class="hs-row hs-wide">
+          <span class="hs-name" title="{{ r.name }}"><b class="mono">{{ r.key }}</b> {{ r.name }}</span>
+          <div class="hs-track">
+            {% for g in r.segments %}
+            <span class="hs-seg sv-{{ g.severity }}" style="width: {{ g.pct }}%" title="{{ r.key }} · {{ SEVERITY_LABEL[g.severity] }} {{ g.n }}건">{{ g.n }}</span>
+            {% else %}<span class="cov cov-{{ r.state }}">{{ st_label[r.state] }}</span>{% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+        {% if bd.unclassified.total %}
+        <div class="hs-row hs-wide">
+          <span class="hs-name sub">분류 없음</span>
+          <div class="hs-track">{% for g in bd.unclassified.segments %}<span class="hs-seg sv-{{ g.severity }}" style="width: {{ g.pct }}%">{{ g.n }}</span>{% endfor %}</div>
+        </div>
+        {% endif %}
+      </div>
+      <ul class="legend">
+        {% for s in severities %}<li><i class="sw sv-{{ s }}" aria-hidden="true"></i>{{ SEVERITY_LABEL[s] }}</li>{% endfor %}
+      </ul>
+    </figure>
+
+    <div class="chart-stack">
+      <figure class="panel chart">
+        <figcaption>처리 상태별 <span class="sub">— 전체 결과</span></figcaption>
+        <div class="hs-track hs-thick">
+          {% for g in bd.status if g.n %}
+          <a class="hs-seg st-{{ g.status }}" style="width: {{ g.pct }}%" href="{{ url_for('dash.results', target=target.id, status=g.status) }}"
+             title="{{ g.label }} {{ g.n }}건">{{ g.n }}</a>
+          {% endfor %}
+        </div>
+        <ul class="legend">
+          {% for g in bd.status %}<li><i class="sw st-{{ g.status }}" aria-hidden="true"></i>{{ g.label }} <b>{{ g.n }}</b></li>{% endfor %}
+        </ul>
+      </figure>
+      <figure class="panel chart">
+        <figcaption>모듈별 발견 <span class="sub">— 미조치 상위</span></figcaption>
+        <div class="hstack">
+          {% for r in bd.modules %}
+          <div class="hs-row hs-wide">
+            <span class="hs-name" title="{{ r.name }}">{{ r.name }}</span>
+            <div class="hs-track"><span class="hs-bar" style="width: {{ r.pct }}%"></span><span class="hs-num">{{ r.n }}</span></div>
+          </div>
+          {% else %}<p class="sub small">아직 결과가 없습니다.</p>{% endfor %}
+        </div>
+      </figure>
+    </div>
+  </div>
+
+  <figure class="panel chart">
+    <figcaption>주요정보통신기반시설 웹 21항목 점검 현황
+      <span class="sub">— 발견 {{ bd.kisa_cover["found"] }} · 점검·없음 {{ bd.kisa_cover["clear"] }} · 모듈 있음·미실행 {{ bd.kisa_cover["ready"] }} · 모듈 없음 {{ bd.kisa_cover["none"] }}</span></figcaption>
+    <div class="kisa-grid">
+      {% for r in bd.kisa %}
+      <div class="kisa-cell cov-{{ r.state }}" title="{{ r.name }} — {{ st_label[r.state] }}{% if r.modules %}&#10;모듈: {{ r.modules | join(', ') }}{% endif %}">
+        <span class="kisa-code mono">{{ r.code }}</span>
+        <span class="kisa-name">{{ r.name }}</span>
+        <span class="kisa-val">{% if r.found %}<b>{{ r.found }}</b>건{% else %}{{ st_label[r.state] }}{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <ul class="legend">
+      {% for k in ("found", "clear", "ready", "none") %}<li><i class="sw cov-{{ k }}" aria-hidden="true"></i>{{ st_label[k] }}</li>{% endfor %}
+    </ul>
+  </figure>
 
   <figure class="panel chart">
     <figcaption>대상별 취약점 요약 <span class="sub">— 미조치 건수</span></figcaption>
