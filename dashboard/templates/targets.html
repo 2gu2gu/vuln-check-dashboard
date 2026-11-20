@@ -156,6 +156,15 @@
   <a class="by-tab {{ 'on' if args.get('state') == st }}" href="{{ surl({'state': st}) }}"><span class="st st-{{ st }}">{{ states[st] }}</span></a>
   {% endfor %}
   {% endif %}
+  {% if totals.shadow %}
+  {# 명세가 접두사를 빼먹어 같은 API 가 두 벌 들어온 것(11-21). 닿지 않는 쪽은 점검이 헛돈다 #}
+  <form method="post" action="{{ url_for('dash.surface_dedupe') }}" class="sf-gap inline">
+    {{ csrf_field() }}<input type="hidden" name="target_id" value="{{ picked.id }}">
+    <span class="sub small">같은 API 가 <b>{{ totals.shadow_prefix }}</b> 없이 한 벌 더 있습니다
+      ({{ totals.shadow }}개) — 그 주소는 화면 틀만 돌려줘 점검이 헛돕니다
+      <button class="btn ghost small" type="submit">겹치는 것 지우기</button></span>
+  </form>
+  {% endif %}
   {% if totals.hidden %}
   <span class="sub small sf-gap">없는 경로(404·가짜 200) {{ totals.hidden }}개 숨김{% if totals.hidden_params %}
     — 그 안에 고를 파라미터 {{ totals.hidden_params }}개(경로 틀 등)가 있습니다{% endif %} ·

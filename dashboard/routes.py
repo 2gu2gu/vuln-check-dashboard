@@ -309,6 +309,9 @@ def targets():
         groups, totals = _surface_of(picked, sort=request.args.get("sort", ""),
                                      state=request.args.get("state", ""), show_all=True)
         totals["opened_for_params"] = True
+    if picked:
+        totals["shadow_prefix"], shadow = shadow_points(picked["id"])
+        totals["shadow"] = len(shadow)
     point_counts = {row["target_id"]: {"pages": row["pages"], "params": row["params"]} for row in get_db().execute(
         "SELECT target_id, COUNT(DISTINCT CASE WHEN state NOT IN ('not_found', 'soft_404') THEN url END) AS pages, "
         "SUM(param != '') AS params FROM points GROUP BY target_id")}
@@ -903,6 +906,52 @@ def surface_probe():
                 + (f", 건너뜀 {skipped}" if skipped else ""))
     _execute_bg(mod, t, {**params, "points": len(points)}, call)
     return redirect(back)
+
+
+SHADOW_MIN = 5  # 이만큼 겹쳐야 '접두사를 빼먹은 것' 으로 본다 — 우연히 비슷한 주소 몇 개로는 안 지운다
+
+
+def shadow_points(tid):
+    """같은 API 가 접두사만 다르게 두 벌 들어온 것 → (접두사, 지울 지점 id 들).
+
+    명세의 servers 가 실제 접두사를 빼먹으면(새싹에듀는 `/backend`) 자동 수집이 **닿지 않는
+    주소** 를 등록한다. 그 주소는 화면 틀(SPA 껍데기)만 돌려줘 점검이 헛돈다 — 11-21 에
+    사용자 웹에서 44개가 그랬고, 거짓 양성이 줄줄이 나온 뿌리였다.
+
+    지우는 것은 **명세에서 온 것만** 이다. 링크·JS 로도 찾은 주소는 진짜 화면이라 그대로 둔다.
+    """
+    rows = get_db().execute("SELECT id, url, source FROM points WHERE target_id = ?", [tid]).fetchall()
+    paths = {urlsplit(r["url"]).path for r in rows}
+    best, best_n = "", 0
+    for p in paths:
+        head = p.strip("/").split("/")[0]
+        if not head:
+            continue
+        pre = "/" + head
+        n = sum(1 for q in paths if q.startswith(pre + "/") and q[len(pre):] in paths)
+        if n > best_n:
+            best, best_n = pre, n
+    if best_n < SHADOW_MIN:
+        return "", []
+    doomed = [r["id"] for r in rows
+              if r["source"] == "spec" and best + urlsplit(r["url"]).path in paths]
+    return best, doomed
+
+
+@bp.post("/surface/dedupe")
+def surface_dedupe():
+    """접두사를 빼먹어 두 벌이 된 주소 중 닿지 않는 쪽을 지운다."""
+    tid = request.form.get("target_id", type=int)
+    pre, doomed = shadow_points(tid)
+    if not doomed:
+        flash("겹치는 주소가 없습니다", "ok")
+        return redirect(_surface_url(tid))
+    db = get_db()
+    db.executemany("DELETE FROM points WHERE id = ?", [(i,) for i in doomed])
+    db.commit()
+    flash(f"{pre} 가 빠진 같은 주소 {len(doomed)}개를 지웠습니다 — 명세에서 온 것만 지웠고 "
+          f"링크·JS 로 찾은 화면은 그대로 둡니다", "ok")
+    return redirect(_surface_url(tid))
 
 
 @bp.post("/surface/clear")

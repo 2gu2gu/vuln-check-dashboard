@@ -448,3 +448,38 @@ def test_path_ids_cache_survives_a_round_trip_through_sqlite(monkeypatch):
     first = probe.path_ids(url, skip="")
     assert all(isinstance(k, str) and isinstance(v, str) for k, v in store.items())
     assert probe.path_ids(url, skip="") == first          # 두 번째는 고에서 읽는다
+
+
+def test_the_headline_number_says_what_it_counts(app, client):
+    """'전체 결과 292' 가 '취약점 292개' 로 읽혔다(11-21 사용자 지적).
+
+    센 단위(한 주소·한 항목이 1건)와 등급을 같이 적어야 숫자를 잘못 읽지 않는다.
+    """
+    from tests.test_app import add_target
+    add_target(client, "https://sesacedu.store", name="t")
+    html = client.get("/").get_data(as_text=True)
+    assert "점검에서 나온 건수" in html
+    assert "한 주소·한 항목이 1건" in html
+    assert "전체 결과</small>" not in html
+
+
+def test_false_positives_are_not_counted_as_vulnerabilities(app, client):
+    """오탐으로 표시한 것은 취약 수에서 빠져야 한다 — 표시해 두고 숫자에 넣으면 뜻이 없다."""
+    from dashboard import stats
+    from dashboard.db import get_db
+    from tests.test_app import add_target
+    add_target(client, "https://sesacedu.store", name="t")
+    with app.app_context():
+        db = get_db()
+        t = db.execute("SELECT * FROM targets").fetchone()
+        rid = db.execute("INSERT INTO runs (target_id, module_id, started_at, status) VALUES (?,?,?,?)",
+                         [t["id"], "m", "2026-11-21", "done"]).lastrowid
+        for i, (sev, st) in enumerate([("high", "open"), ("info", "open"), ("high", "false_positive")]):
+            db.execute("INSERT INTO findings (run_id, target_id, module_id, title, severity, location, evidence, "
+                       "recommendation, technique, status, created_at, last_seen) "
+                       "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                       [rid, t["id"], "m", f"t{i}", sev, f"/p{i}", "", "", "T1190", st, "2026-11-21", "2026-11-21"])
+        db.commit()
+        act = stats.activity(db, [t])
+    assert act["findings"] == 3 and act["info"] == 1 and act["false"] == 1
+    assert act["findings"] - act["info"] - act["false"] == 1       # 진짜 취약점은 하나다
