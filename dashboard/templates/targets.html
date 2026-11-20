@@ -233,6 +233,11 @@
             {% if gr.risk %}<span class="risk {{ 'r-hi' if gr.risk >= 30 else ('r-mid' if gr.risk >= 15 else 'r-lo') }}" title="위험 점수 0~100 — 이유는 '근거'">
               <i style="width: {{ gr.risk }}%"></i>위험 {{ gr.risk }}</span>{% endif %}
             <span class="sub small">{{ gr.params | length }}개 파라미터 · {% for s in gr.sources | sort %}{{ source_label.get(s, s) }}{{ ", " if not loop.last }}{% endfor %}</span>
+            {# 주소 단위 점검(보안 헤더·정보 노출)의 판정은 이 주소 줄에 붙는다 — 파라미터가 없어도 보여야 한다 #}
+            {% for c in gr.checks %}
+              {% if c.exchange_id %}<a class="vchip" href="{{ url_for('dash.history_detail', xid=c.exchange_id) }}" title="눌러서 요청·응답 보기&#10;{{ c.evidence }}">{{ verdict(c.verdict) }}<small>{{ c.module }} ↗</small></a>
+              {% else %}<span class="vchip" title="{{ c.evidence }}">{{ verdict(c.verdict) }}<small>{{ c.module }}</small></span>{% endif %}
+            {% endfor %}
           </div>
           {% set ev = (gr.ends | selectattr('ev') | list) %}
           {% if ev %}
