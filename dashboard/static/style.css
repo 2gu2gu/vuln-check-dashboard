@@ -931,7 +931,7 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
    정사각 칸을 가운데 모은다. 가로가 요일(월~일), 세로가 주차다. 주말 두 칸은 살짝 띄워 평일과 나눈다.
    작업량은 포인트색 한 색조 단계(--cal-1~4), 보고회 날은 먹(글자색), 오늘은 포인트색 테두리. ── */
 .cal-panel { align-items: stretch; }
-.cal { display: grid; grid-template-columns: 58px repeat(7, 34px); gap: 6px; align-items: center;
+.cal { display: grid; grid-template-columns: 58px repeat(5, 34px) 44px 34px; gap: 6px; align-items: center;
        justify-content: center; margin: 4px 0; }
 .cal-corner { display: block; }
 .cal-week { font-size: 12px; color: var(--sub); text-align: right; line-height: 1.15; padding-right: 8px;
@@ -940,7 +940,9 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
 .cal-week.now { color: var(--text); font-weight: 700; box-shadow: inset -2px 0 0 var(--accent); }
 .cal-wd { font-size: 11px; color: var(--sub); text-align: center; padding-bottom: 2px; }
 .cal-wd.we { color: var(--hit); opacity: .8; }
-.cal .sat { margin-left: 8px; }  /* 주말 두 칸을 평일과 살짝 띄운다 */
+/* 주말 두 칸을 평일과 띄운다 — 토 열을 넓히고 칸을 오른쪽에 붙인다. margin 으로 밀면 고정 폭 열을
+   넘어 일요일 칸과 겹쳤다(사용자 지적 11-20). */
+.cal .sat { justify-self: end; width: 34px; }
 .cal-day { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 7px;
            background: var(--cal-0); font-size: 11px; font-weight: 700; letter-spacing: -0.03em;
            transition: transform .12s ease; }
