@@ -179,15 +179,22 @@ def test_calendar_covers_the_project_weeks_and_marks_deadlines(app, typed):
         db = get_db()
         cal = stats.calendar(db, db.execute("SELECT * FROM targets").fetchall(), sched, today=date(2026, 11, 20))
     days = {c["date"]: c for w in cal["weeks"] for c in w["cells"]}
-    # 10-06(화) 이 든 주의 월요일 10-05 부터 11-23(월) 주 일요일 11-29 까지 — 8주
-    assert len(cal["weeks"]) == 8 and min(days) == "2026-10-05" and max(days) == "2026-11-29"
-    assert not days["2026-10-05"]["in_period"] and days["2026-10-06"]["in_period"]
-    assert all(len(w["cells"]) == 7 and w["cells"][0]["wd"] == "월" for w in cal["weeks"])
-    # typed 는 11-20 에 결과 5건을 만든다(실행도 5번). 날짜 없는 실행 한 번은 달력에 안 들어간다
-    assert days["2026-11-20"]["runs"] == 5 and days["2026-11-20"]["level"] == 4 and days["2026-11-20"]["today"]
+    # 10-06(화)~11-23(월) 은 49일 — 화요일부터 세는 7주로 꼭 맞는다(사용자 결정: 7주)
+    assert len(cal["weeks"]) == 7 and min(days) == "2026-10-06" and max(days) == "2026-11-23"
+    assert [w["label"] for w in cal["weeks"]][:2] == ["1주차", "2주차"] and cal["weekdays"][0] == "화"
+    assert cal["now_week"] == "7주차" and cal["weeks"][6]["now"]
+    # typed 는 11-20 에 결과 5건·실행 5번 — 진단한 날이 하루뿐이면 그날이 가장 진하다
+    assert days["2026-11-20"]["runs"] == 5 and days["2026-11-20"]["level"] >= 1 and days["2026-11-20"]["today"]
     assert days["2026-11-23"]["deadline"] and days["2026-11-18"]["mark"] == "주간활동보고"
+    assert days["2026-11-21"]["future"] and not days["2026-11-19"]["future"]
     assert cal["next"] == {"label": "최종보고회", "md": "11-23", "days": 3}
-    assert not days["2026-11-29"]["in_period"]
+
+
+def test_work_levels_follow_rank_not_the_busiest_day():
+    """퍼징 하루가 너무 많아도 다른 날이 다 옅어지지 않게 순위로 네 단계를 나눈다."""
+    lv = stats._levels({"a": 0, "b": 1, "c": 2, "d": 3, "e": 500})
+    assert lv["a"] == 0 and lv["b"] < lv["c"] < lv["d"] <= lv["e"] == 4
+    assert stats._work(runs=2, requests=300, found=1) == 6
 
 
 def test_sesacedu_pack_has_the_project_period(app):

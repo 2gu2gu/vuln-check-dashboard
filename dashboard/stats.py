@@ -147,10 +147,11 @@ def breakdown(db, targets, modules):
     }
 
 
-# ── 진단 일정(11-20 추가): 날짜·요일별 진단 활동을 GitHub 잔디처럼 색 농도로 ──
+# ── 진단 일정(11-20 추가): 프로젝트 주차·요일별 진단 활동을 GitHub 잔디처럼 색 농도로 ──
 #
-# 한 칸이 하루, 세로가 요일(월~일), 가로가 주다. 색이 진할수록 그날 모듈을 많이 돌렸다.
-# 기간은 프로젝트 팩의 PROJECT["schedule"] 에서 온다. 마감일(보고회 등)과 매주 반복 일정은 테두리로 표시한다.
+# 한 칸이 하루, 가로가 주차(1주차~), 세로가 요일이다. 주는 프로젝트 시작 요일부터 센다 —
+# 새싹에듀는 10-06(화)~11-23(월) 49일이라 화~월 7주로 꼭 맞는다(사용자 결정 11-20: 7주).
+# 기간은 프로젝트 팩의 PROJECT["schedule"] 에서 온다. 마감일과 매주 반복 일정은 테두리로 표시한다.
 # 시각은 KST ISO 로 저장돼 있어(core.now_iso) 앞 10글자가 곧 KST 날짜다.
 
 from datetime import date, timedelta  # noqa: E402
@@ -163,56 +164,70 @@ def _daily(db, sql, ids):
     return {r[0]: r[1] for r in db.execute(sql.format(m=m), ids)}
 
 
-def calendar(db, targets, schedule=None, today=None):
+def _work(runs, requests, found):
+    """그날 작업량 한 숫자. 모듈 실행을 기본으로, 결과와 요청을 조금씩 얹는다.
+    퍼징 하루가 요청 수천 개라 요청을 그대로 더하면 다른 날이 다 옅어진다 — 100개를 실행 1번으로 친다."""
+    return runs + found + requests / 100
+
+
+def _levels(scores):
+    """GitHub 잔디처럼 활동한 날끼리 4단계로 나눈다(사분위). 가장 많은 날 하나 때문에
+    나머지가 다 옅어지지 않게, 최댓값 비율이 아니라 순위로 나눈다."""
+    vals = sorted(v for v in scores.values() if v > 0)
+    if not vals:
+        return {}
+    cut = [vals[int((len(vals) - 1) * q)] for q in (0.25, 0.5, 0.75)]
+    return {k: (0 if v <= 0 else 1 + sum(v > c for c in cut)) for k, v in scores.items()}
+
+
+def calendar(db, targets, schedule=None, today=None, weeks_n=None):
     today = today or date.today()
     schedule = schedule or {}
-    start = date.fromisoformat(schedule["start"]) if schedule.get("start") else today - timedelta(weeks=7)
     end = date.fromisoformat(schedule["end"]) if schedule.get("end") else today
-    first = start - timedelta(days=start.weekday())          # 그 주 월요일부터
-    last = end + timedelta(days=6 - end.weekday())           # 그 주 일요일까지
+    start = date.fromisoformat(schedule["start"]) if schedule.get("start") else end - timedelta(days=48)
+    weeks_n = weeks_n or schedule.get("weeks") or -(-((end - start).days + 1) // 7)
 
     ids = [t["id"] for t in targets]
     day = "substr({col}, 1, 10)"
     runs = _daily(db, f"SELECT {day.format(col='started_at')} d, COUNT(*) FROM runs WHERE target_id IN ({{m}}) GROUP BY d", ids)
     reqs = _daily(db, f"SELECT {day.format(col='created_at')} d, COUNT(*) FROM exchanges WHERE target_id IN ({{m}}) GROUP BY d", ids)
     found = _daily(db, f"SELECT {day.format(col='created_at')} d, COUNT(*) FROM findings WHERE target_id IN ({{m}}) GROUP BY d", ids)
+    days = [start + timedelta(days=i) for i in range(weeks_n * 7)]
+    scores = {d.isoformat(): _work(runs.get(d.isoformat(), 0), reqs.get(d.isoformat(), 0), found.get(d.isoformat(), 0))
+              for d in days}
+    level = _levels(scores)
 
     marks = {m["date"]: m["label"] for m in schedule.get("marks", [])}
     weekly = schedule.get("weekly") or {}
-    busiest = max(runs.values(), default=0)
-
-    def level(n):
-        if not n:
-            return 0
-        # 가장 많이 돌린 날을 4 로 놓고 네 단계로 나눈다 — 하루 한 번도 1 단계로 보이게 올림한다
-        return min(4, max(1, -(-n * 4 // busiest)))
-
-    weeks, d = [], first
-    while d <= last:
-        week = []
-        for _ in range(7):
+    weeks = []
+    for w in range(weeks_n):
+        cells = []
+        for d in days[w * 7:(w + 1) * 7]:
             key = d.isoformat()
             label = marks.get(key, "")
-            if not label and weekly and d.weekday() == weekly.get("weekday") and start <= d <= end:
+            if not label and weekly and d.weekday() == weekly.get("weekday"):
                 label = weekly.get("label", "")
-            week.append({
+            cells.append({
                 "date": key, "md": d.strftime("%m-%d"), "wd": WEEKDAYS[d.weekday()],
                 "runs": runs.get(key, 0), "requests": reqs.get(key, 0), "found": found.get(key, 0),
-                "level": level(runs.get(key, 0)), "in_period": start <= d <= end,
+                "level": level.get(key, 0), "in_period": d <= end, "future": d > today,
                 "mark": label, "deadline": key in marks, "today": d == today,
             })
-            d += timedelta(days=1)
-        weeks.append({"cells": week, "month": week[0]["date"][5:7] if week[0]["date"][8:10] <= "07" or not weeks else ""})
+        first = days[w * 7]
+        weeks.append({"cells": cells, "label": f"{w + 1}주차", "from": first.strftime("%m/%d"),
+                      "now": first <= today < first + timedelta(days=7)})
 
-    active = [c for w in weeks for c in w["cells"] if c["runs"]]
-    top = max(active, key=lambda c: c["runs"], default=None)
+    active = [c for w in weeks for c in w["cells"] if c["level"]]
+    top = max(active, key=lambda c: scores[c["date"]], default=None)
     upcoming = sorted((k, v) for k, v in marks.items() if k >= today.isoformat())
     nxt = None
     if upcoming:
         k, v = upcoming[0]
         nxt = {"label": v, "md": k[5:], "days": (date.fromisoformat(k) - today).days}
+    now_week = next((w["label"] for w in weeks if w["now"]), "")
     return {
-        "weeks": weeks, "weekdays": WEEKDAYS, "start": start.isoformat(), "end": end.isoformat(),
+        "weeks": weeks, "weekdays": [weeks[0]["cells"][i]["wd"] for i in range(7)] if weeks else [],
+        "start": start.isoformat(), "end": end.isoformat(), "weeks_n": weeks_n, "now_week": now_week,
         "active_days": len(active), "top": top, "next": nxt,
-        "total_runs": sum(runs.get(c["date"], 0) for w in weeks for c in w["cells"]),
+        "total_runs": sum(c["runs"] for w in weeks for c in w["cells"]),
     }

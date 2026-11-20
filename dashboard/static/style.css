@@ -773,15 +773,18 @@ html { scroll-behavior: smooth; }
 .kisa-cell.cov-found .kisa-val { color: var(--text); }
 .kisa-cell.cov-found .kisa-val b { font-size: 15px; }
 
-/* ── 진단 일정: 날짜·요일별 활동(GitHub 잔디처럼). 초록 한 색조 단계 --cal-1~4, dataviz 검사(--ordinal) 밝은·어두운 화면 통과 ── */
-.cal { display: grid; grid-template-columns: 22px repeat(var(--weeks), 28px); gap: 5px; align-items: center; justify-content: start; }
+/* ── 진단 일정: 주차 × 요일(GitHub 잔디처럼). 초록 한 색조 단계 --cal-1~4, dataviz 검사(--ordinal) 밝은·어두운 화면 통과.
+   앞으로 올 날은 점선 칸으로 비워 둔다 — '안 한 날' 과 '아직 안 온 날' 이 같은 회색이면 헷갈린다. ── */
+.cal { display: grid; grid-template-columns: 22px repeat(var(--weeks), minmax(0, 1fr)); gap: 5px; align-items: center; }
 .cal-corner { display: block; }
-.cal-month { font-size: 11px; color: var(--sub); white-space: nowrap; }
+.cal-week { font-size: 12px; font-weight: 600; text-align: center; line-height: 1.2; padding-bottom: 2px; }
+.cal-week small { display: block; font-size: 10px; font-weight: 400; color: var(--sub); }
+.cal-week.now { color: var(--accent); }
 .cal-wd { font-size: 11px; color: var(--sub); }
-.cal-day { display: block; width: 28px; height: 28px; border-radius: 5px; background: var(--cal-0); }
+.cal-day { display: block; height: 22px; border-radius: 4px; background: var(--cal-0); }
 .cal-day.lv-1 { background: var(--cal-1); } .cal-day.lv-2 { background: var(--cal-2); }
 .cal-day.lv-3 { background: var(--cal-3); } .cal-day.lv-4 { background: var(--cal-4); }
-.cal-day.out { opacity: .35; }
+.cal-day.future { background: transparent; border: 1px dashed var(--line); }
 .cal-day.mark { box-shadow: inset 0 0 0 2px var(--sv-medium); }
 .cal-day.deadline { box-shadow: inset 0 0 0 2px var(--sv-critical); }
 .cal-day.today { outline: 2px solid var(--text); outline-offset: 1px; }
@@ -789,3 +792,4 @@ html { scroll-behavior: smooth; }
 .cal-legend { display: inline-flex; align-items: center; gap: 4px; }
 .cal-legend .cal-day { width: 12px; height: 12px; border-radius: 3px; }
 .cal-legend .sub { margin: 0 4px; }
+.cal-note { margin: -6px 0 0; }
