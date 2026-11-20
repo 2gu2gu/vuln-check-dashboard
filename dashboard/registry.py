@@ -72,6 +72,7 @@ class ProjectInfo:
     roles: dict = field(default_factory=dict)  # {역할 id: {"name": 보일 이름, "scope": [허용 범위]}}
     # 화면에서는 이것을 '점검 대상' 이라고 부른다(2026-11-06). 코드·DB 이름은 role 로 둔다.
     login: dict = field(default_factory=dict)  # 로그인해서 토큰 받는 법(서비스마다 다르다)
+    schedule: dict = field(default_factory=dict)  # 프로젝트 기간·마감일(결과 탭 '진단 일정')
 
     def role_name(self, role: str) -> str:
         return self.roles.get(role, {}).get("name", role)
@@ -212,7 +213,7 @@ def discover_projects(package_name: str = "projects"):
             projects[pid] = ProjectInfo(id=pid, name=meta["name"], scope=[h.lower() for h in meta["scope"]],
                                         description=meta.get("description", ""), source=source,
                                         roles=_norm_roles(meta.get("roles", {})),
-                                        login=meta.get("login") or {})
+                                        login=meta.get("login") or {}, schedule=meta.get("schedule") or {})
         except Exception as e:  # noqa: BLE001
             errors.append((source, str(e)))
             continue
