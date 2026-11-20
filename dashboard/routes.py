@@ -3,10 +3,10 @@ import re
 import sqlite3
 from urllib.parse import urlsplit
 
-from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
+from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify, redirect,
                    render_template, request, url_for)
 
-from . import board, cvss, discovery as dv, grouping, jobs, login as login_mod, needs, runfiles, scope, wordlists
+from . import board, campaign, cve, cvss, discovery as dv, grouping, jobs, login as login_mod, needs, runfiles, scope, stats, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -107,7 +107,10 @@ def results():
         "cvss": _rate(r["cvss_vector"] if "cvss_vector" in r.keys() else "",
                       mods.get(r["module_id"])),
     } for r in rows]
-    return render_template("results.html", target=target, targets=targets, findings=data,
+    # 위쪽 '점검 현황'(11-20): 보고서 자동화 툴과 같은 그림 세 가지. 연습용은 뺀다
+    db = get_db()
+    charts = stats.overview(db, [t for t in targets if not _is_practice(t)]) if target else None
+    return render_template("results.html", target=target, targets=targets, findings=data, charts=charts,
                            counts=counts, modules=_modules_for(target), severities=SEVERITIES,
                            args=request.args, cvss_metrics=cvss.METRICS)
 
@@ -264,10 +267,13 @@ def targets():
     header_text = {row["id"]: (row["headers"] or "") for row in targets}
     # 표면 탭을 여기로 합쳤다(11-20 사용자 결정). 대상을 누르면 그 대상이 모은
     # 페이지·파라미터와 지점 점검이 목록 아래에 뜬다.
-    sort = request.args.get("sort", "")
-    groups, totals = _surface_of(target, sort=sort, state=request.args.get("state", ""),
+    # ?target= 로 누른 대상만 펼친다. 처음 열면 목록만 보인다.
+    picked = target if request.args.get("target", type=int) and target else None
+    groups, totals = _surface_of(picked, sort=request.args.get("sort", ""), state=request.args.get("state", ""),
                                  show_all=request.args.get("show") == "all")
-    return render_template("targets.html", target=target, targets=targets,
+    point_counts = {row["target_id"]: {"pages": row["pages"], "params": row["params"]} for row in get_db().execute(
+        "SELECT target_id, COUNT(DISTINCT url) AS pages, SUM(param != '') AS params FROM points GROUP BY target_id")}
+    return render_template("targets.html", target=target, targets=targets, picked=picked, point_counts=point_counts,
                            header_names=names, header_text=header_text, logins=logins,
                            groups=groups, totals=totals, probes=_probe_modules(target),
                            collectors=[m for m in _modules_for(target).values() if m.stage == "collect"],
@@ -962,9 +968,8 @@ def history_detail(xid):
 
 # ── ATT&CK · 시나리오 · 보고서 ───────────────────────────────
 
-@bp.get("/attack")
-def attack():
-    target, targets = _current_target()
+def _attack_columns(target):
+    """ATT&CK 매트릭스 — 전술 14개 열, 칸은 모듈이 다루는 기법."""
     hit = set()
     if target:
         hit = {r["technique"] for r in get_db().execute(
@@ -981,22 +986,141 @@ def attack():
                                                              "url": technique_url(a["technique"])})
                     cell["modules"].append(mod.name)
         columns.append({"id": tid, "en": en, "ko": ko, "cells": list(cells.values())})
-    return render_template("attack.html", columns=columns, target=target, targets=targets)
+    return columns
+
+
+@bp.get("/attack")
+def attack():
+    """옛 ATT&CK 탭 주소. 수사보드 페이지의 매트릭스 탭으로 보낸다."""
+    return redirect(url_for("dash.scenario", target=request.args.get("target", type=int)) + "#matrix")
 
 
 @bp.get("/scenario")
 def scenario():
+    """수사보드와 ATT&CK 매트릭스를 한 페이지의 두 탭으로 보여 준다.
+
+    수사보드 탭은 왼쪽이 후보(관찰한 버전·CVE·결과·제안 모듈), 오른쪽이 팀이 고른 캠페인 보드다.
+    """
     target, targets = _current_target()
-    rows, head = [], {}
+    rows, head, cands, camps, current = [], {}, None, [], None
     if target:
-        found = get_db().execute(
+        db = get_db()
+        found = db.execute(
             "SELECT * FROM findings WHERE target_id = ? AND status IN ('open', 'confirmed') "
             "ORDER BY " + SEVERITY_ORDER_SQL, [target["id"]]).fetchall()
         rows = board.build(found, list(_modules_for(target).values()), _technique_tactic(),
                            lambda m: module_needs(m, target))
         head = board.summary(rows)
-    return render_template("scenario.html", rows=rows, head=head, target=target, targets=targets,
-                           all_modules=_modules())
+        cands = cve.candidates(db, target, found, current_app.config["PROJECTS_PKG"])
+        camps = campaign.for_target(db, target["id"])
+        want = request.args.get("campaign", type=int)
+        pick = next((c for c in camps if c["id"] == want), camps[-1] if camps else None)
+        current = campaign.state(db, pick["id"]) if pick else None
+    return render_template("scenario.html", rows=rows, head=head, columns=_attack_columns(target),
+                           cands=cands, campaigns=camps, current=current, tactics=TACTICS,
+                           target=target, targets=targets, all_modules=_modules())
+
+
+# ── 캠페인 보드 ─────────────────────────────────────────────
+# 화면의 끌어다 놓기·잇기는 JS 가 아래 주소로 보내고, 돌아온 캠페인 상태(JSON)로 다시 그린다.
+
+def _campaign_or_404(cid):
+    c = get_db().execute("SELECT * FROM campaigns WHERE id = ?", [cid]).fetchone()
+    return c or abort(404)
+
+
+def _board_url(tid, cid=None):
+    return url_for("dash.scenario", target=tid, campaign=cid) + "#board"
+
+
+@bp.post("/campaigns")
+def campaign_create():
+    tid = request.form.get("target_id", type=int)
+    get_db().execute("SELECT id FROM targets WHERE id = ?", [tid]).fetchone() or abort(404)
+    name = request.form.get("name", "").strip()
+    if not name:
+        flash("캠페인 이름을 적으세요", "error")
+        return redirect(_board_url(tid))
+    cid = campaign.create(get_db(), tid, name, request.form.get("goal", ""))
+    return redirect(_board_url(tid, cid))
+
+
+@bp.post("/campaigns/<int:cid>/delete")
+def campaign_delete(cid):
+    c = _campaign_or_404(cid)
+    campaign.delete(get_db(), cid)
+    flash(f"캠페인 '{c['name']}' 을 지웠습니다", "ok")
+    return redirect(_board_url(c["target_id"]))
+
+
+def _campaign_json(cid, fn):
+    """캠페인을 바꾸는 요청 공통: 바꾸고 새 상태를 돌려준다. 틀린 값은 400 과 이유."""
+    _campaign_or_404(cid)
+    db = get_db()
+    try:
+        fn(db)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except LookupError:
+        abort(404)
+    return jsonify(campaign.state(db, cid))
+
+
+@bp.post("/campaigns/<int:cid>/nodes")
+def campaign_node_add(cid):
+    f = request.form
+    return _campaign_json(cid, lambda db: campaign.add_node(
+        db, cid, f.get("kind", ""), f.get("tactic", ""), f.get("title", ""), ref=f.get("ref", ""),
+        sub=f.get("sub", ""), status=f.get("status", ""), note=f.get("note", "")))
+
+
+@bp.post("/campaigns/<int:cid>/nodes/<int:nid>")
+def campaign_node_update(cid, nid):
+    f = request.form
+    return _campaign_json(cid, lambda db: campaign.update_node(
+        db, cid, nid, tactic=f.get("tactic"), status=f.get("status"), note=f.get("note"), title=f.get("title")))
+
+
+@bp.post("/campaigns/<int:cid>/nodes/<int:nid>/delete")
+def campaign_node_delete(cid, nid):
+    return _campaign_json(cid, lambda db: campaign.delete_node(db, cid, nid))
+
+
+@bp.post("/campaigns/<int:cid>/edges")
+def campaign_edge_add(cid):
+    f = request.form
+    return _campaign_json(cid, lambda db: campaign.add_edge(
+        db, cid, f.get("src", type=int), f.get("dst", type=int), f.get("label", "")))
+
+
+@bp.post("/campaigns/<int:cid>/edges/<int:eid>")
+def campaign_edge_update(cid, eid):
+    return _campaign_json(cid, lambda db: campaign.update_edge(db, cid, eid, request.form.get("label", "")))
+
+
+@bp.post("/campaigns/<int:cid>/edges/<int:eid>/delete")
+def campaign_edge_delete(cid, eid):
+    return _campaign_json(cid, lambda db: campaign.delete_edge(db, cid, eid))
+
+
+@bp.post("/cve/nvd")
+def cve_nvd():
+    """관찰한 버전으로 NVD 를 묻는다. 대상이 아니라 services.nvd.nist.gov 로 나가는 요청이라 버튼으로만."""
+    tid = request.form.get("target_id", type=int)
+    db = get_db()
+    db.execute("SELECT id FROM targets WHERE id = ?", [tid]).fetchone() or abort(404)
+    found = db.execute("SELECT * FROM findings WHERE target_id = ? AND status != 'false_positive'", [tid]).fetchall()
+    observed = cve.observe(found)
+    if not observed:
+        flash("버전이 보이는 결과가 없습니다. '서버 정보 노출' 모듈을 먼저 돌리세요", "error")
+        return redirect(_board_url(tid, request.form.get("campaign", type=int)))
+    asked, failed = cve.refresh(db, observed, fetch=current_app.config.get("NVD_FETCH") or cve.fetch_nvd,
+                                pause=current_app.config.get("NVD_PAUSE_S", cve.NVD_PAUSE_S))
+    if failed:
+        flash(f"NVD 조회 {asked}건 중 {len(failed)}건 실패 — {failed[0][1]}", "error")
+    else:
+        flash(f"NVD 에서 제품 {len(observed)}개({asked}건)를 찾았습니다", "ok")
+    return redirect(_board_url(tid, request.form.get("campaign", type=int)))
 
 
 @bp.get("/help", endpoint="help")

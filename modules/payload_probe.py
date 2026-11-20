@@ -17,6 +17,7 @@ META = {
     "id": "payload_probe",
     "name": "사전으로 입력값 넣어 보기",
     "category": "입력 검증",
+    "kisa": ["XS", "SI"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
     "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
     "kind": "active",
     "stage": "probe",

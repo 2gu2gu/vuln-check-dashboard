@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 from .attack import TACTIC_ORDER
 from .core import SEVERITIES
+from . import standards
 
 REQUIRED = ("id", "name", "category", "kind", "attack", "description")
 KINDS = ("passive", "active")
@@ -45,6 +46,12 @@ class ModuleInfo:
     needs: list = field(default_factory=list)  # 실행 전에 미리 준비해야 하는 것(토큰·환경변수 등)
     cvss: str = ""  # 이 모듈이 찾는 것의 전형적인 CVSS 벡터(제안값 — 사람이 고쳐 쓴다)
     vuln: str = "기타"  # 노션 '웹 서비스 취약점 목록' 의 취약점 유형
+    kisa: list = field(default_factory=list)  # 주요정보통신기반시설 웹 항목 코드(standards.KISA)
+
+    @property
+    def owasp(self) -> list:
+        """OWASP Top 10 2025 키. kisa 코드에서 정해진다."""
+        return standards.owasp_of(self.kisa)
 
     @property
     def stage_label(self) -> str:
@@ -181,6 +188,7 @@ def discover(package_name: str = "modules", project: str = ""):
                 stage=meta.get("stage", "check"), severity=meta.get("severity", "medium"),
                 roles=meta.get("roles", []), needs=needs_mod.validate(meta.get("needs")),
                 cvss=_check_cvss(meta.get("cvss", "")), vuln=_check_vuln(meta.get("vuln", "")),
+                kisa=standards.check_kisa(meta.get("kisa")),
             )
         except Exception as e:  # noqa: BLE001 — 깨진 모듈은 화면에 오류로 보여 준다
             errors.append((source, str(e)))

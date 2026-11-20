@@ -84,6 +84,40 @@ CREATE TABLE IF NOT EXISTS point_checks (
     checked_at TEXT NOT NULL,
     PRIMARY KEY (point_id, module_id)
 );
+-- 수사보드 캠페인: 팀이 고른 노드를 전술 열에 놓고 선으로 잇는다(dashboard/campaign.py)
+CREATE TABLE IF NOT EXISTS campaigns (
+    id INTEGER PRIMARY KEY,
+    target_id INTEGER NOT NULL REFERENCES targets(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    goal TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS campaign_nodes (
+    id INTEGER PRIMARY KEY,
+    campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    ref TEXT NOT NULL DEFAULT '',
+    tactic TEXT NOT NULL,
+    title TEXT NOT NULL,
+    sub TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS campaign_edges (
+    id INTEGER PRIMARY KEY,
+    campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    src INTEGER NOT NULL REFERENCES campaign_nodes(id) ON DELETE CASCADE,
+    dst INTEGER NOT NULL REFERENCES campaign_nodes(id) ON DELETE CASCADE,
+    label TEXT NOT NULL DEFAULT '',
+    UNIQUE (src, dst)
+);
+-- NVD 조회 결과. 버튼을 누를 때만 채운다(dashboard/cve.py)
+CREATE TABLE IF NOT EXISTS nvd_cache (
+    cpe TEXT PRIMARY KEY,
+    body TEXT NOT NULL,
+    fetched_at TEXT NOT NULL
+);
 """
 
 STATUSES = {"open": "미확인", "confirmed": "확인됨", "fixed": "조치됨", "false_positive": "오탐"}
