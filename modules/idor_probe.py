@@ -51,6 +51,9 @@ _REC = ("자원을 돌려주기 전에 **토큰의 사용자 번호와 자원의
         "번호를 추측하기 어렵게 만드는 것(UUID)은 보조 수단일 뿐 권한 검증을 대신하지 않습니다.")
 
 NUMBER = re.compile(r"^\d{1,12}$")
+# 표본 값이 없는 지점(API 명세에서 온 /mypage/buy/history/{orderId} 같은 것)에서 기준이 될 번호를 찾는다.
+# 11-21 실측: 사용자 웹의 orderId·aid·qid·iqid·sid 가 전부 표본 없이 들어와 10개가 통째로 건너뛰어졌다.
+LOOKUP = ["1", "2", "3", "103", "123"]
 UUIDISH = re.compile(r"^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$", re.I)
 MIN_BODY = 40  # 이보다 짧은 응답은 견줄 내용이 없다고 본다
 OPEN = range(200, 300)
@@ -90,18 +93,37 @@ def _same_body(a, b) -> bool:
     return a.status == b.status and a.body == b.body
 
 
+def _baseline(point, lad):
+    """기준이 될 번호를 찾는다 → (번호, 응답). 표본이 없으면 몇 개 넣어 보고 내용이 오는 것을 고른다."""
+    s = (point.sample or "").strip()
+    if NUMBER.match(s) or UUIDISH.match(s):
+        return s, probe.send(point, s)
+    if point.place != "path":
+        return "", None
+    for guess in LOOKUP:
+        r = probe.send(point, guess)
+        lad.note("screen", f"기준 번호 찾기({guess}): → {r.status} · {len(r.body)}B")
+        if r.status in OPEN and len(r.body) >= MIN_BODY:
+            lad.note("screen", f"{guess} 이 내용을 돌려줌 — 이것을 기준으로 삼는다")
+            return guess, r
+    return "", None
+
+
 def run(target, points, params):
     other = parse_line(params.get("other_auth"))
     out = []
     for p in points:
         if p.method != "GET":
             continue
-        shots = targets_of(p.sample)
+        lad = probe.Ladder(p)
+        base, r0 = _baseline(p, lad)
+        if not base:
+            # 번호 자리가 아니거나(keyword 같은 이름) 어떤 번호로도 내용이 안 온다
+            continue
+        shots = targets_of(base)
         if not shots:
             continue
-        lad = probe.Ladder(p)
-        r0 = probe.send(p, p.sample)
-        lad.note("screen", f"원래 값: {probe.request_line(p, p.sample)} → {r0.status} · {len(r0.body)}B")
+        lad.note("screen", f"원래 값: {probe.request_line(p, base)} → {r0.status} · {len(r0.body)}B")
         if r0.status not in OPEN or len(r0.body) < MIN_BODY:
             lad.note("screen", "원래 값으로도 내용이 오지 않음 — 견줄 것이 없음(후보 제외)")
         else:
@@ -118,7 +140,7 @@ def run(target, points, params):
                 lad.note("basic", "바꿔 본 번호는 열리지 않거나 같은 화면 — 번호로 남의 자원을 집지는 못함")
             # ③ 심화 — 다른 계정 토큰으로 원래 번호
             if other:
-                o = _send_as(p, p.sample, other)
+                o = _send_as(p, base, other)
                 lad.note("deep", f"다른 계정으로 원래 값: → {o.status} · {len(o.body)}B")
                 if o.status in OPEN and _same_body(r0, o):
                     lad.hit("deep", o, "남의 자원 접근(IDOR) — 다른 계정 토큰으로 같은 자원이 열림",
@@ -131,7 +153,7 @@ def run(target, points, params):
                 lad.note("deep", "다른 계정 토큰이 없어 확정하지 못함 — ③ 칸에 넣으면 취약·안전이 갈린다")
             # ④ 우회 — 인증을 떼고
             if not lad.done:
-                a = _send_as(p, p.sample, None)
+                a = _send_as(p, base, None)
                 lad.note("bypass", f"인증 없이 원래 값: → {a.status} · {len(a.body)}B")
                 if a.status in OPEN and len(a.body) >= MIN_BODY and _same_body(r0, a):
                     lad.hit("bypass", a, "인증 없이 자원이 열림", "인증 헤더를 떼도 같은 응답이 왔다")
