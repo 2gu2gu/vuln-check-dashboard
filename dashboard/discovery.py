@@ -19,11 +19,13 @@ from dataclasses import dataclass, field
 from urllib.parse import parse_qsl, urljoin, urlsplit, urlunsplit
 
 # 근거별 신뢰도 — 같은 후보가 여러 곳에서 나오면 합쳐서 올라간다
-SOURCE_CONFIDENCE = {"spec": 0.95, "form": 0.9, "link": 0.9, "meta": 0.6, "js": 0.5, "manifest": 0.6}
+SOURCE_CONFIDENCE = {"har": 0.99, "spec": 0.95, "form": 0.9, "link": 0.9, "meta": 0.6, "js": 0.5,
+                     "manifest": 0.6, "guess": 0.15}
 SOURCE_LABEL = {"link": "링크", "form": "폼", "js": "JS", "spec": "API 명세", "meta": "robots·sitemap",
-                "manifest": "화면 경로표"}
-# 메서드를 무엇으로 알았나
-METHOD_BASIS = {"link": "선언", "form": "선언", "spec": "선언", "meta": "선언", "manifest": "선언", "js": "추정"}
+                "manifest": "화면 경로표", "har": "HAR(관찰)", "guess": "예측", "mine": "숨은 파라미터"}
+# 메서드를 무엇으로 알았나 — HAR 는 브라우저가 실제로 보낸 것이라 '관찰'
+METHOD_BASIS = {"link": "선언", "form": "선언", "spec": "선언", "meta": "선언", "manifest": "선언", "js": "추정",
+                "har": "관찰", "guess": "추정"}
 
 STATES = {
     "exists": "있음", "auth_required": "인증 필요", "method_mismatch": "메서드 안 맞음",
@@ -61,8 +63,9 @@ class Candidate:
         return urlsplit(self.url).path or "/"
 
     def basis(self):
-        """메서드를 무엇으로 알았는지 — 선언이 하나라도 있으면 선언."""
-        return "선언" if any(METHOD_BASIS.get(s) == "선언" for s in self.sources) else "추정"
+        """메서드를 무엇으로 알았는지 — 관찰(HAR) > 선언(HTML·명세) > 추정(JS·예측)."""
+        kinds = {METHOD_BASIS.get(s) for s in self.sources}
+        return "관찰" if "관찰" in kinds else ("선언" if "선언" in kinds else "추정")
 
     def confidence(self):
         miss = 1.0
@@ -479,6 +482,189 @@ class Verifier:
             c.state = "server_error"
         elif 200 <= sc < 300 or sc in (400, 422):
             c.state = "exists"
+
+
+# ── HAR(브라우저·Burp 가 실제로 보낸 요청) ──────────────────────
+
+# 브라우저가 늘 붙이는 헤더는 파라미터가 아니다. 앱이 따로 붙인 헤더(X-…)만 남긴다
+_STD_HEADERS = {"host", "connection", "content-length", "content-type", "accept", "accept-encoding",
+                "accept-language", "user-agent", "referer", "origin", "cookie", "authorization", "cache-control",
+                "pragma", "upgrade-insecure-requests", "if-none-match", "if-modified-since", "dnt", "te", "priority"}
+
+
+def _observed_state(status):
+    if not status:
+        return "unverified"
+    if status in (401, 403):
+        return "auth_required"
+    if status in (404, 410):
+        return "not_found"
+    if status == 405:
+        return "method_mismatch"
+    if status >= 500:
+        return "server_error"
+    if 300 <= status < 400:
+        return "redirect"
+    return "exists"
+
+
+def parse_har(text, base_url, reg):
+    """HAR(JSON) → 후보 수. 대상 호스트의 요청만, 정적 파일은 뺀다.
+
+    쿼리·폼·JSON 본문 키·앱 전용 헤더를 파라미터로 남기고, 응답 코드를 그대로 상태로 쓴다
+    (실제로 오간 것이라 다시 확인할 필요가 없다).
+    """
+    doc = load_json(text)
+    if doc is None:
+        raise ValueError("HAR 는 JSON 이어야 합니다 — 개발자도구 네트워크 탭의 'HAR 로 저장' 파일 내용을 붙여 넣으세요")
+    entries = ((doc.get("log") or {}).get("entries")) if isinstance(doc, dict) else None
+    if not isinstance(entries, list):
+        raise ValueError("HAR 에 log.entries 가 없습니다")
+    host = urlsplit(base_url).netloc
+    n = 0
+    for e in entries:
+        req = (e or {}).get("request") or {}
+        url, method = req.get("url") or "", (req.get("method") or "GET").upper()
+        s = urlsplit(url)
+        if s.netloc != host or method == "OPTIONS" or STATIC_EXT.search(s.path) or SCRIPT_EXT.search(s.path):
+            continue
+        params = {}
+        post = req.get("postData") or {}
+        mime = (post.get("mimeType") or "").lower()
+        if "json" in mime:
+            body = load_json(post.get("text") or "")
+            if isinstance(body, dict):
+                for k, v in body.items():
+                    params[str(k)] = ("json", v if isinstance(v, (str, int, float)) else "")
+        elif post:
+            pairs = [(p.get("name"), p.get("value", "")) for p in post.get("params") or []] \
+                or parse_qsl(post.get("text") or "", keep_blank_values=True)
+            for k, v in pairs:
+                if k:
+                    params[k] = ("form", v)
+        for h in req.get("headers") or []:
+            name = (h.get("name") or "").strip()
+            low = name.lower()
+            if name and not name.startswith(":") and low not in _STD_HEADERS and not low.startswith("sec-"):
+                params[name] = ("header", h.get("value", ""))
+        status = ((e.get("response") or {}).get("status")) or 0
+        c = reg.add(method, url, "har", params={k: (pl, str(v)[:200]) for k, (pl, v) in params.items()},
+                    evidence=f"HAR 관찰 — 실제로 오간 요청(응답 {status})")
+        c.state, c.status = _observed_state(status), status
+        n += 1
+    return n
+
+
+# ── 예측(있을 법한 경로) ─────────────────────────────────────
+
+API_HINTS = {"api", "backend", "rest", "service", "services", "gateway"}
+GUESS_WORDS = ["admin", "users", "user", "members", "me", "profile", "config", "settings", "health", "status",
+               "info", "version", "debug", "internal", "test", "export", "import", "upload", "download", "files",
+               "logs", "metrics", "actuator", "swagger-ui", "api-docs", "search", "report", "reports", "stats"]
+
+
+def guess(reg, base_url, words=None, limit=150):
+    """이미 아는 경로에서 있을 법한 경로를 만든다 → 새 후보 수. 확인 단계에서 걸러진다.
+
+    상위 경로, 목록 → 단건(/{id}), 버전 바꾸기(v1↔v2), API 머리 경로 + 흔한 단어.
+    """
+    host = urlsplit(base_url).netloc
+    origin = "{0.scheme}://{0.netloc}".format(urlsplit(base_url))
+    known = [c for c in reg if urlsplit(c.url).netloc == host and c.kind == "api"]
+    # 경로 변수 이름은 달라도 같은 자리다 — /courses/{id} 와 /courses/{courseId}
+    same = lambda path: re.sub(r"\{[^}/]*\}", "{}", path)
+    have = {same(c.path) for c in reg}
+    prefixes, cands = set(), []
+
+    def add(path):
+        if same(path) not in have and path not in cands:
+            have.add(same(path))
+            cands.append(path)
+    for c in known:
+        segs = [x for x in c.path.split("/") if x]
+        api = bool(segs) and segs[0].lower() in API_HINTS
+        if api:
+            prefixes.add("/" + segs[0])
+            if len(segs) > 1 and re.fullmatch(r"v\d+", segs[1]):
+                prefixes.add("/" + "/".join(segs[:2]))
+        for i in range(1, len(segs)):
+            add("/" + "/".join(segs[:i]))
+        if api and len(segs) >= 2 and not segs[-1].startswith("{"):
+            add(c.path.rstrip("/") + "/{id}")
+        for i, seg in enumerate(segs):
+            m = re.fullmatch(r"v(\d+)", seg)
+            if m:
+                for v in (int(m.group(1)) - 1, int(m.group(1)) + 1):
+                    if v >= 1:
+                        add("/" + "/".join(segs[:i] + [f"v{v}"] + segs[i + 1:]))
+    for pre in sorted(prefixes):
+        for w in words or GUESS_WORDS:
+            add(f"{pre}/{w}")
+    for path in cands[:limit]:
+        reg.add("GET", origin + path, "guess", evidence="예측 후보 — 아는 경로에서 만들어 봄")
+    return min(len(cands), limit)
+
+
+def drop_unconfirmed_guesses(reg):
+    """예측으로만 나왔고 있다고 확인되지 않은 후보는 버린다 — 남기면 목록이 추측으로 찬다."""
+    for key, c in list(reg.items.items()):
+        if c.sources == ["guess"] and c.state in ("unverified", "not_found", "soft_404"):
+            del reg.items[key]
+
+
+# ── 숨은 파라미터 찾기 ───────────────────────────────────────
+
+MINE_WORDS = ["id", "page", "size", "limit", "offset", "sort", "order", "q", "query", "search", "keyword",
+              "filter", "type", "category", "lang", "format", "debug", "test", "admin", "mode", "view", "preview",
+              "callback", "redirect", "url", "next", "return", "file", "path", "template", "include", "user",
+              "userId", "memberId", "role", "status", "from", "to", "date", "fields", "expand", "verbose"]
+
+
+def mine_params(c, get, words=None, batch=20):
+    """GET 엔드포인트 하나에 이름 후보를 묶어 붙여 보내, 응답이 달라지는 이름을 찾는다 → 찾은 수.
+
+    같은 요청을 두 번 보내 응답이 같은지부터 본다(매번 바뀌는 화면이면 비교할 수 없어 그만둔다).
+    묶음에서 차이가 나면 하나씩 다시 보내 범인을 고른다. 넣은 값이 응답에 그대로 나오면 '반사' 로 적는다.
+    """
+    url = re.sub(r"\{[^}]+\}", "1", c.url)
+    known = [(k, v) for k, (place, v) in c.params.items() if place == "query"]
+
+    def send(extra):
+        q = "&".join(f"{k}={v}" for k, v in known + list(extra.items()))
+        return get(url + ("?" + q if q else ""))
+    try:
+        a, b = send({}), send({})
+    except OSError:
+        return 0
+    base = fingerprint(a)
+    if fingerprint(b) != base:
+        c.evidence.append("숨은 파라미터 찾기: 같은 요청에도 응답이 매번 달라 비교할 수 없어 건너뜀")
+        return 0
+    names = [w for w in (words or MINE_WORDS) if w not in c.params]
+    found = 0
+    for i in range(0, len(names), batch):
+        group = names[i:i + batch]
+        vals = {n: "zq" + "".join(random.choices(string.ascii_lowercase, k=6)) for n in group}
+        try:
+            r = send(vals)
+        except OSError:
+            continue
+        if fingerprint(r) == base and not any(v in r.body for v in vals.values()):
+            continue
+        for n in group:
+            try:
+                one = send({n: vals[n]})
+            except OSError:
+                continue
+            reflected = vals[n] in one.body
+            if reflected or fingerprint(one) != base:
+                why = "넣은 값이 응답에 그대로 나옴" if reflected else f"붙이면 응답이 달라짐({a.status}→{one.status})"
+                c.params.setdefault(n, ("query", ""))
+                if "mine" not in c.sources:
+                    c.sources.append("mine")
+                c.evidence.append(f"숨은 파라미터 {n} — {why}")
+                found += 1
+    return found
 
 
 # ── 위험 점수 ──────────────────────────────────────────────

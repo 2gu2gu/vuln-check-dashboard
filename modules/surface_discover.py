@@ -25,20 +25,26 @@ META = {
     ],
     "description": "페이지·폼·robots·sitemap·**API 명세(OpenAPI·Spring Actuator)**·**JS 번들**(fetch·axios 호출, "
                    "`/backend/...` 경로, 본문 키)을 읽어 엔드포인트와 파라미터를 모읍니다. 모은 경로가 정말 있는지 "
-                   "없는 주소의 응답과 비교해 확인하고(가짜 200 걸러냄) 위험 점수를 붙입니다. GET·OPTIONS 만 보냅니다.",
+                   "없는 주소의 응답과 비교해 확인하고(가짜 200 걸러냄) 위험 점수를 붙입니다. GET·OPTIONS 만 보냅니다. "
+                   "단계에 `guess`(있을 법한 경로 예측)·`params`(숨은 파라미터 찾기)를 더하면 요청이 늘어납니다.",
     "params": [
         {"name": "steps", "need": "optional", "label": "단계(쉼표)", "default": "page,meta,spec,js,verify",
-         "placeholder": "page,meta,spec,js,verify"},
+         "placeholder": "page,meta,spec,js,verify,guess,params"},
         {"name": "start", "need": "optional", "label": "시작 경로", "default": "/"},
         {"name": "max_pages", "need": "optional", "label": "최대 페이지", "default": "30", "type": "int"},
         {"name": "max_scripts", "need": "optional", "label": "최대 JS 파일", "default": "40", "type": "int"},
         {"name": "max_verify", "need": "optional", "label": "확인할 후보 수", "default": "150", "type": "int"},
         {"name": "skip", "need": "optional", "label": "제외할 단어(쉼표)", "default": "logout,signout,delete,remove"},
+        {"name": "max_guesses", "need": "conditional", "when": "단계에 guess 를 넣을 때만", "label": "예측 후보 수",
+         "default": "100", "type": "int"},
+        {"name": "mine_max", "need": "conditional", "when": "단계에 params 를 넣을 때만",
+         "label": "숨은 파라미터 찾을 주소 수", "default": "5", "type": "int"},
     ],
 }
 
 SKIP_PAGE = re.compile(r"\.(png|jpe?g|gif|svg|ico|webp|css|woff2?|ttf|pdf|zip|mp4|mp3|avi|mov|js|map)$", re.I)
-STEP_LABEL = {"page": "페이지", "meta": "robots·sitemap", "spec": "API 명세", "js": "JS", "verify": "확인"}
+STEP_LABEL = {"page": "페이지", "meta": "robots·sitemap", "spec": "API 명세", "js": "JS", "verify": "확인",
+              "guess": "예측", "params": "숨은 파라미터"}
 
 
 class _Page(HTMLParser):
@@ -202,13 +208,27 @@ def run(target, params):
                     pass
 
     # ── 5 있는지 확인 ──
-    if "verify" in steps:
+    # ── 6 예측(선택): 아는 경로에서 있을 법한 경로를 만든다. 확인에서 걸러진다 ──
+    if "guess" in steps:
+        dv.guess(reg, origin + "/", limit=max(0, int(params.get("max_guesses") or 100)))
+
+    if "verify" in steps or "guess" in steps:
         v = dv.Verifier(get, options=lambda u: fetch(u, method="OPTIONS"))
-        order = sorted(reg, key=lambda c: (-c.confidence(), c.path))
-        for c in order[: max(0, int(params.get("max_verify") or 150))]:
-            if not allowed(c.url):
-                continue
-            v.check(c)
+        found = sorted((c for c in reg if c.sources != ["guess"]), key=lambda c: (-c.confidence(), c.path))
+        guessed = [c for c in reg if c.sources == ["guess"]]     # 예측은 따로 센다 — 상한에 밀려 안 보이지 않게
+        todo = (found[: max(0, int(params.get("max_verify") or 150))] if "verify" in steps else []) + guessed
+        for c in todo:
+            if allowed(c.url):
+                v.check(c)
+        dv.drop_unconfirmed_guesses(reg)
+
+    # ── 7 숨은 파라미터(선택): 있다고 확인된 GET 몇 개에 이름 후보를 붙여 본다 ──
+    if "params" in steps:
+        picks = [c for c in reg if c.method == "GET" and c.kind == "api" and c.state == "exists"
+                 and allowed(c.url) and "{" not in c.path]
+        picks.sort(key=lambda c: (-len(c.params), c.path))
+        for c in picks[: max(0, int(params.get("mine_max") or 5))]:
+            dv.mine_params(c, get)
 
     return _to_points(reg)
 

@@ -260,3 +260,104 @@ def test_suggestions_point_to_modules(client, discovered):
     page = client.get(f"/targets?target={discovered}&sort=path").get_data(as_text=True)
     assert 'class="sg" data-mod=' in page                               # 주입 → 지점 점검 모듈
     assert "SSRF·열린 리다이렉트</span>" in page                         # 모듈 없는 추천은 표시만
+
+
+# ── 3단계: HAR 가져오기 · 예측 · 숨은 파라미터 ─────────────────────
+
+HAR = {"log": {"entries": [
+    {"request": {"method": "POST", "url": ORIGIN + "/backend/qna?board=free",
+                 "headers": [{"name": "Content-Type", "value": "application/json"},
+                             {"name": "X-Client-Version", "value": "3.1"},
+                             {"name": "sec-ch-ua", "value": "x"}],
+                 "postData": {"mimeType": "application/json", "text": '{"title": "t", "body": "b", "tags": [1]}'}},
+     "response": {"status": 201}},
+    {"request": {"method": "GET", "url": ORIGIN + "/backend/members/42/orders"}, "response": {"status": 403}},
+    {"request": {"method": "GET", "url": ORIGIN + "/static/logo.png"}, "response": {"status": 200}},
+    {"request": {"method": "GET", "url": "https://cdn.example/x"}, "response": {"status": 200}},
+]}}
+
+
+def test_har_observed_requests():
+    reg = dv.Registry()
+    assert dv.parse_har(json.dumps(HAR), ORIGIN, reg) == 2        # 정적 파일·다른 호스트는 빠진다
+    got = {(c.method, c.path): c for c in reg}
+    qna = got[("POST", "/backend/qna")]
+    assert qna.params == {"board": ("query", "free"), "title": ("json", "t"), "body": ("json", "b"),
+                          "tags": ("json", ""), "X-Client-Version": ("header", "3.1")}
+    assert (qna.state, qna.status, qna.basis()) == ("exists", 201, "관찰")
+    orders = got[("GET", "/backend/members/{id}/orders")]
+    assert orders.state == "auth_required" and orders.params["id"][0] == "path"
+
+
+def test_har_rejects_non_json():
+    with pytest.raises(ValueError):
+        dv.parse_har("not json", ORIGIN, dv.Registry())
+
+
+def test_har_module_through_app(app, client):
+    from dashboard.db import get_db
+    client.post("/targets", data={"project": "sesacedu", "role": "practice", "name": "연습", "url": ORIGIN})
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    big = dict(HAR)
+    big["log"] = {"entries": HAR["log"]["entries"] + [
+        {"request": {"method": "GET", "url": ORIGIN + "/x", "headers": [{"name": "X-Pad", "value": "a" * 600_000}]},
+         "response": {"status": 200}}]}
+    client.post("/modules/har_import/run", data={"target_id": tid, "har": json.dumps(big)})
+    with app.app_context():
+        row = get_db().execute("SELECT state, status FROM points WHERE url LIKE '%/backend/qna' AND param = ''").fetchone()
+    assert row is not None and (row["state"], row["status"]) == ("exists", 201)   # 500KB 넘어도 받는다
+
+
+def test_guess_candidates():
+    reg = dv.Registry()
+    reg.add("GET", ORIGIN + "/backend/v1/courses/7/reviews", "js")
+    dv.guess(reg, ORIGIN + "/")
+    paths = {c.path for c in reg if c.sources == ["guess"]}
+    assert {"/backend", "/backend/v1/courses", "/backend/v2/courses/{id}/reviews",
+            "/backend/health", "/backend/v1/admin"} <= paths
+
+
+def test_unconfirmed_guesses_are_dropped():
+    reg = dv.Registry()
+    reg.add("GET", ORIGIN + "/backend/x", "guess").state = "not_found"
+    reg.add("GET", ORIGIN + "/backend/y", "guess").state = "exists"
+    reg.add("GET", ORIGIN + "/backend/z", "js").state = "not_found"   # 다른 근거가 있으면 남긴다
+    dv.drop_unconfirmed_guesses(reg)
+    assert {c.path for c in reg} == {"/backend/y", "/backend/z"}
+
+
+def test_mine_params_finds_hidden_debug(demo_fetch):
+    def get(url):
+        return surface_discover.fetch(url)
+    c = dv.Candidate("GET", ORIGIN + "/backend/courses", state="exists")
+    assert dv.mine_params(c, get) >= 1
+    assert "debug" in c.params and any("debug" in e for e in c.evidence)
+
+
+def test_mine_params_gives_up_on_unstable_page():
+    import random
+    c = dv.Candidate("GET", ORIGIN + "/random")
+    body = lambda: "".join(random.choices("abcdefgh", k=40))            # 숫자는 지우고 비교하므로 글자로
+    assert dv.mine_params(c, lambda url: _resp(200, body())) == 0
+    assert "건너뜀" in c.evidence[-1] and c.params == {}
+
+
+def test_guess_and_params_steps_end_to_end(demo_fetch):
+    pts = _run("page,meta,spec,js,verify,guess,params")
+    ends = {(p.method, urlsplit(p.url).path): p for p in pts if not p.param}
+    params = {(urlsplit(p.url).path, p.param) for p in pts if p.param}
+    assert ends[("GET", "/backend/health")].state == "exists"           # 예측으로만 찾은 경로
+    # 확인 안 된(없음·가짜 200·미확인) 예측은 버린다. 403 처럼 '있다' 는 뜻의 응답은 남긴다
+    assert not any(json.loads(p.evidence)["sources"] == ["guess"] and p.state in ("not_found", "soft_404", "unverified")
+                   for p in ends.values())
+    assert ("/backend/courses", "debug") in params                     # 숨은 파라미터
+    assert {m for m, _ in demo_fetch} <= {"GET", "OPTIONS"}
+
+
+def test_guess_skips_same_path_with_other_variable_name():
+    reg = dv.Registry()
+    reg.add("GET", ORIGIN + "/backend/courses", "spec")
+    reg.add("GET", ORIGIN + "/backend/courses/{courseId}", "spec")
+    dv.guess(reg, ORIGIN + "/")
+    assert "/backend/courses/{id}" not in {c.path for c in reg}
