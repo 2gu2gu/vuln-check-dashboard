@@ -876,6 +876,9 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
               display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 .mod.open .mod-open h3, .mod.open .mod-open p { display: block; min-height: 0; overflow: visible; }
 .mod-quick { min-height: 38px; }
+/* 펼친 카드에서는 실행 줄을 설정·준비할 것 밑, 맨 아래로 내린다 — 값을 고치고 바로 누르게(사용자 요청 11-20).
+   .mod 가 세로 flex 라 order 만 바꾸면 된다. 접힌 카드는 그대로 설명 바로 밑. */
+.mod.open .mod-quick { order: 1; padding-top: 10px; border-top: 1px solid var(--line); }
 
 /* ── 결과 탭 진단 통계(11-20 추가): 전체 숫자 · 유형별 · KISA 21항목 · 상태별 · 모듈별 ── */
 /* 처리 상태 그림의 칸·범례에만 칠한다. 맨 .st-* 는 상태 배지(.status)가 이미 쓰는 이름이라
