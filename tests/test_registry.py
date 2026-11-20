@@ -58,3 +58,13 @@ def test_broken_and_duplicate_modules_are_reported(tmp_path, monkeypatch):
     assert set(projects) == {GENERAL, "alpha"}
     joined = " ".join(src + msg for src, msg in errors)
     assert "broken.py" in joined and "nometa.py" in joined and "id 중복" in joined and "noscope" in joined
+
+
+def test_attack_tactics_follow_v20_1():
+    """ATT&CK content v20.1(11-20 attack.mitre.org 확인): 전술 15개, TA0005 Stealth, TA0112 Defense Impairment."""
+    from dashboard.attack import TACTICS
+    ids = [t[0] for t in TACTICS]
+    assert len(ids) == 15 and ids.index("TA0112") == ids.index("TA0005") + 1
+    names = {t[0]: t[1] for t in TACTICS}
+    assert names["TA0005"] == "Stealth" and names["TA0112"] == "Defense Impairment"
+    assert "Defense Evasion" not in names.values()

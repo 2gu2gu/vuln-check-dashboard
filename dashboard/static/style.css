@@ -221,7 +221,7 @@ table.grid { width: 100%; border-collapse: collapse; }
 .legend { display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; font-size: 12px; }
 .cell-dot { width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--accent); background: var(--accent-soft); display: inline-block; }
 .cell-dot.hit { border-color: var(--hit); background: var(--hit); }
-.matrix { display: grid; grid-template-columns: repeat(14, minmax(120px, 1fr)); gap: 6px; overflow-x: auto; padding-bottom: 8px; }
+.matrix { display: grid; grid-template-columns: repeat(15, minmax(120px, 1fr)); gap: 6px; overflow-x: auto; padding-bottom: 8px; }
 .col header { display: flex; flex-direction: column; padding: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px; min-height: 76px; }
 .col header small { color: var(--sub); font-size: 11px; }
 .col.empty-col header { opacity: .55; }
