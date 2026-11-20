@@ -162,7 +162,7 @@ def test_activity_totals(app, typed):
 
 def test_results_page_shows_totals_and_breakdowns(client, typed):
     page = client.get(f"/?target={typed}").get_data(as_text=True)
-    for word in ("전체 결과", "모듈 실행", "보낸 요청", "모은 엔드포인트",
+    for word in ("전체 결과", "Critical · High", "KISA 21항목 중 발견", "모은 엔드포인트",
                  "취약점 유형별", "처리 상태별", "진단 일정", "21항목 점검 현황"):
         assert word in page, word
     assert 'class="kisa-cell cov-found"' in page and 'class="kisa-cell cov-none"' in page
@@ -265,24 +265,10 @@ def test_cancelled_run_reads_in_korean(app, client):
 
 # ── 결과 추이·주간 변화(11-20, 대시보드 레퍼런스 반영) ───────────────
 
-def test_trend_counts_cumulative_findings_and_week_over_week(app, typed):
-    from datetime import date
-    sched = {"start": "2026-10-12", "end": "2026-11-23",
-             "marks": [{"date": "2026-11-02", "label": "중간보고", "kind": "mid"},
-                       {"date": "2026-11-23", "label": "최종보고회", "kind": "final"}]}
-    with app.app_context():
-        db = get_db()
-        tr = stats.trend(db, db.execute("SELECT * FROM targets").fetchall(), sched, today=date(2026, 11, 20))
-    # typed: 11-20 에 결과 5건 — 누적은 그날 5, 기간 끝(11-23)까지 축은 그리되 값은 오늘까지만
-    assert tr["total"] == 5 and tr["rows"][-1] == {"md": "11/20", "new": 5, "cum": 5}
-    assert tr["delta"]["findings"] == {"now": 5, "before": 0, "diff": 5}
-    assert [m["label"] for m in tr["marks"]] == ["중간보고", "최종보고회"] and tr["marks"][-1]["pct"] == 100
-    assert 0 < tr["today_pct"] < 100 and tr["line"] and tr["area"].startswith("M0,")
-    assert len(tr["spark"]["findings"].split()) == 14
-
-
-def test_results_page_shows_status_sentence_trend_and_donut(client, typed):
+def test_results_page_shows_status_sentence_and_donut(client, typed):
     page = client.get(f"/?target={typed}").get_data(as_text=True)
     assert 'class="ov-status ov-alert"' in page and "주의 필요" in page        # Critical 이 있으면 '주의 필요'
-    assert "결과 누적 추이" in page and 'class="spark"' in page and "지난주 대비" in page
+    # 모듈 실행·보낸 요청 칸, 변화·스파크라인, 누적 추이는 뺐다(사용자 결정 11-20)
+    assert "결과 누적 추이" not in page and 'class="spark"' not in page and "지난주 대비" not in page
+    assert "<small>모듈 실행</small>" not in page and "<small>보낸 요청</small>" not in page
     assert 'class="donut"' in page and "conic-gradient(var(--st-open)" in page
