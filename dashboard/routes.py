@@ -898,9 +898,8 @@ def history_detail(xid):
 
 # ── ATT&CK · 시나리오 · 보고서 ───────────────────────────────
 
-@bp.get("/attack")
-def attack():
-    target, targets = _current_target()
+def _attack_columns(target):
+    """ATT&CK 매트릭스 — 전술 14개 열, 칸은 모듈이 다루는 기법."""
     hit = set()
     if target:
         hit = {r["technique"] for r in get_db().execute(
@@ -917,11 +916,18 @@ def attack():
                                                              "url": technique_url(a["technique"])})
                     cell["modules"].append(mod.name)
         columns.append({"id": tid, "en": en, "ko": ko, "cells": list(cells.values())})
-    return render_template("attack.html", columns=columns, target=target, targets=targets)
+    return columns
+
+
+@bp.get("/attack")
+def attack():
+    """옛 ATT&CK 탭 주소. 수사보드 페이지의 매트릭스 탭으로 보낸다."""
+    return redirect(url_for("dash.scenario", target=request.args.get("target", type=int)) + "#matrix")
 
 
 @bp.get("/scenario")
 def scenario():
+    """수사보드와 ATT&CK 매트릭스를 한 페이지의 두 탭으로 보여 준다."""
     target, targets = _current_target()
     rows, head = [], {}
     if target:
@@ -931,8 +937,8 @@ def scenario():
         rows = board.build(found, list(_modules_for(target).values()), _technique_tactic(),
                            lambda m: module_needs(m, target))
         head = board.summary(rows)
-    return render_template("scenario.html", rows=rows, head=head, target=target, targets=targets,
-                           all_modules=_modules())
+    return render_template("scenario.html", rows=rows, head=head, columns=_attack_columns(target),
+                           target=target, targets=targets, all_modules=_modules())
 
 
 @bp.get("/help", endpoint="help")

@@ -10,7 +10,7 @@
   <a href="#start">처음 쓰는 순서</a>
   <span class="toc-gap">화면</span>
   <a href="#targets">대상</a><a href="#modules">모듈</a><a href="#surface">모은 지점</a><a href="#tools">탐색</a>
-  <a href="#results">결과</a><a href="#history">요청 기록</a><a href="#attack">ATT&CK</a><a href="#scenario">수사보드</a>
+  <a href="#results">결과</a><a href="#history">요청 기록</a><a href="#scenario">수사보드</a><a href="#attack">ATT&CK 매트릭스</a>
   <span class="toc-gap">알아 둘 것</span>
   <a href="#wordlists">사전</a><a href="#grouping">모듈 묶기</a><a href="#roles">점검 대상</a><a href="#runs">뒤에서 도는 실행</a><a href="#auth">로그인</a><a href="#cvss">영향도(CVSS)</a><a href="#needs">실행 전 준비</a><a href="#limits">요청 한도</a><a href="#hostscope">어디까지 하나</a><a href="#safety">안전장치</a>
   <span class="toc-gap">만들기</span>
@@ -165,19 +165,9 @@
   </dl>
 </section>
 
-<section id="attack">
-  <h2>ATT&CK</h2>
-  <p>찾은 것을 공격 단계에 놓아 보는 화면입니다.</p>
-  <dl class="facts">
-    <dt>가로</dt><dd>14개 전술이 공격 진행 순서대로.</dd>
-    <dt>칸</dt><dd>모듈이 다루는 기법 하나. 누르면 MITRE 설명이 열립니다.</dd>
-    <dt>주황 칸</dt><dd>지금 대상에서 실제로 발견된 기법(오탐 제외).</dd>
-  </dl>
-</section>
-
 <section id="scenario">
   <h2>수사보드</h2>
-  <p>전술을 <b>공격 진행 순서</b>로 세웠습니다. 어디까지 왔고 다음에 무엇을 해 볼지 봅니다.</p>
+  <p>한 페이지에 <b>수사보드</b>와 <b>ATT&amp;CK 매트릭스</b> 두 탭이 있습니다. 전술을 <b>공격 진행 순서</b>로 세웠습니다. 어디까지 왔고 다음에 무엇을 해 볼지 봅니다.</p>
   <dl class="facts">
     <dt>칸 안의 두 묶음</dt><dd><b>확인됨</b> 은 실제로 돌려서 나온 결과,
       <b>제안</b> 은 그 전술을 다루는데 아직 안 돌린 모듈입니다.
@@ -191,6 +181,16 @@
       쓰는 근거는 전술 순서 · 모듈이 <code>META["attack"]</code> 에 적어 둔 전술 · 이 대상의 결과 ·
       <code>META["needs"]</code> 넷뿐입니다.</dd>
     <dt>실제 시나리오</dt><dd>이 흐름을 보고 <b>팀이 정합니다.</b> 보드는 재료를 늘어놓을 뿐입니다.</dd>
+  </dl>
+</section>
+
+<section id="attack">
+  <h2>ATT&CK 매트릭스 (수사보드의 두 번째 탭)</h2>
+  <p>찾은 것을 공격 단계에 놓아 보는 화면입니다. 수사보드 페이지 위의 탭으로 오갑니다. 옛 주소 <code>/attack</code> 은 이 탭으로 넘어옵니다.</p>
+  <dl class="facts">
+    <dt>가로</dt><dd>14개 전술이 공격 진행 순서대로.</dd>
+    <dt>칸</dt><dd>모듈이 다루는 기법 하나. 누르면 MITRE 설명이 열립니다.</dd>
+    <dt>주황 칸</dt><dd>지금 대상에서 실제로 발견된 기법(오탐 제외).</dd>
   </dl>
 </section>
 
@@ -260,7 +260,7 @@
 <section id="grouping">
   <h2>모듈 묶어 보기</h2>
   <p>모듈 화면은 <b>취약점</b>으로만 묶습니다(11-20 결정, 단계·전술·분야 탭은 뺐습니다).
-    전술로 보려면 <a href="{{ url_for('dash.attack') }}">ATT&amp;CK</a> 화면을 씁니다.
+    전술로 보려면 <a href="{{ url_for('dash.scenario') }}#matrix">ATT&amp;CK 매트릭스</a> 탭을 씁니다.
     왼쪽 목록으로 묶음 사이를 건너뛰고, 접어 둘 수 있습니다.</p>
   <dl class="facts">
     <dt>취약점</dt><dd>팀 노션 '웹 서비스 취약점 목록' 과 <b>같은 어휘</b>입니다 —

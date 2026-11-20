@@ -15,8 +15,23 @@ def target_id(app, url):
 
 
 def test_pages_render_empty(client):
-    for path in ("/", "/targets", "/modules", "/attack", "/scenario", "/help"):
+    for path in ("/", "/targets", "/modules", "/scenario", "/help"):
         assert client.get(path).status_code == 200, path
+
+
+def test_old_attack_url_goes_to_matrix_tab(client):
+    """ATT&CK 는 수사보드 페이지의 탭이 됐다(11-20). 옛 주소는 그 탭으로 보낸다."""
+    r = client.get("/attack?target=3")
+    assert r.status_code == 302 and r.headers["Location"].endswith("/scenario?target=3#matrix")
+    assert client.get("/attack").headers["Location"].endswith("/scenario#matrix")
+
+
+def test_board_and_matrix_on_one_page(client):
+    html = client.get("/scenario").get_data(as_text=True)
+    assert 'id="board"' in html and 'id="matrix"' in html
+    assert 'href="#matrix"' in html and "ATT&amp;CK 매트릭스" in html
+    assert "Reconnaissance" in html                 # 대상이 없어도 매트릭스는 그린다
+    assert "dash.attack" not in html and 'href="/attack' not in html
 
 
 def test_old_surface_url_goes_to_targets(client):
@@ -55,8 +70,8 @@ def test_run_passive_module_and_flow(app, client, monkeypatch, fake_fetch):
     with app.app_context():
         assert get_db().execute("SELECT status FROM findings WHERE id = ?", [fid]).fetchone()["status"] == "confirmed"
 
-    assert "T1595.002" in client.get(f"/attack?target={tid}").get_data(as_text=True)
-    assert "정찰" in client.get(f"/scenario?target={tid}").get_data(as_text=True)
+    page = client.get(f"/scenario?target={tid}").get_data(as_text=True)
+    assert "T1595.002" in page and "정찰" in page
     report = client.get(f"/report/{tid}.md")
     assert report.status_code == 200 and "HSTS 헤더 없음" in report.get_data(as_text=True)
 

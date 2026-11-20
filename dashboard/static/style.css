@@ -596,6 +596,12 @@ html { scroll-behavior: smooth; }
 .bd-why { color: var(--hit); }
 .bd-card.elsewhere .bd-why { color: var(--sub); }
 .bd-note { margin-top: 12px; line-height: 1.6; }
+
+/* 한 페이지 안의 탭 (수사보드 | ATT&CK 매트릭스) */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 4px 0 16px; }
+.tab { padding: 8px 14px; margin-bottom: -1px; border: 1px solid transparent; border-radius: var(--radius) var(--radius) 0 0; color: var(--sub); font-weight: 600; }
+.tab:hover { text-decoration: none; color: var(--text); }
+.tab.on { border-color: var(--line); border-bottom-color: var(--bg); background: var(--bg); color: var(--accent); }
 @media (max-width: 760px) { .bd-col { flex-basis: 85vw; } }
 
 /* 입력칸이 필수인지 선택인지 안 보여 못 쓰겠다는 지적(11-05) */
