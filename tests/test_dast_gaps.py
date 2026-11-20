@@ -36,7 +36,7 @@ def _server(monkeypatch, handler):
         hdrs = dict(core.auth_headers()) if auth else {}
         hdrs.update(headers or {})
         sent.append({"method": method, "url": url, "headers": hdrs, "body": raw_body or b"", "ctype": content_type})
-        got = handler(url, method, hdrs, raw_body or b"")
+        got = handler(url, method, hdrs, raw_body or b"")   # 핸들러가 OSError 를 던지면 그대로 올라간다
         status, body = got[0], got[1]
         if len(got) > 2 and got[2]:
             time.sleep(got[2])
@@ -136,6 +136,15 @@ def test_jwt_without_a_verify_url_only_reads_the_token(monkeypatch):
 
 
 # ── 파일 업로드 검증 점검 ────────────────────────────────────
+
+def test_jwt_an_already_expired_token_is_said_out_loud(monkeypatch):
+    """11-20 실측: 대상 토큰이 5시간 전에 끝나 있어 인증이 필요한 점검이 전부 ① 에서 멈췄는데 아무 말이 없었다."""
+    _ctx(monkeypatch, {"Authorization": "Bearer " + token(body={"exp": int(time.time()) - 3600})})
+    out = jwt_probe.run(T, {})
+    hit = [f for f in out if "이미 만료됐습니다" in f.title]
+    assert hit and "60분 전" in hit[0].title
+    assert "2. 인증" in hit[0].evidence and "IDOR" in hit[0].evidence
+
 
 def test_upload_needs_the_ack_word(monkeypatch):
     with pytest.raises(ValueError, match="UPLOAD"):
@@ -238,6 +247,50 @@ def test_jndi_nothing_observable_is_safe_and_says_so(monkeypatch):
     _server(monkeypatch, lambda url, m, h, b: (200, "정적인 화면"))
     c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")], {"jndi_ack": "JNDI"})[0]
     assert c.verdict == "safe" and "리스너로 한 번 더 보는 게 확실하다" in c.evidence
+
+
+def test_jndi_a_dead_answer_to_the_lookup_is_vuln(monkeypatch):
+    """11-20 실측에서 실제로 일어난 일 — jndi 를 걸자 응답이 끊겼다.
+
+    그때는 예외가 실행 전체를 끊어 아무 기록도 남지 않았다. 지금은 가장 센 신호로 적는다.
+    표식만 보낼 때는 멀쩡했고 두 번 다 끊겼을 때만 취약이다.
+    """
+    _ctx(monkeypatch)
+
+    def h(url, m, hd, body):
+        if "jndi" in hd.get("User-Agent", ""):
+            raise OSError("The read operation timed out")
+        return 200, "ok"
+    _server(monkeypatch, h)
+    c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")], {"jndi_ack": "JNDI"})[0]
+    assert c.verdict == "vuln" and "응답이 끊김" in c.title
+    assert "한 번 더 보내도 끊김" in c.evidence
+
+
+def test_jndi_a_dead_answer_only_once_is_potential(monkeypatch):
+    _ctx(monkeypatch)
+    n = {"i": 0}
+
+    def h(url, m, hd, body):
+        if "jndi" in hd.get("User-Agent", ""):
+            n["i"] += 1
+            if n["i"] == 1:
+                raise OSError("timed out")
+        return 200, "ok"
+    _server(monkeypatch, h)
+    c = jndi_probe.run(T, [_end("https://sesacedu.store/courses/detail")], {"jndi_ack": "JNDI"})[0]
+    assert c.verdict == "potential" and "확정 안 됨" in c.title
+
+
+def test_jndi_a_slow_address_is_not_called_vulnerable(monkeypatch):
+    """표식만 보낸 것도 끊기는 주소는 그냥 느린 것이다 — 그걸로 취약이라 하면 안 된다."""
+    _ctx(monkeypatch)
+
+    def h(url, m, hd, body):
+        raise OSError("timed out")
+    _server(monkeypatch, h)
+    c = jndi_probe.run(T, [_end("https://sesacedu.store/slow")], {"jndi_ack": "JNDI"})[0]
+    assert c.verdict == "safe" and "기준 응답을 받지 못함" in c.evidence
 
 
 def test_jndi_blackhole_target_is_a_documentation_range():
