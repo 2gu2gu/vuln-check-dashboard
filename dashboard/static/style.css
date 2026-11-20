@@ -869,3 +869,4 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
               display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 .mod.open .mod-open h3, .mod.open .mod-open p { display: block; min-height: 0; overflow: visible; }
 .mod-quick { min-height: 38px; }
+.add-target { margin-bottom: 12px; }
