@@ -1,3 +1,72 @@
+// 후보 목록 — 용도별 탭(단서 · 침투 수단 · 다음 시도 · 직접 추가), 찾기, CVE 거르기.
+// 캠페인이 아직 없어도 후보는 둘러볼 수 있어야 하므로 보드 코드와 따로 둔다.
+(function () {
+  var aside = document.querySelector(".cp-cands");
+  if (!aside) return;
+  var tabs = aside.querySelectorAll("[data-ctab]");
+  var panels = aside.querySelectorAll("[data-cpanel]");
+  var q = document.getElementById("cp-q");
+  var emptyQ = aside.querySelector(".cp-empty-q");
+  var KEY = "cpTab";
+
+  function show(name) {
+    tabs.forEach(function (t) { var on = t.dataset.ctab === name; t.classList.toggle("on", on); t.setAttribute("aria-selected", on); });
+    panels.forEach(function (p) { p.hidden = p.dataset.cpanel !== name; });
+    try { localStorage.setItem(KEY, name); } catch (e) {}
+    filter();
+  }
+  tabs.forEach(function (t) { t.addEventListener("click", function () { show(t.dataset.ctab); }); });
+
+  // CVE 는 많다(Tomcat 10.1.1 만 62개, 9.0 이상만도 19개). 기본은 팀이 다룬 것·실제 악용(KEV)만.
+  // data-hot: 2 = 팀·KEV, 1 = CVSS 9.0 이상, 0 = 나머지
+  var cveMin = 2;
+  aside.querySelectorAll("[data-cvefilter]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      cveMin = +b.dataset.cvefilter;
+      aside.querySelectorAll("[data-cvefilter]").forEach(function (x) { x.classList.toggle("on", x === b); });
+      filter();
+    });
+  });
+
+  function filter() {
+    var words = (q && q.value || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+    var panel = aside.querySelector("[data-cpanel]:not([hidden])");
+    var shown = 0;
+    aside.querySelectorAll(".cp-cand").forEach(function (c) {
+      var text = c.textContent.toLowerCase();
+      var hit = words.every(function (w) { return text.indexOf(w) >= 0; });
+      // 찾는 말이 있으면 거르기보다 찾기가 우선 — 숨은 CVE 도 나온다
+      var cveHidden = !words.length && c.dataset.hot != null && +c.dataset.hot < cveMin;
+      c.hidden = !hit || cveHidden;
+      if (!c.hidden && panel && panel.contains(c)) shown++;
+    });
+    aside.querySelectorAll(".cp-cves").forEach(function (d) {
+      var all = d.querySelectorAll(".cp-cand").length;
+      var vis = d.querySelectorAll(".cp-cand:not([hidden])").length;
+      var note = d.querySelector(".cp-hidden-note");
+      if (note) note.textContent = vis < all ? (all - vis) + "개는 접어 두었습니다 — 위 단추로 넓히거나 찾기에 적으세요" : "";
+    });
+    if (emptyQ) emptyQ.hidden = !(words.length && panel && panel.dataset.cpanel !== "manual" && !shown);
+  }
+  if (q) q.addEventListener("input", filter);
+
+  // 자주 쓰는 수동 단계 — 누르면 칸을 채운다(바로 올리지는 않는다: 근거 문서를 적게)
+  var manual = document.getElementById("cp-manual");
+  aside.querySelectorAll(".cp-preset").forEach(function (b) {
+    b.addEventListener("click", function () {
+      if (!manual) return;
+      manual.title.value = b.dataset.title;
+      manual.tactic.value = b.dataset.tactic;
+      manual.note.focus();
+    });
+  });
+
+  var start = "clue";
+  try { start = localStorage.getItem(KEY) || start; } catch (e) {}
+  if (!aside.querySelector('[data-ctab="' + start + '"]')) start = "clue";
+  show(start);
+})();
+
 // 수사보드 캠페인 보드 — 후보를 끌어다 전술 열에 놓고, 노드 오른쪽 점을 끌어 다음 노드로 잇는다.
 // 바꿀 때마다 서버(dashboard/campaign.py)에 보내고, 돌아온 상태(JSON)로 보드를 다시 그린다.
 // 상태의 원본은 늘 서버다 — 화면에서만 옮겨 두고 저장을 잊는 일이 없게.
@@ -49,6 +118,12 @@
     state.nodes.forEach(function (n) {
       var drop = canvas.querySelector('.cp-drop[data-tactic="' + n.tactic + '"]');
       if (drop) drop.appendChild(nodeEl(n));
+    });
+    // 이미 올린 후보는 흐리게 — 같은 것을 또 찾지 않게
+    var on = {};
+    state.nodes.forEach(function (n) { on[n.kind + "|" + n.ref] = true; });
+    document.querySelectorAll(".cp-cand[data-kind]").forEach(function (c) {
+      c.classList.toggle("on-board", !!on[c.dataset.kind + "|" + c.dataset.ref]);
     });
     drawLines();
   }
@@ -131,6 +206,24 @@
       labels.appendChild(lab);
     });
   }
+
+  // ── 끄는 동안 가장자리에 가면 보드가 따라 움직인다 ───────────
+  // 브라우저의 끌어다 놓기는 가로 스크롤 상자를 스스로 밀어 주지 않는다. 열이 14개라
+  // 오른쪽으로 밀어 둔 상태에서 왼쪽 열(정찰)로 돌아갈 수가 없었다.
+  // 끄는 동안 브라우저는 마우스가 멈춰 있어도 dragover 를 계속(약 50ms 마다) 보낸다 — 그때마다 한 걸음씩 민다.
+  var scroller = canvas.parentElement;
+  var EDGE = 70, STEP = 24;
+  document.addEventListener("dragover", function (e) {
+    if (!document.body.classList.contains("cp-dragging")) return;
+    var r = scroller.getBoundingClientRect(), x = e.clientX, y = e.clientY;
+    if (y > r.top && y < r.bottom) {
+      if (x > r.left - EDGE && x < r.left + EDGE && scroller.scrollLeft > 0) scroller.scrollLeft -= STEP;
+      else if (x > r.right - EDGE && x < r.right + EDGE) scroller.scrollLeft += STEP;
+    }
+    if (y < 60) window.scrollBy(0, -STEP);
+    else if (y > window.innerHeight - 60) window.scrollBy(0, STEP);
+  });
+  scroller.addEventListener("scroll", drawLines);
 
   // ── 끌어다 놓기: 후보 → 열, 노드 → 다른 열 ─────────────────
   function endDrag() {
