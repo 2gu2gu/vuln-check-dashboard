@@ -157,7 +157,8 @@
   {% endfor %}
   {% endif %}
   {% if totals.hidden %}
-  <span class="sub small sf-gap">없는 경로(404·가짜 200) {{ totals.hidden }}개 숨김 ·
+  <span class="sub small sf-gap">없는 경로(404·가짜 200) {{ totals.hidden }}개 숨김{% if totals.hidden_params %}
+    — 그 안에 고를 파라미터 {{ totals.hidden_params }}개(경로 틀 등)가 있습니다{% endif %} ·
     <a href="{{ surl({'show': 'all'}) }}">보이기</a></span>
   {% elif args.get('show') == 'all' %}
   <span class="sub small sf-gap"><a href="{{ surl({'show': ''}) }}">없는 경로 숨기기</a></span>
@@ -204,6 +205,11 @@
       <small class="sub">고른 지점마다 이 모듈이 값을 한 번씩 넣어 봅니다. 아래 칸은 <b>고른 모듈의 것</b>입니다.</small>
       {# 주소 단위 모듈(보안 헤더·정보 노출)은 파라미터가 아니라 주소 줄을 고른다 — 고를 자리가 바뀐다 #}
       <small class="sub" id="pick-hint" hidden></small>
+      {# 모은 파라미터가 '없는 경로' 묶음 안에만 있을 때. 경로 틀(/users/{userId})이 여기 들어온다(11-20 지적) #}
+      {% if totals.hidden_params %}
+      <small class="sub">고를 파라미터 {{ totals.hidden_params }}개가 <b>없는 경로</b> 안에 있습니다 —
+        <a href="{{ surl({'show': 'all'}) }}">보이기</a> 를 누르면 고를 수 있습니다.</small>
+      {% endif %}
     </label>
     {% for m in probes.values() %}
     <div class="probe-params" data-for="{{ m.id }}" {{ 'hidden' if not loop.first }}>
