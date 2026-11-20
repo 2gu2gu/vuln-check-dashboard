@@ -193,8 +193,19 @@ def join(base: str, path: str) -> str:
     return base.rstrip("/") + "/" + (path or "").lstrip("/")
 
 
+def auth_headers() -> dict:
+    """이 실행에 설정된 대상 인증 헤더. 비어 있으면 대상에 인증이 없는 것이다.
+
+    인증·인가 점검은 '있이 보낸 응답' 과 '떼고 보낸 응답' 을 비교한다 — 뗄 것이 없으면 비교가 성립하지
+    않으니, 그 모듈이 먼저 이것을 보고 사용자에게 인증을 넣으라고 말한다(11-20).
+    """
+    ctx = _run_ctx()
+    return dict(ctx.auth_headers) if ctx else {}
+
+
 def fetch(url: str, *, method: str = "GET", headers=None, data=None, timeout: float = 10,
-          max_bytes: int = 1_000_000, raw_body: bytes = None, content_type: str = "") -> Response:
+          max_bytes: int = 1_000_000, raw_body: bytes = None, content_type: str = "",
+          auth: bool = True) -> Response:
     """범위 검사를 거친 뒤 요청한다. 모든 모듈은 이 함수로만 요청한다.
 
     data(dict)는 폼 본문, raw_body 는 그대로 보낼 바이트(JSON 등).
@@ -205,13 +216,14 @@ def fetch(url: str, *, method: str = "GET", headers=None, data=None, timeout: fl
     기록에서 그대로 본다. 본문은 BODY_LIMIT 까지만 남는데 그건 가리는 게 아니라 길이 제한이다.
 
     실행 중이면 요청 간격·요청 수 한도를 지키고, 대상 인증 헤더를 그 대상 주소에만 붙이고, 요청·응답을 기록한다.
+    auth=False 는 그 인증 헤더를 **붙이지 않는다** — 인증 없이도 열리는지 보는 점검이 쓴다.
     """
     scope.ensure_in_scope(url)
     ctx = _run_ctx()
     if ctx:
         ctx.before_send()
     hdrs = {"User-Agent": USER_AGENT}
-    if ctx and urlsplit(url).netloc == ctx.netloc:
+    if auth and ctx and urlsplit(url).netloc == ctx.netloc:
         hdrs.update(ctx.auth_headers)
     hdrs.update(headers or {})
     body = None

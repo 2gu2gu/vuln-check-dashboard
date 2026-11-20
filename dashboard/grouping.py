@@ -16,13 +16,15 @@ from .attack import TACTIC_NAME, TACTIC_ORDER
 from .registry import STAGE_LABEL
 
 # 노션 '웹 서비스 취약점 목록' 의 '취약점 유형' 선택지 + 안 맞는 것을 담을 '기타'
-VULN_TYPES = ["정보노출", "AUTH", "XSS", "FILE", "SQL", "기타"]
+VULN_TYPES = ["정보노출", "AUTH", "XSS", "FILE", "SQL", "RCE", "Insecure Design", "기타"]
 VULN_HINT = {
     "정보노출": "응답에 있으면 안 될 것이 그대로 드러나는 것 — 버전·세션·내부 경로",
     "AUTH": "인증·인가를 지나치는 것",
     "XSS": "넣은 값이 브라우저에서 코드로 읽히는 것",
     "FILE": "있으면 안 될 파일을 읽거나 올리는 것 — 경로 조작 포함",
     "SQL": "입력이 질의문으로 섞여 들어가는 것",
+    "RCE": "서버에서 내 명령·코드가 돌아가는 것",
+    "Insecure Design": "설계·설정에 막는 장치가 아예 없는 것 — 횟수 제한·프레임 보호 부재",
     "기타": "취약점을 찾는 모듈이 아니거나 위 어휘로 안 맞는 것",
 }
 
