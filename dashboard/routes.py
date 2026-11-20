@@ -625,6 +625,16 @@ def module_run(mid):
         if stop:
             return stop
         values = {p["name"]: request.form.get(p["name"], p.get("default", "")) for p in mod.params}
+        pid = request.form.get("point", type=int)
+        if mod.takes_point and pid:
+            # 팝업에서 고른 지점 하나 — 그 주소·파라미터로 때린다(심화 모듈, 11-20)
+            row = get_db().execute("SELECT * FROM points WHERE id = ? AND target_id = ? AND param != ''",
+                                   [pid, t["id"]]).fetchone()
+            if not row:
+                flash("고른 지점을 찾지 못했습니다", "error")
+                return redirect(back)
+            values.update(point_url=row["url"], point_param=row["param"], point_place=row["place"],
+                          point_sample=row["sample"])
         try:
             params = _check_types(mod, values)
         except ValueError as e:
@@ -671,7 +681,7 @@ def module_panel(mid):
     mod = _modules_for(target).get(mid) if target else _modules().get(mid)
     if not mod:
         abort(404)
-    groups, totals = _surface_of(target) if (target and mod.stage == "probe") else ([], {})
+    groups, totals = _surface_of(target) if (target and (mod.stage == "probe" or mod.takes_point)) else ([], {})
     back = url_for("dash.modules", target=target["id"] if target else None, open=mid)
     return render_template("module_panel.html", mod=mod, target=target, groups=groups, totals=totals,
                            verdicts=VERDICTS, source_label=dv.SOURCE_LABEL, tactic_name=TACTIC_NAME, back=back,

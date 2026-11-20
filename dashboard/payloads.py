@@ -148,3 +148,33 @@ def ensure_select_only(sql: str) -> str:
         if w.strip(",") in FORBIDDEN:
             raise ValueError(f"데이터를 바꾸는 낱말이 들어 있어 거부합니다: {w}")
     return sql.strip().rstrip(";").strip()
+
+
+# ── 심화 모듈이 고른 지점에 때리기(11-20 사용자 결정) ─────────────────
+# 심화 모듈(stage=tool)은 원래 주소 하나에 박혀 있었다. 이제 팝업에서 지점 하나를 고르면 라우트가 그 지점의
+# 주소·파라미터·자리·발견 값을 아래 숨은 칸에 채워 넘긴다. 실행 기록(params)에 남아 '이어서 보기' 도 같은 지점으로 간다.
+POINT_PARAMS = [
+    {"name": "point_url", "type": "hidden", "default": ""},
+    {"name": "point_param", "type": "hidden", "default": ""},
+    {"name": "point_place", "type": "hidden", "default": ""},
+    {"name": "point_sample", "type": "hidden", "default": ""},
+]
+
+
+def picked(params):
+    """고른 지점이 있으면 (주소, 파라미터, 자리, 발견 값), 없으면 None — 모듈이 원래 주소를 쓴다."""
+    url, name = (params.get("point_url") or "").strip(), (params.get("point_param") or "").strip()
+    if not (url and name):
+        return None
+    return url, name, (params.get("point_place") or "query"), params.get("point_sample") or ""
+
+
+def with_value(url, name, encoded_value):
+    """쿼리 자리에 값을 붙인 주소. 값은 이미 인코딩된 글자로 받는다(이중 인코딩 페이로드를 망치지 않게)."""
+    return f"{url}{'&' if '?' in url else '?'}{name}={encoded_value}"
+
+
+def spot_or(params, fallback):
+    """심화 모듈이 때릴 자리 — 고른 지점이면 (주소, 파라미터), 아니면 fallback(원래 값)."""
+    pt = picked(params)
+    return (pt[0], pt[1]) if pt else fallback

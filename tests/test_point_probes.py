@@ -365,3 +365,54 @@ def test_endpoint_module_runs_once_per_address_and_stores_on_it(app, client, mon
     assert [(r["param"], r["verdict"]) for r in rows] == [("", "potential")]    # 주소 하나에 한 번
     html = client.get(f"/modules/info_leak_probe/panel?target={tid}&partial=1").get_data(as_text=True)
     assert "모은 주소" in html and "/backend/lectures" in html
+
+
+# ── 심화 모듈은 고른 지점에(11-20) ──────────────────────────────────
+
+PICK = {"point_url": "https://sesacedu.store/backend/search", "point_param": "id", "point_place": "query",
+        "point_sample": "7"}
+
+
+def test_deep_sqli_hits_the_picked_point_by_response_shape(monkeypatch):
+    from projects.sesacedu.modules import lecture_sqli
+    sent = []
+
+    def fetch(url, **_kw):
+        sent.append(url)
+        v = _q(url, "id")
+        return Response(url=url, status=200, body="row " * (30 if "1=1" in v else 2))
+    monkeypatch.setattr(lecture_sqli, "fetch", fetch)
+    r = lecture_sqli.run(T, {"mode": "probe", "dbms": "sqlite", "limit": "5", "offset": "0",
+                             "context": "number", **PICK})
+    assert r.summary.startswith("주입됩니다") and "/backend/search (query: id)" in r.summary
+    assert all(u.startswith("https://sesacedu.store/backend/search?id=7%20AND%20") for u in sent)
+    assert r.findings[0].location == "https://sesacedu.store/backend/search (query: id)"
+
+
+def test_deep_traversal_hits_the_picked_point(monkeypatch):
+    from projects.sesacedu.modules import material_traversal
+    sent = []
+    monkeypatch.setattr(material_traversal, "fetch",
+                        lambda url, **kw: sent.append(url) or Response(url=url, status=200, body="root:x:0:0"))
+    material_traversal.run(T, {"paths": "etc/passwd", "scheme": "none", "depth": "2", "lecture": "123",
+                               "point_url": "https://sesacedu.store/files", "point_param": "name"})
+    assert sent[0].startswith("https://sesacedu.store/files?name=") and "lectures" not in sent[0]
+
+
+def test_deep_module_popup_picks_one_point_and_run_fills_it(app, client, monkeypatch):
+    from projects.sesacedu.modules import lecture_sqli
+    tid = _seed_points(app, client)
+    html = client.get(f"/modules/sesacedu_lecture_sqli/panel?target={tid}&partial=1").get_data(as_text=True)
+    assert 'type="radio" name="point"' in html and 'class="mp-all"' not in html
+    monkeypatch.setattr(lecture_sqli, "fetch", lambda url, **kw: Response(url=url, status=200, body="x"))
+    with app.app_context():
+        from dashboard.db import get_db
+        pid = get_db().execute("SELECT id FROM points WHERE param = 'keyword'").fetchone()["id"]
+    client.post("/modules/sesacedu_lecture_sqli/run", headers=FETCH,
+                data={"target_id": tid, "point": pid, "confirm": "yes", "mode": "probe", "dbms": "sqlite"})
+    with app.app_context():
+        from dashboard.db import get_db
+        import json
+        params = json.loads(get_db().execute("SELECT params FROM runs WHERE module_id = 'sesacedu_lecture_sqli'")
+                            .fetchone()["params"])
+    assert params["point_url"] == "https://sesacedu.store/backend/lectures" and params["point_param"] == "keyword"

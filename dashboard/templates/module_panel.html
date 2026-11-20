@@ -7,6 +7,9 @@
    지점 점검 모듈은 오른쪽에서 고른 지점마다 ① 받는 구간 → ② 기본 → ③ 심화 → ④ 우회 순서로 넣는다.
    폼은 back 으로 이 팝업이 다시 열리는 모듈 화면을 실어 보낸다 — 실행 뒤 같은 자리로 돌아온다. #}
 {% set is_probe = mod.stage == "probe" %}
+{# 심화 모듈(takes_point)은 지점 표에서 하나만 고른다 — 안 고르면 모듈의 원래 주소에 때린다 #}
+{% set picks = mod.takes_point and not is_probe %}
+{% set with_table = is_probe or picks %}
 <div class="mp" data-mod="{{ mod.id }}">
   <header class="mp-head">
     <div>
@@ -21,7 +24,7 @@
   {% if not target %}
     {{ empty("대상을 먼저 등록하세요", "모듈은 등록된 대상에만 실행됩니다.", url_for('dash.targets'), "대상 등록") }}
   {% else %}
-  <div class="mp-grid {{ 'with-surface' if is_probe }}">
+  <div class="mp-grid {{ 'with-surface' if with_table }}">
     <section class="mp-side">
       <p class="sub">{{ mod.description | strong }}</p>
       <div class="tags">
@@ -46,13 +49,14 @@
       <footer class="sub mono small">{{ mod.source }}</footer>
     </section>
 
-    {% if is_probe %}
+    {% if with_table %}
     <section class="mp-surface">
       <div class="mp-tools">
         <b>{{ target.name }}</b> <span class="sub small">— {% if mod.unit == "endpoint" %}모은 주소 {{ totals.endpoints or 0 }}개{% else %}모은 지점 {{ totals.params or 0 }}개{% endif %}</span>
+        {% if picks %}<span class="sub small">— 때릴 지점 하나를 고르세요(안 고르면 원래 주소)</span>{% endif %}
         <span class="mp-pick">
-          <button type="button" class="btn ghost small-btn" data-pick="all">전체</button>
-          <button type="button" class="btn ghost small-btn" data-pick="suggest" title="표면 수집이 이 모듈을 추천한 지점">추천 지점만</button>
+          {% if not picks %}<button type="button" class="btn ghost small-btn" data-pick="all">전체</button>
+          <button type="button" class="btn ghost small-btn" data-pick="suggest" title="표면 수집이 이 모듈을 추천한 지점">추천 지점만</button>{% endif %}
           <button type="button" class="btn ghost small-btn" data-pick="none">비우기</button>
         </span>
       </div>
@@ -83,16 +87,16 @@
       </table>
       {% else %}
       <table class="grid surface">
-        <thead><tr><th><input type="checkbox" class="mp-all" aria-label="전체 선택" title="전체 선택"></th><th>메서드</th><th>파라미터</th><th>위치</th><th>발견 값</th><th>이 모듈 판정</th><th>다른 점검</th></tr></thead>
+        <thead><tr><th>{% if not picks %}<input type="checkbox" class="mp-all" aria-label="전체 선택" title="전체 선택">{% endif %}</th><th>메서드</th><th>파라미터</th><th>위치</th><th>발견 값</th><th>이 모듈 판정</th><th>다른 점검</th></tr></thead>
         {% for gr in groups if gr.params %}{# 파라미터 없는 주소는 지점 점검을 걸 자리가 없다 #}
         <tbody>
-          <tr class="ep"><td><input type="checkbox" class="mp-group" aria-label="{{ gr.path }} 파라미터 전체 선택" title="이 주소의 파라미터 전체"></td><td class="mono nowrap">{{ gr.methods | sort | join(" · ") }}</td>
+          <tr class="ep"><td>{% if not picks %}<input type="checkbox" class="mp-group" aria-label="{{ gr.path }} 파라미터 전체 선택" title="이 주소의 파라미터 전체">{% endif %}</td><td class="mono nowrap">{{ gr.methods | sort | join(" · ") }}</td>
             <td colspan="5"><span class="mono">{{ gr.path }}</span> <span class="sub small">{{ gr.params | length }}개 파라미터</span></td></tr>
           {% for p in gr.params %}
           {% set sug = [] %}{% for sg in p.suggest %}{% for m in sg.modules %}{% if m[0] == mod.id %}{% set _ = sug.append(1) %}{% endif %}{% endfor %}{% endfor %}
           {% set mine = p.checks | selectattr('module', 'equalto', mod.name) | list %}
           <tr class="{{ 'mp-sug' if sug }}">
-            <td><input type="checkbox" name="point" value="{{ p.id }}" form="mp-form" data-suggest="{{ '1' if sug }}"
+            <td><input type="{{ 'radio' if picks else 'checkbox' }}" name="point" value="{{ p.id }}" form="mp-form" data-suggest="{{ '1' if sug }}"
                        aria-label="{{ gr.path }} {{ p.param }} 선택"></td>
             <td class="mono sub">{{ p.method }}</td>
             <td class="mono">{{ p.param }}{% if sug %} <span class="sg-dot" title="표면 수집이 이 모듈을 추천">추천</span>{% endif %}</td>
