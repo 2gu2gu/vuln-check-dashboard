@@ -502,6 +502,24 @@ SUGGEST = {"SSRF": "SSRF·열린 리다이렉트", "INJECT": "SQL 주입·XSS", 
            "IDOR": "남의 데이터 열람(IDOR)", "AUTH": "권한 우회", "ERROR": "에러 처리"}
 
 
+SUGGEST_LABEL = {"INJECT": "SQL 주입·XSS", "FILE": "경로 조작", "SSRF": "SSRF·열린 리다이렉트",
+                 "IDOR": "남의 데이터 열람(IDOR)"}
+
+
+def suggest(name, place):
+    """파라미터 하나에 해 볼 점검 — SUGGEST_LABEL 의 키 목록. 이름과 위치만 본다."""
+    out = []
+    if SSRF_PARAM.match(name):
+        out.append("SSRF")
+    if FILE_PARAM.match(name):
+        out.append("FILE")
+    if place == "path" or re.fullmatch(r"\w*[iI]d", name):
+        out.append("IDOR")
+    if INJECT_PARAM.match(name) or (place in ("query", "form", "json") and not out):
+        out.append("INJECT")             # 값을 넣는 칸이면 기본은 주입 점검
+    return out
+
+
 def score(c):
     if c.kind == "page":
         c.risk, c.reasons = 0, []

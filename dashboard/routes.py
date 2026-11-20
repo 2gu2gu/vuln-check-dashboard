@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
                    render_template, request, url_for)
 
-from . import board, cvss, grouping, jobs, login as login_mod, needs, runfiles, scope, wordlists
+from . import board, cvss, discovery as dv, grouping, jobs, login as login_mod, needs, runfiles, scope, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -264,12 +264,15 @@ def targets():
     header_text = {row["id"]: (row["headers"] or "") for row in targets}
     # 표면 탭을 여기로 합쳤다(11-20 사용자 결정). 대상을 누르면 그 대상이 모은
     # 페이지·파라미터와 지점 점검이 목록 아래에 뜬다.
-    groups, totals = _surface_of(target)
+    sort = request.args.get("sort", "")
+    groups, totals = _surface_of(target, sort=sort, state=request.args.get("state", ""),
+                                 show_all=request.args.get("show") == "all")
     return render_template("targets.html", target=target, targets=targets,
                            header_names=names, header_text=header_text, logins=logins,
                            groups=groups, totals=totals, probes=_probe_modules(target),
                            collectors=[m for m in _modules_for(target).values() if m.stage == "collect"],
-                           verdicts=VERDICTS)
+                           verdicts=VERDICTS, states=dv.STATES, source_label=dv.SOURCE_LABEL, args=request.args,
+                           surl=_surface_link(target))
 
 
 @bp.post("/targets/<int:tid>/delete")
@@ -620,11 +623,35 @@ def _probe_modules(target):
     return {k: m for k, m in _modules_for(target).items() if m.stage == "probe"}
 
 
-def _surface_of(target):
-    """대상 하나가 모은 지점을 주소별로 묶는다 → (묶음 목록, 개수)."""
-    groups, totals = [], {"endpoints": 0, "params": 0, **{v: 0 for v in VERDICTS}}
+MISSING = ("not_found", "soft_404")
+
+
+def _suggest_modules(target):
+    """추천 점검 키 → 이 대상에서 쓸 수 있는 모듈 [(id, 이름, 단계)]. 없으면 빈 목록."""
+    mods = _modules_for(target).values()
+    want = {"INJECT": lambda m: m.stage == "probe" and (getattr(m, "vuln", "") in ("XSS", "SQL") or m.id == "payload_probe"),
+            "FILE": lambda m: getattr(m, "vuln", "") == "FILE" and m.stage in ("probe", "tool")}
+    return {k: [(m.id, m.name, m.stage) for m in mods if f(m)] for k, f in want.items()}
+
+
+def _evidence(text):
+    try:
+        ev = json.loads(text or "")
+        return ev if isinstance(ev, dict) else None
+    except ValueError:
+        return None
+
+
+def _surface_of(target, sort="", state="", show_all=False):
+    """대상 하나가 모은 지점을 주소별로 묶는다 → (묶음 목록, 개수).
+
+    표면 자동 수집이 남긴 상태·점수·근거를 묶음마다 붙이고(11-20 2단계), 고른 대로 거르고 줄 세운다.
+    없는 경로(404·가짜 200)는 기본으로 숨긴다 — 보이면 '찔러 볼 곳' 처럼 읽힌다.
+    """
+    groups, totals = [], {"endpoints": 0, "params": 0, "hidden": 0, **{v: 0 for v in VERDICTS}}
     if not target:
         return groups, totals
+    suggest_mods = _suggest_modules(target)
     db = get_db()
     checks = {}
     for c in db.execute("SELECT pc.* FROM point_checks pc JOIN points p ON p.id = pc.point_id WHERE p.target_id = ?",
@@ -633,20 +660,50 @@ def _surface_of(target):
     by_url = {}
     for p in db.execute("SELECT * FROM points WHERE target_id = ? ORDER BY url, method, place, param", [target["id"]]):
         grp = by_url.setdefault(p["url"], {"url": p["url"], "path": urlsplit(p["url"]).path or "/",
-                                           "methods": set(), "sources": set(), "params": []})
+                                           "methods": set(), "sources": set(), "params": [], "ends": [], "risk": 0})
         grp["methods"].add(p["method"])
-        grp["sources"].add(p["source"])
-        if p["param"]:
-            grp["params"].append({**dict(p), "checks": [
-                {"module": _modules()[c["module_id"]].name if c["module_id"] in _modules() else c["module_id"],
-                 "verdict": c["verdict"], "evidence": c["evidence"], "exchange_id": c["exchange_id"]}
-                for c in checks.get(p["id"], [])]})
-            totals["params"] += 1
-            for c in checks.get(p["id"], []):
-                totals[c["verdict"]] += 1
+        grp["sources"].update(s for s in p["source"].split(",") if s)
+        grp["risk"] = max(grp["risk"], p["risk"] or 0)
+        if not p["param"]:
+            if p["state"]:
+                grp["ends"].append({"method": p["method"], "state": p["state"], "status": p["status"],
+                                    "risk": p["risk"], "ev": _evidence(p["evidence"])})
+            continue
+        grp["params"].append({**dict(p), "suggest": [
+            {"key": k, "label": dv.SUGGEST_LABEL[k], "modules": suggest_mods.get(k, [])}
+            for k in dv.suggest(p["param"], p["place"])], "checks": [
+            {"module": _modules()[c["module_id"]].name if c["module_id"] in _modules() else c["module_id"],
+             "verdict": c["verdict"], "evidence": c["evidence"], "exchange_id": c["exchange_id"]}
+            for c in checks.get(p["id"], [])]})
+        totals["params"] += 1
+        for c in checks.get(p["id"], []):
+            totals[c["verdict"]] += 1
     groups = list(by_url.values())
     totals["endpoints"] = len(groups)
-    return groups, totals
+    keep = []
+    for gr in groups:
+        states = {e["state"] for e in gr["ends"]}
+        gr["missing"] = bool(states) and states <= set(MISSING)
+        if state and state not in states:
+            continue
+        if gr["missing"] and not show_all and state not in MISSING:
+            totals["hidden"] += 1
+            continue
+        keep.append(gr)
+    totals["states"] = sorted({e["state"] for gr in groups for e in gr["ends"]}, key=list(dv.STATES).index)
+    if sort == "risk" or (not sort and any(gr["risk"] for gr in keep)):
+        keep.sort(key=lambda gr: (-gr["risk"], gr["path"]))
+    return keep, totals
+
+
+def _surface_link(target):
+    """지금 고른 거르기 값을 지키며 하나만 바꾼 대상 탭 주소를 만든다(빈 값은 뺀다)."""
+    def link(over):
+        keep = {k: v for k, v in request.args.items() if k != "target"}
+        keep.update(over)
+        return url_for("dash.targets", target=target["id"] if target else None,
+                       **{k: v for k, v in keep.items() if v}) + "#surface"
+    return link
 
 
 def _surface_url(tid):

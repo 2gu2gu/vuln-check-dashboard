@@ -132,7 +132,30 @@
   {% endfor %}
 </section>
 
-{% if not groups %}
+{# 거르고 줄 세우기(11-20 2단계). 주소는 #surface 로 돌아온다 #}
+{% if totals.endpoints %}
+<div class="sf-bar">
+  <span class="sub small">줄 세우기</span>
+  <a class="by-tab {{ 'on' if args.get('sort', '') != 'path' }}" href="{{ surl({'sort': 'risk'}) }}">위험 높은 순</a>
+  <a class="by-tab {{ 'on' if args.get('sort') == 'path' }}" href="{{ surl({'sort': 'path'}) }}">주소 순</a>
+  {% if totals.states %}
+  <span class="sub small sf-gap">상태</span>
+  <a class="by-tab {{ 'on' if not args.get('state') }}" href="{{ surl({'state': ''}) }}">전체</a>
+  {% for st in totals.states %}
+  <a class="by-tab {{ 'on' if args.get('state') == st }}" href="{{ surl({'state': st}) }}"><span class="st st-{{ st }}">{{ states[st] }}</span></a>
+  {% endfor %}
+  {% endif %}
+  {% if totals.hidden %}
+  <span class="sub small sf-gap">없는 경로(404·가짜 200) {{ totals.hidden }}개 숨김 ·
+    <a href="{{ surl({'show': 'all'}) }}">보이기</a></span>
+  {% elif args.get('show') == 'all' %}
+  <span class="sub small sf-gap"><a href="{{ surl({'show': ''}) }}">없는 경로 숨기기</a></span>
+  {% endif %}
+</div>
+{% endif %}
+{% if totals.endpoints and not groups %}
+  {{ empty("조건에 맞는 주소가 없습니다", "위의 상태·숨김 조건을 바꿔 보세요.", surl({'state': '', 'show': 'all'}), "모두 보기") }}
+{% elif not groups %}
   {{ empty("수집된 지점이 없습니다",
            "모듈 탭의 표면 수집 모듈(" ~ (collectors | map(attribute='name') | join(', ') or '없음') ~ ")을 먼저 돌리세요.",
            url_for('dash.modules', target=target.id), "모듈로 가기") }}
@@ -183,14 +206,37 @@
 
   <div class="table-wrap">
   <table class="grid surface">
-    <thead><tr><th></th><th>메서드</th><th>파라미터</th><th>위치</th><th>발견 값</th><th>출처</th><th>판정</th></tr></thead>
+    <thead><tr><th></th><th>메서드</th><th>파라미터</th><th>위치</th><th>발견 값</th><th>출처</th><th>추천 점검</th><th>판정</th></tr></thead>
     {% for gr in groups %}
     <tbody>
       <tr class="ep">
         <td></td>
         <td class="mono nowrap">{{ gr.methods | sort | join(" · ") }}</td>
-        <td colspan="5"><span class="mono">{{ gr.path }}</span>
-          <span class="sub small">{{ gr.params | length }}개 파라미터 · {{ gr.sources | reject("equalto", "") | sort | join(", ") }}</span></td>
+        <td colspan="6">
+          <div class="ep-line">
+            <span class="mono">{{ gr.path }}</span>
+            {% for e in gr.ends %}<span class="st st-{{ e.state }}" title="{{ e.method }} 확인 결과">{% if gr.ends | length > 1 %}{{ e.method }} {% endif %}{{ states.get(e.state, e.state) }}{% if e.status %} <b>{{ e.status }}</b>{% endif %}</span>{% endfor %}
+            {% if gr.risk %}<span class="risk {{ 'r-hi' if gr.risk >= 30 else ('r-mid' if gr.risk >= 15 else 'r-lo') }}" title="위험 점수 0~100 — 이유는 '근거'">
+              <i style="width: {{ gr.risk }}%"></i>위험 {{ gr.risk }}</span>{% endif %}
+            <span class="sub small">{{ gr.params | length }}개 파라미터 · {% for s in gr.sources | sort %}{{ source_label.get(s, s) }}{{ ", " if not loop.last }}{% endfor %}</span>
+          </div>
+          {% set ev = (gr.ends | selectattr('ev') | list) %}
+          {% if ev %}
+          <details class="ep-ev">
+            <summary class="sub small">근거 · 이유</summary>
+            {% for e in ev %}
+            <dl class="facts small">
+              <dt>{{ e.method }}</dt>
+              <dd>메서드 <b>{{ e.ev.basis }}</b> · 신뢰도 {{ (e.ev.confidence * 100) | round | int }}% ·
+                출처 {% for s in e.ev.sources %}{{ source_label.get(s, s) }}{{ ", " if not loop.last }}{% endfor %}
+                <ul>{% for line in e.ev.evidence %}<li>{{ line }}</li>{% endfor %}</ul>
+                {% if e.ev.reasons %}<b>위험 이유</b><ul>{% for r in e.ev.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}
+              </dd>
+            </dl>
+            {% endfor %}
+          </details>
+          {% endif %}
+        </td>
       </tr>
       {% for p in gr.params %}
       <tr>
@@ -199,7 +245,15 @@
         <td class="mono">{{ p.param }}</td>
         <td class="sub">{{ {"query": "쿼리", "form": "폼 본문", "path": "경로", "json": "JSON 본문", "header": "헤더"}.get(p.place, p.place) }}</td>
         <td class="mono sub loc" title="{{ p.sample }}">{{ p.sample }}</td>
-        <td class="sub">{{ p.source }}</td>
+        <td class="sub">{% for s in p.source.split(",") if s %}{{ source_label.get(s, s) }}{{ ", " if not loop.last }}{% endfor %}</td>
+        <td class="sg-cell">{% for sg in p.suggest %}
+          {%- set pm = sg.modules | selectattr(2, 'equalto', 'probe') | list -%}
+          {%- set tm = sg.modules | selectattr(2, 'equalto', 'tool') | list -%}
+          {% if pm %}<button type="button" class="sg" data-mod="{{ pm[0][0] }}" data-point="{{ p.id }}"
+              title="이 지점을 고르고 점검 모듈을 '{{ pm[0][1] }}' 로 맞춥니다">{{ sg.label }} →</button>
+          {% elif tm %}<a class="sg" href="{{ url_for('dash.tools', target=target.id, tool=tm[0][0]) }}" title="탐색 탭의 {{ tm[0][1] }}">{{ sg.label }} ↗</a>
+          {% else %}<span class="sg none" title="이 점검을 하는 모듈이 아직 없습니다">{{ sg.label }}</span>{% endif %}
+        {%- endfor %}</td>
         <td>{% for c in p.checks %}
           {% if c.exchange_id %}<a class="vchip" href="{{ url_for('dash.history_detail', xid=c.exchange_id) }}" title="눌러서 요청·응답 보기&#10;{{ c.evidence }}">{{ verdict(c.verdict) }}<small>{{ c.module }} ↗</small></a>
           {% else %}<span class="vchip" title="{{ c.evidence }}">{{ verdict(c.verdict) }}<small>{{ c.module }}</small></span>{% endif %}

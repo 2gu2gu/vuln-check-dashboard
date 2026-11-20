@@ -211,3 +211,52 @@ def test_saved_points_keep_state_and_risk(app, client, monkeypatch, demo_fetch):
     assert row is not None and (row["state"], row["status"]) == ("auth_required", 403) and row["risk"] > 0
     page = client.get(f"/targets?target={tid}").get_data(as_text=True)
     assert "JSON 본문" in page
+
+
+# ── 2단계: 대상 탭에 상태·점수·근거·추천 점검 ──────────────────────
+
+@pytest.mark.parametrize("name, place, want", [
+    ("url", "query", ["SSRF"]), ("file", "query", ["FILE"]), ("courseId", "path", ["IDOR"]),
+    ("keyword", "query", ["INJECT"]), ("memo", "json", ["INJECT"]), ("courseId", "json", ["IDOR"]),
+])
+def test_suggest(name, place, want):
+    assert dv.suggest(name, place) == want
+
+
+@pytest.fixture
+def discovered(app, client, demo_fetch):
+    from dashboard.db import get_db
+    client.post("/targets", data={"project": "sesacedu", "role": "practice", "name": "연습", "url": ORIGIN})
+    with app.app_context():
+        tid = get_db().execute("SELECT id FROM targets").fetchone()["id"]
+    client.post("/modules/surface_discover/run", data={"target_id": tid, "confirm": "yes",
+                **{p["name"]: p.get("default", "") for p in surface_discover.META["params"]}})
+    return tid
+
+
+def test_surface_shows_state_risk_and_evidence(client, discovered):
+    page = client.get(f"/targets?target={discovered}").get_data(as_text=True)
+    assert 'class="st st-auth_required"' in page and "<b>403</b>" in page
+    assert 'class="risk r-' in page and "근거 · 이유" in page
+    assert "메서드 <b>선언</b>" in page and "API 명세" in page
+    # 위험 높은 순이 기본 — 가장 위 묶음이 0점짜리 '/' 가 아니다
+    first = page.index('<tr class="ep">')
+    assert "위험 " in page[first:first + 2500]
+
+
+def test_missing_paths_are_hidden_until_asked(client, discovered):
+    page = client.get(f"/targets?target={discovered}").get_data(as_text=True)
+    assert "/app/dashboard" not in page and "숨김" in page
+    shown = client.get(f"/targets?target={discovered}&show=all").get_data(as_text=True)
+    assert "/app/dashboard" in shown and "st-soft_404" in shown
+
+
+def test_state_filter(client, discovered):
+    page = client.get(f"/targets?target={discovered}&state=auth_required").get_data(as_text=True)
+    assert "/backend/admin/stats" in page and "/backend/courses<" not in page.replace("</span>", "<")
+
+
+def test_suggestions_point_to_modules(client, discovered):
+    page = client.get(f"/targets?target={discovered}&sort=path").get_data(as_text=True)
+    assert 'class="sg" data-mod=' in page                               # 주입 → 지점 점검 모듈
+    assert "SSRF·열린 리다이렉트</span>" in page                         # 모듈 없는 추천은 표시만
