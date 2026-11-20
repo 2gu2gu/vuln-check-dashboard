@@ -109,8 +109,13 @@ def results():
     } for r in rows]
     # 위쪽 '점검 현황'(11-20): 보고서 자동화 툴과 같은 그림 세 가지. 연습용은 뺀다
     db = get_db()
-    charts = stats.overview(db, [t for t in targets if not _is_practice(t)]) if target else None
+    real = [t for t in targets if not _is_practice(t)]
+    charts = stats.overview(db, real) if target else None
+    act = stats.activity(db, real) if target else None
+    bd = stats.breakdown(db, real, _modules()) if target else None
+    cal = stats.calendar(db, real, _project_of(target).schedule) if target else None
     return render_template("results.html", target=target, targets=targets, findings=data, charts=charts,
+                           act=act, bd=bd, cal=cal,
                            counts=counts, modules=_modules_for(target), severities=SEVERITIES,
                            args=request.args, cvss_metrics=cvss.METRICS)
 
