@@ -1,53 +1,50 @@
-"""결과 탭 위쪽 그림에 쓰는 집계(11-20 기획 1단계).
+"""결과 탭 위쪽 '점검 현황' 집계(11-20).
 
-① 요약 숫자 4개  ② 대상별 심각도 막대  ⑤ 처리 진행 막대.
-'미조치' 는 조치됨·오탐을 뺀 것이다 — 심각도 카드가 원래 그렇게 셌다.
+보고서 자동화 툴의 그림(위험도별 건수, 대상별 위험도 분포, 대상별 취약점 요약 표)과 같은 모양으로
+보이게 한다 — 대시보드에서 본 것과 보고서에 실릴 것이 같은 그림이어야 한다.
+'미조치' 는 조치됨·오탐을 뺀 것이다. 연습용 대상은 실서버가 아니라 빼고 센다.
 """
 from .core import SEVERITIES
-from .db import STATUSES
 
 CLOSED = ("fixed", "false_positive")
 
 
-def _pct(n, total):
-    return round(n * 100 / total, 1) if total else 0
+def _ticks(top):
+    """가로축 눈금 0·5·10… 처럼 깔끔한 간격으로. 막대가 축 끝을 넘지 않게 위로 올린다."""
+    if top <= 0:
+        return [0], 1
+    step = next(s for s in (1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000) if top / s <= 6)
+    end = -(-top // step) * step
+    return list(range(0, end + 1, step)), end
 
 
-def by_target(db, targets):
-    """대상마다 미조치 심각도별 건수. 막대 길이는 가장 많은 대상을 100 으로 맞춘다 —
-    대상끼리 길이로 비교할 수 있어야 한다."""
-    counts = {t["id"]: {s: 0 for s in SEVERITIES} for t in targets}
-    for r in db.execute("SELECT target_id, severity, COUNT(*) c FROM findings "
-                        "WHERE status NOT IN (?, ?) GROUP BY target_id, severity", CLOSED):
-        if r["target_id"] in counts and r["severity"] in SEVERITIES:
-            counts[r["target_id"]][r["severity"]] = r["c"]
-    biggest = max((sum(c.values()) for c in counts.values()), default=0)
-    rows = []
-    for t in targets:
-        c = counts[t["id"]]
-        total = sum(c.values())
-        rows.append({"target": t, "total": total, "width": _pct(total, biggest),
-                     "segments": [{"severity": s, "n": c[s], "pct": _pct(c[s], total)} for s in SEVERITIES if c[s]]})
-    return rows
-
-
-def progress(db, target_id):
-    """한 대상의 처리 상태별 건수. 모의해킹 팀이 결과를 얼마나 검토했는지 본다."""
-    c = {k: 0 for k in STATUSES}
-    for r in db.execute("SELECT status, COUNT(*) c FROM findings WHERE target_id = ? GROUP BY status", [target_id]):
-        if r["status"] in c:
-            c[r["status"]] = r["c"]
-    total = sum(c.values())
-    return {"total": total, "reviewed_pct": _pct(total - c["open"], total),
-            "segments": [{"status": k, "label": v, "n": c[k], "pct": _pct(c[k], total)} for k, v in STATUSES.items()]}
-
-
-def headline(db, target_id, targets):
-    """① 맨 윗줄 숫자 4개."""
-    row = db.execute(
-        "SELECT SUM(status NOT IN (?, ?)) open_n, "
-        "SUM(status NOT IN (?, ?) AND severity IN ('critical', 'high')) top_n "
-        "FROM findings WHERE target_id = ?", [*CLOSED, *CLOSED, target_id]).fetchone()
-    scanned = db.execute("SELECT COUNT(DISTINCT target_id) FROM runs").fetchone()[0]
-    return {"open": row["open_n"] or 0, "top": row["top_n"] or 0,
-            "scanned": scanned, "targets": len(targets)}
+def overview(db, targets):
+    """보이는 대상들의 미조치 심각도별 건수 + 합계 + 검토율."""
+    ids = [t["id"] for t in targets]
+    counts = {i: {s: 0 for s in SEVERITIES} for i in ids}
+    reviewed = total_all = 0
+    if ids:
+        marks = ",".join("?" * len(ids))
+        for r in db.execute(f"SELECT target_id, severity, status, COUNT(*) c FROM findings "
+                            f"WHERE target_id IN ({marks}) GROUP BY target_id, severity, status", ids):
+            total_all += r["c"]
+            if r["status"] != "open":
+                reviewed += r["c"]
+            if r["status"] not in CLOSED and r["severity"] in SEVERITIES:
+                counts[r["target_id"]][r["severity"]] += r["c"]
+    rows = [{"target": t, "counts": counts[t["id"]], "total": sum(counts[t["id"]].values())} for t in targets]
+    totals = {s: sum(r["counts"][s] for r in rows) for s in SEVERITIES}
+    ticks, axis_end = _ticks(max((r["total"] for r in rows), default=0))
+    for r in rows:
+        r["segments"] = [{"severity": s, "n": r["counts"][s], "pct": r["counts"][s] * 100 / axis_end}
+                         for s in SEVERITIES if r["counts"][s]]
+    sev_top = max(totals.values(), default=0) or 1
+    return {
+        "rows": rows,
+        "totals": totals,
+        "total": sum(totals.values()),
+        "sev_bars": [{"severity": s, "n": totals[s], "pct": totals[s] * 100 / sev_top} for s in SEVERITIES],
+        "ticks": [{"n": n, "pct": n * 100 / axis_end} for n in ticks],
+        "reviewed_pct": round(reviewed * 100 / total_all) if total_all else 0,
+        "unreviewed": total_all - reviewed,
+    }

@@ -58,32 +58,49 @@ def two_targets(app, client):
     return a, b
 
 
-def test_bars_are_scaled_to_the_biggest_target(app, two_targets):
-    a, b = two_targets
+def _overview(app):
     with app.app_context():
         db = get_db()
-        rows = {r["target"]["id"]: r for r in stats.by_target(db, db.execute("SELECT * FROM targets").fetchall())}
-    assert rows[a]["total"] == 5 and rows[a]["width"] == 100
-    assert rows[b]["total"] == 1 and rows[b]["width"] == 20
+        return stats.overview(db, db.execute("SELECT * FROM targets ORDER BY id").fetchall())
+
+
+def test_overview_counts_open_findings_per_target(app, two_targets):
+    a, b = two_targets
+    ov = _overview(app)
+    rows = {r["target"]["id"]: r for r in ov["rows"]}
+    # '확인됨' 도 아직 조치 전이라 미조치에 든다. 조치됨은 빠진다.
+    assert rows[a]["counts"] == {"critical": 1, "high": 3, "medium": 0, "low": 1, "info": 0}
+    assert rows[a]["total"] == 5 and rows[b]["total"] == 1
+    assert ov["totals"]["high"] == 3 and ov["total"] == 6
     assert [g["severity"] for g in rows[a]["segments"]] == ["critical", "high", "low"]
 
 
-def test_progress_counts_every_status(app, two_targets):
-    a, _ = two_targets
-    with app.app_context():
-        pg = stats.progress(get_db(), a)
-    n = {g["status"]: g["n"] for g in pg["segments"]}
-    assert n == {"open": 4, "confirmed": 1, "fixed": 1, "false_positive": 0}
-    assert pg["reviewed_pct"] == round(2 * 100 / 6, 1)
+def test_axis_ends_on_a_round_tick(app, two_targets):
+    """막대가 축 끝을 넘지 않고, 눈금은 0·1·2… 처럼 고른 간격이다."""
+    ov = _overview(app)
+    ticks = [t["n"] for t in ov["ticks"]]
+    assert ticks[0] == 0 and ticks[-1] >= 5 and len(set(b - a for a, b in zip(ticks, ticks[1:]))) == 1
+    assert all(sum(g["pct"] for g in r["segments"]) <= 100 for r in ov["rows"])
 
 
-def test_results_page_draws_the_charts(client, two_targets):
+def test_reviewed_share_counts_everything_not_open(app, two_targets):
+    ov = _overview(app)
+    assert ov["reviewed_pct"] == round(2 * 100 / 7) and ov["unreviewed"] == 5
+
+
+def test_results_page_draws_the_report_style_overview(client, two_targets):
     a, b = two_targets
     page = client.get(f"/?target={a}").get_data(as_text=True)
-    assert 'class="kpis"' in page and "대상별 미조치" in page and "처리 진행" in page
-    # 막대 조각은 아래 표를 거르는 링크다
+    assert "점검 현황" in page and "위험도별 건수" in page and "대상별 위험도 분포" in page
+    assert "대상별 취약점 요약" in page and "<tfoot>" in page
+    # 막대 칸과 표 칸은 아래 목록을 그 대상·심각도로 거르는 링크다
     assert f'href="/?target={b}&amp;severity=medium"' in page
-    # '확인됨' 도 아직 조치 전이라 미조치에 든다 — High 열린 것 2 + 확인됨 1
-    assert 'data-tip="사용자 웹 · High 3건 (60.0%)"' in page
-    # 색만으로 구분하지 않는다 — 표로 보기가 있다
-    assert "표로 보기" in page
+    assert 'title="사용자 웹 · High 3건">3</a>' in page
+
+
+def test_practice_targets_are_left_out_of_the_overview(app, client):
+    add_target(client, "https://sesacedu.store", name="사용자 웹")
+    add_target(client, "http://127.0.0.1:5051", name="연습", role="practice")
+    page = client.get(f"/?target={target_id(app, 'https://sesacedu.store')}").get_data(as_text=True)
+    overview = page.split('id="ov-title"', 1)[1].split("— 결과 목록", 1)[0]
+    assert "사용자 웹" in overview and "연습" not in overview.replace("연습용 제외", "")

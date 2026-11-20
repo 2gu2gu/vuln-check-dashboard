@@ -107,10 +107,9 @@ def results():
         "cvss": _rate(r["cvss_vector"] if "cvss_vector" in r.keys() else "",
                       mods.get(r["module_id"])),
     } for r in rows]
-    # 위쪽 그림(11-20 기획 1단계): 요약 숫자 · 대상별 심각도 막대 · 처리 진행
+    # 위쪽 '점검 현황'(11-20): 보고서 자동화 툴과 같은 그림 세 가지. 연습용은 뺀다
     db = get_db()
-    charts = {"head": stats.headline(db, target["id"], targets), "by_target": stats.by_target(db, targets),
-              "progress": stats.progress(db, target["id"])} if target else None
+    charts = stats.overview(db, [t for t in targets if not _is_practice(t)]) if target else None
     return render_template("results.html", target=target, targets=targets, findings=data, charts=charts,
                            counts=counts, modules=_modules_for(target), severities=SEVERITIES,
                            args=request.args, cvss_metrics=cvss.METRICS)

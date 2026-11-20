@@ -5,81 +5,93 @@
 {% if not target %}
   {{ empty("등록된 대상이 없습니다", "먼저 점검할 자체 환경 주소를 등록하세요.", url_for('dash.targets'), "대상 등록") }}
 {% else %}
-{# ── 위쪽 그림(11-20 기획 1단계) ─────────────────────────────
-   ① 요약 숫자 ② 대상별 미조치 심각도 막대 ⑤ 처리 진행. 막대 조각을 누르면 아래 표가 걸러진다.
-   색은 심각도 한 색조의 단계(--sr-*)로 칠하고, 모양 아이콘·글자를 늘 같이 둔다(색만으로 구분하지 않는다). #}
-{% set h = charts.head %}
-{% set pg = charts.progress %}
-<section class="kpis" aria-label="요약">
-  <a class="kpi" href="{{ url_for('dash.results', target=target.id) }}">
-    <small>미조치</small><strong>{{ h.open }}</strong><span class="sub small">{{ target.name }} · 조치됨·오탐 제외</span></a>
-  <div class="kpi">
-    <small>그중 Critical · High</small><strong>{{ h.top }}</strong><span class="sub small">먼저 볼 것 — 아래 표는 심각도 순</span></div>
-  <a class="kpi" href="{{ url_for('dash.results', target=target.id, status='open') }}">
-    <small>검토한 비율</small><strong>{{ pg.reviewed_pct | round | int }}<span class="unit">%</span></strong>
-    <span class="sub small">미확인 {{ pg.segments[0].n }}건 남음</span></a>
-  <div class="kpi">
-    <small>점검한 대상</small><strong>{{ h.scanned }}<span class="unit"> / {{ h.targets }}</span></strong>
-    <span class="sub small">모듈을 한 번이라도 돌린 대상</span></div>
-</section>
+{# ── 점검 현황(11-20) ─────────────────────────────────────────
+   보고서 자동화 툴의 그림과 같은 세 가지: 위험도별 건수 · 대상별 위험도 분포 · 대상별 취약점 요약 표.
+   디자인은 노션 '보고서 디자인 레퍼런스' 를 따른다 — 절제된 색, 위험도 색은 채도를 한 단계 낮춘 것.
+   연습용 대상은 실서버가 아니라 빼고 센다. 막대·칸을 누르면 아래 표가 그 대상·심각도로 걸러진다. #}
+{% set ov = charts %}
+<section class="overview" aria-labelledby="ov-title">
+  <div class="ov-head">
+    <h2 id="ov-title">점검 현황</h2>
+    <p class="ov-line">
+      미조치 <b>{{ ov.total }}</b>건
+      {% for s in ("critical", "high") %}<span class="ov-sep">·</span>{{ SEVERITY_LABEL[s] }} <b>{{ ov.totals[s] }}</b>{% endfor %}
+      <span class="ov-sep">·</span>검토 <b>{{ ov.reviewed_pct }}%</b>{% if ov.unreviewed %} <span class="sub">(미확인 {{ ov.unreviewed }}건)</span>{% endif %}
+      <span class="sub small">— 대상 {{ ov.rows | length }}곳, 연습용 제외</span>
+    </p>
+  </div>
 
-<div class="chart-row">
-  <section class="panel chart" aria-labelledby="ch-target">
-    <div class="chart-head"><h2 id="ch-target">대상별 미조치 — 심각도</h2>
-      <span class="sub small">막대 길이로 대상끼리 비교합니다. 조각을 누르면 그 대상·심각도만 아래 표에 남습니다.</span></div>
-    <ul class="legend">
-      {# 글자는 글자 색으로 둔다 — 아래 표의 심각도 아이콘 색과 막대 색이 달라 섞어 두면 헷갈린다 #}
-      {% for s in severities %}<li><i class="sw sr-{{ s }}" aria-hidden="true"></i>{{ SEVERITY_LABEL[s] }}</li>{% endfor %}
-    </ul>
-    <div class="hbars">
-      {% for r in charts.by_target %}
-      <div class="hbar-row {{ 'on' if r.target.id == target.id }}">
-        <a class="hbar-name" href="{{ url_for('dash.results', target=r.target.id) }}" title="{{ r.target.url }}">{{ r.target.name }}</a>
-        <div class="hbar-track">
-          {% if r.total %}
-          <div class="hbar" style="width: {{ r.width }}%">
+  <div class="chart-row">
+    <figure class="panel chart">
+      <figcaption>위험도별 건수</figcaption>
+      <div class="vbars" role="list">
+        {% for b in ov.sev_bars %}
+        <div class="vbar-col" role="listitem">
+          <span class="vbar-val">{{ b.n }}</span>
+          <div class="vbar-slot">
+            {% if b.n %}<span class="vbar sv-{{ b.severity }}" style="height: {{ b.pct }}%"></span>{% endif %}
+          </div>
+          <span class="vbar-label">{{ SEVERITY_LABEL[b.severity] }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </figure>
+
+    <figure class="panel chart">
+      <figcaption>대상별 위험도 분포 <span class="sub">(건)</span></figcaption>
+      <div class="hstack">
+        {% for r in ov.rows %}
+        <div class="hs-row {{ 'on' if r.target.id == target.id }}">
+          <a class="hs-name" href="{{ url_for('dash.results', target=r.target.id) }}" title="{{ r.target.url }}">{{ r.target.name }}</a>
+          <div class="hs-track">
             {% for g in r.segments %}
-            <a class="seg sr-{{ g.severity }}" style="flex-grow: {{ g.n }}"
+            <a class="hs-seg sv-{{ g.severity }}" style="width: {{ g.pct }}%"
                href="{{ url_for('dash.results', target=r.target.id, severity=g.severity) }}"
-               data-tip="{{ r.target.name }} · {{ SEVERITY_LABEL[g.severity] }} {{ g.n }}건 ({{ g.pct }}%)"
-               aria-label="{{ r.target.name }} {{ SEVERITY_LABEL[g.severity] }} {{ g.n }}건"></a>
+               title="{{ r.target.name }} · {{ SEVERITY_LABEL[g.severity] }} {{ g.n }}건">{{ g.n }}</a>
             {% endfor %}
           </div>
-          <span class="hbar-total">{{ r.total }}</span>
-          {% else %}<span class="sub small">미조치 없음</span>{% endif %}
+        </div>
+        {% endfor %}
+        <div class="hs-row hs-axis" aria-hidden="true">
+          <span></span>
+          <div class="hs-track">{% for t in ov.ticks %}<span class="hs-tick" style="left: {{ t.pct }}%">{{ t.n }}</span>{% endfor %}</div>
         </div>
       </div>
-      {% endfor %}
-    </div>
-    <details class="as-table"><summary class="sub small">표로 보기</summary>
-      <div class="table-wrap"><table class="grid">
-        <thead><tr><th>대상</th>{% for s in severities %}<th>{{ SEVERITY_LABEL[s] }}</th>{% endfor %}<th>합계</th></tr></thead>
-        <tbody>{% for r in charts.by_target %}<tr><td>{{ r.target.name }}</td>
-          {% for s in severities %}<td>{{ (r.segments | selectattr('severity', 'equalto', s) | map(attribute='n') | first) or 0 }}</td>{% endfor %}
-          <td><b>{{ r.total }}</b></td></tr>{% endfor %}</tbody>
-      </table></div>
-    </details>
-  </section>
+      <ul class="legend">
+        {% for s in severities %}<li><i class="sw sv-{{ s }}" aria-hidden="true"></i>{{ SEVERITY_LABEL[s] }}</li>{% endfor %}
+      </ul>
+    </figure>
+  </div>
 
-  <section class="panel chart" aria-labelledby="ch-progress">
-    <div class="chart-head"><h2 id="ch-progress">처리 진행 — {{ target.name }}</h2>
-      <span class="sub small">결과 {{ pg.total }}건을 얼마나 검토했는지. 미확인을 확인·조치·오탐으로 바꿔 갑니다.</span></div>
-    {% if pg.total %}
-    <div class="hbar progress-bar">
-      {% for g in pg.segments if g.n %}
-      <a class="seg st-{{ g.status }}" style="flex-grow: {{ g.n }}"
-         href="{{ url_for('dash.results', target=target.id, status=g.status) }}"
-         data-tip="{{ g.label }} {{ g.n }}건 ({{ g.pct }}%)" aria-label="{{ g.label }} {{ g.n }}건"></a>
+  <figure class="panel chart">
+    <figcaption>대상별 취약점 요약 <span class="sub">— 미조치 건수</span></figcaption>
+    <div class="table-wrap">
+    <table class="grid sum-table">
+      <thead><tr><th>대상</th><th>점검 대상</th>
+        {% for s in severities %}<th class="num"><i class="sw sv-{{ s }}" aria-hidden="true"></i> {{ SEVERITY_LABEL[s] }}</th>{% endfor %}
+        <th class="num">합계</th></tr></thead>
+      <tbody>
+      {% for r in ov.rows %}
+        {% set tp = PROJECTS[r.target.project] if r.target.project in PROJECTS else none %}
+        <tr class="{{ 'on' if r.target.id == target.id }}">
+          <td><a href="{{ url_for('dash.results', target=r.target.id) }}">{{ r.target.name }}</a></td>
+          <td class="sub">{{ tp.role_name(r.target.role) if tp else r.target.role }}</td>
+          {% for s in severities %}
+          <td class="num">{% if r.counts[s] %}<a href="{{ url_for('dash.results', target=r.target.id, severity=s) }}">{{ r.counts[s] }}</a>{% else %}<span class="sub">0</span>{% endif %}</td>
+          {% endfor %}
+          <td class="num"><b>{{ r.total }}</b></td>
+        </tr>
       {% endfor %}
+      </tbody>
+      <tfoot><tr><td colspan="2"><b>합계</b></td>
+        {% for s in severities %}<td class="num"><b>{{ ov.totals[s] }}</b></td>{% endfor %}
+        <td class="num"><b>{{ ov.total }}</b></td></tr></tfoot>
+    </table>
     </div>
-    <ul class="legend legend-list">
-      {% for g in pg.segments %}
-      <li><i class="sw st-{{ g.status }}" aria-hidden="true"></i>{{ g.label }} <b>{{ g.n }}</b> <span class="sub small">{{ g.pct }}%</span></li>
-      {% endfor %}
-    </ul>
-    {% else %}<p class="sub">아직 결과가 없습니다.</p>{% endif %}
-  </section>
-</div>
+  </figure>
+</section>
+
+<h2 class="list-head">{{ target.name }} — 결과 목록</h2>
 
 <form method="get" class="filters">
   <input type="hidden" name="target" value="{{ target.id }}">
