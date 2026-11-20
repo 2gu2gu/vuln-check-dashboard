@@ -16,6 +16,9 @@
   --accent-soft: #E6EEF4;
   --hit: #B5532E;
   --hit-soft: #F6E7E0;
+  /* 결과 탭 그림: 심각도 단계(한 색조, 밝음→어두움 = 낮음→높음) · 처리 상태 */
+  --sr-critical: #7E2219; --sr-high: #B8402E; --sr-medium: #DE6A4E; --sr-low: #F09A82; --sr-info: #C9C6BE;
+  --st-open: #C9C6BE; --st-confirmed: #86B6EF; --st-fixed: #1C5CAB; --st-fp: #DCDAD4;
   --mark: #F2D36B;        /* 점검 표식 강조 */
   --mark-ink: #1C1C1C;
   --find: #FFE58A;        /* 글자 찾기 — 걸린 곳 전부 */
@@ -39,6 +42,8 @@
   --bg: #1C1C1C; --surface: #262626; --surface-2: #2C2C2C; --line: #3A3A3A;
   --text: #ECECEC; --sub: #A3A3A3; --accent: #8DB4D4; --accent-soft: #2B3842;
   --hit: #E39A78; --hit-soft: #3D2C25;
+  --sr-critical: #F5B3A0; --sr-high: #E07A60; --sr-medium: #BE5A42; --sr-low: #9A4232; --sr-info: #55534F;
+  --st-open: #55534F; --st-confirmed: #3987E5; --st-fixed: #86B6EF; --st-fp: #444340;
   --mark: #8A6D1F; --mark-ink: #FFF3CC;
   --find: #8A6D1F; --find-at: #C2791A;
   --sev-critical: #E0899A; --sev-high: #E39A78; --sev-medium: #D9B65E; --sev-low: #8DB4D4; --sev-info: #A3A3A3;
@@ -640,3 +645,52 @@ html { scroll-behavior: smooth; }
 .mod-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .mod-quick label.check { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .mod-quick .btn[disabled] { opacity: .45; cursor: not-allowed; }
+
+/* ── 결과 탭 위쪽 그림(11-20 기획 1단계) ──────────────────────
+   심각도 막대는 한 색조(빨강)의 단계로 칠한다 — 심각도는 순서가 있는 값이라서다.
+   색 토큰(--sr-*, --st-*)은 맨 위 토큰 블록에 있고 dataviz 검사(--ordinal)를 밝은·어두운 화면 모두 통과했다.
+   Info 는 위험이 아니라 회색으로 뺀다. 처리 진행은 미확인=회색, 확인·조치=파랑 단계, 오탐=빗금. */
+.sr-critical { background: var(--sr-critical); } .sr-high { background: var(--sr-high); }
+.sr-medium { background: var(--sr-medium); } .sr-low { background: var(--sr-low); } .sr-info { background: var(--sr-info); }
+.st-open { background: var(--st-open); } .st-confirmed { background: var(--st-confirmed); } .st-fixed { background: var(--st-fixed); }
+.st-false_positive { background: repeating-linear-gradient(45deg, var(--st-fp) 0 4px, var(--surface) 4px 7px); }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.kpi { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; background: var(--surface);
+       border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); }
+a.kpi:hover { text-decoration: none; border-color: var(--accent); }
+.kpi small { color: var(--sub); font-size: 12px; }
+.kpi strong { font-size: 30px; line-height: 1.15; font-weight: 700; }
+.kpi .unit { font-size: 16px; font-weight: 600; color: var(--sub); }
+
+.chart-row { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; margin-bottom: 16px; }
+@media (max-width: 1000px) { .chart-row { grid-template-columns: minmax(0, 1fr); } }
+.chart { display: flex; flex-direction: column; gap: 10px; }
+.chart-head h2 { margin: 0 0 2px; font-size: 15px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; list-style: none; margin: 0; padding: 0; font-size: 12px; }
+.legend li { display: inline-flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.legend-list { flex-direction: column; align-items: flex-start; align-self: flex-start; gap: 6px; font-size: 13px; }
+
+.hbars { display: flex; flex-direction: column; gap: 8px; }
+.hbar-row { display: grid; grid-template-columns: 130px minmax(0, 1fr); align-items: center; gap: 10px; }
+.hbar-name { color: var(--text); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-row.on .hbar-name { font-weight: 700; }
+.hbar-row:not(.on) .hbar { opacity: .55; }
+.hbar-row:not(.on):hover .hbar { opacity: 1; }
+.hbar-track { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.hbar { display: flex; gap: 2px; height: 18px; min-width: 8px; }
+.progress-bar { width: 100%; height: 22px; }
+.hbar-total { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.seg { display: block; min-width: 3px; position: relative; }
+.hbar .seg:first-child { border-radius: 4px 0 0 4px; }
+.hbar .seg:last-child { border-radius: 0 4px 4px 0; }
+.hbar .seg:only-child { border-radius: 4px; }
+.seg:hover { outline: 2px solid var(--text); outline-offset: 1px; z-index: 1; }
+.as-table summary { cursor: pointer; }
+
+/* 막대 조각 위에 올리면 뜨는 말풍선 — 가까운 값은 글자로 읽는다 */
+.seg[data-tip]:hover::after { content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 8px);
+  transform: translateX(-50%); white-space: nowrap; padding: 4px 8px; border-radius: 6px; font-size: 12px;
+  background: var(--text); color: var(--surface); pointer-events: none; z-index: 5; }
+@media (forced-colors: active) { .seg { forced-color-adjust: none; } }

@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from flask import (Blueprint, Response, abort, current_app, flash, g, redirect,
                    render_template, request, url_for)
 
-from . import board, cvss, grouping, jobs, login as login_mod, needs, runfiles, scope, wordlists
+from . import board, cvss, grouping, jobs, login as login_mod, needs, runfiles, scope, stats, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -107,7 +107,11 @@ def results():
         "cvss": _rate(r["cvss_vector"] if "cvss_vector" in r.keys() else "",
                       mods.get(r["module_id"])),
     } for r in rows]
-    return render_template("results.html", target=target, targets=targets, findings=data,
+    # 위쪽 그림(11-20 기획 1단계): 요약 숫자 · 대상별 심각도 막대 · 처리 진행
+    db = get_db()
+    charts = {"head": stats.headline(db, target["id"], targets), "by_target": stats.by_target(db, targets),
+              "progress": stats.progress(db, target["id"])} if target else None
+    return render_template("results.html", target=target, targets=targets, findings=data, charts=charts,
                            counts=counts, modules=_modules_for(target), severities=SEVERITIES,
                            args=request.args, cvss_metrics=cvss.METRICS)
 
