@@ -1,15 +1,21 @@
-"""점검 결과를 Word(.docx) 로 낸다 — 내려받기 단추가 주는 것(11-21 사용자 지시).
+"""점검 결과를 Word(.docx) 로 낸다 — 팀 결과보고서 양식 그대로(11-21 사용자 지시).
 
 왜 여기서 따로 만드나. 작업공간에는 공용 변환기(`md2docx` 스킬)가 있지만 그건 **내 컴퓨터의
 CLI** 다. 대시보드는 EC2-4 에서 돌고 거기에는 Node 도 그 스킬도 없다. 그래서 서버에서 바로
-만들 수 있는 python-docx 로 같은 뼈대를 쓴다. **마크다운을 거치지 않는다** — 한 번 글자로
-바꿨다가 다시 읽으면 표 안의 `|` 같은 것이 깨진다.
+만들 수 있는 python-docx 로 그린다. 마크다운을 거치지 않는다 — 글자로 한 번 바꿨다 다시
+읽으면 표 안의 `|` 가 깨진다.
 
-문서 뼈대는 팀 노션 '웹 서비스 취약점 목록' 의 본문 양식 그대로다(1.개요 / 2.상세 /
-3.시나리오 / 4.조치). 마크다운 보고서(`/report/<id>.md`)와 **같은 내용, 같은 순서**다.
+**틀은 `01_제출물/결과보고서_양식/1_결과보고서_양식.md` 다.** 그 양식에서 딸깍이가 **실제로
+아는 것** 만 채운다.
 
-제출용 Word 양식(`01_제출물/결과보고서_양식/`)에 맞추는 것은 아직이다. 지금은 내용을 담은
-깨끗한 문서를 준다 — 양식에 얹는 것은 사람이 하거나, 양식 파일을 받아 다음에 맞춘다.
+    3-2. 위험도 적용 결과        유형마다 건수·최고 CVSS·위험도
+    4-2. 대상별 취약점 요약      등급별 건수와 합계, 유형 목록
+    5.   Part A 진단 상세 결과   유형마다 개요 표·건별 목록·대표 PoC(요청·응답)
+
+나머지(총평, 목표 달성, 시나리오, 진단 인력, 이행 점검)는 **사람이 쓴다.** 대신 자리를
+`[ ]` 로 비워 두고 무엇을 채워야 하는지 적어 둔다 — 빈칸이 있다는 걸 보여야 잊지 않는다.
+
+한 파일은 **대상 하나** 다. 보고서 한 벌은 대상별 파일을 모아 사람이 엮는다.
 """
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -17,8 +23,8 @@ from docx.shared import Pt, RGBColor
 
 MONO = "Consolas"
 GREY = RGBColor(0x55, 0x55, 0x55)
-# 코드 토막은 길어질 수 있다. 통째로 넣으면 표지 한 장이 코드로 덮인다 — 앞부분만 넣고 말해 준다
-CODE_LINES = 60
+HOLE = RGBColor(0xB0, 0x30, 0x30)   # 사람이 채울 자리 — 눈에 걸려야 한다
+CODE_LINES = 40                      # 요청·응답은 앞부분만. 통째로 넣으면 문서가 코드로 덮인다
 
 
 def _mono(p, text, size=9):
@@ -28,25 +34,32 @@ def _mono(p, text, size=9):
     return r
 
 
+def _small(doc, text, color=GREY, italic=False):
+    p = doc.add_paragraph()
+    r = p.add_run(text)
+    r.font.size = Pt(9)
+    r.font.color.rgb = color
+    r.italic = italic
+    return p
+
+
+def _hole(doc, text):
+    """사람이 채울 자리."""
+    return _small(doc, text, color=HOLE)
+
+
 def _code(doc, text, head=""):
-    """근거·요청·응답처럼 그대로 보여야 하는 토막."""
     if head:
-        h = doc.add_paragraph()
-        h.add_run(head).bold = True
+        doc.add_paragraph().add_run(head).bold = True
     lines = (text or "").splitlines() or [""]
-    cut = len(lines) > CODE_LINES
     p = doc.add_paragraph()
     p.paragraph_format.space_after = Pt(4)
     _mono(p, "\n".join(lines[:CODE_LINES]))
-    if cut:
-        note = doc.add_paragraph()
-        r = note.add_run(f"… 뒤로 {len(lines) - CODE_LINES}줄 더 있습니다. 전체는 결과 화면이나 "
-                         "JSON 보고서에서 보세요.")
-        r.font.size = Pt(9)
-        r.font.color.rgb = GREY
+    if len(lines) > CODE_LINES:
+        _small(doc, f"뒤로 {len(lines) - CODE_LINES}줄 더 있습니다. 전체는 결과 화면이나 JSON 보고서에 있습니다.")
 
 
-def _table(doc, head, rows, widths=None):
+def _table(doc, head, rows):
     t = doc.add_table(rows=1, cols=len(head))
     t.style = "Table Grid"
     for c, name in zip(t.rows[0].cells, head):
@@ -54,78 +67,128 @@ def _table(doc, head, rows, widths=None):
     for row in rows:
         cells = t.add_row().cells
         for c, v in zip(cells, row):
-            c.text = ""
+            v = "" if v is None else str(v)
             p = c.paragraphs[0]
-            if v.startswith("`") and v.endswith("`"):
+            if v.startswith("`") and v.endswith("`") and len(v) > 1:
                 _mono(p, v.strip("`"))
             else:
-                p.add_run(v)
-    if widths:
-        for row in t.rows:
-            for c, w in zip(row.cells, widths):
-                c.width = w
+                r = p.add_run(v)
+                if v.strip() == "[ ]":
+                    r.font.color.rgb = HOLE
     return t
 
 
-def build(t, rows, exchanges, meta, path):
+def _method_of(request: str) -> str:
+    """요청 첫 줄에서 메서드를 읽는다 — 결과에는 따로 안 들고 있다."""
+    head = (request or "").lstrip().split(" ", 1)[0]
+    return head if head in ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS") else "[ ]"
+
+
+def _groups(items):
+    """같은 모듈이 찾은 것끼리 묶는다 — 양식의 '취약점 유형(V-xx)' 한 칸이 모듈 하나다."""
+    order, by = [], {}
+    for it in items:
+        if it["module_id"] not in by:
+            by[it["module_id"]] = []
+            order.append(it["module_id"])
+        by[it["module_id"]].append(it)
+    rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+    order.sort(key=lambda mid: (min(rank.get(i["severity"], 9) for i in by[mid]), -len(by[mid])))
+    return [(f"V-{n:02d}", by[mid]) for n, mid in enumerate(order, 1)]
+
+
+def build(doc_meta, items, path):
     """보고서 한 벌을 만들어 `path`(파일 객체나 경로)에 쓴다.
 
-    t·rows·exchanges 는 `_report_rows` 가 주는 것 그대로, meta 는 화면이 아는 값
-    (프로젝트 이름·역할·작성 시각·연습용인지·모듈 이름·CVSS 계산·ATT&CK 주소)이다.
+    doc_meta 는 표지에 들어갈 것(대상·자산 ID·구역·작성 시각·도구 판), items 는 결과 한 줄씩
+    — 둘 다 routes 가 DB 와 모듈에서 꺼내 넘긴다.
     """
     doc = Document()
     doc.styles["Normal"].font.size = Pt(10)
+    groups = _groups(items)
+    counts = {k: 0 for k in ("critical", "high", "medium", "low", "info")}
+    for it in items:
+        if it["severity"] in counts:
+            counts[it["severity"]] += 1
 
-    doc.add_heading(("연습 기록 — " if meta["practice"] else "점검 결과 — ") + t["name"], level=0)
-    if meta["practice"]:
+    # ── 표지 ──────────────────────────────────────────────
+    doc.add_heading("취약점 진단 및 모의해킹 결과 보고서", level=0)
+    if doc_meta["practice"]:
         p = doc.add_paragraph()
-        r = p.add_run("점검 결과가 아닙니다. 우리가 띄운 연습용 가짜 서버에서 나온 기록입니다. "
-                      "보고서에 넣지 마세요.")
-        r.bold = True
-    for line in [f'도구: 딸깍이 (DAST 대시보드)', f'프로젝트: {meta["project"]}',
-                 f'대상: {t["url"]}' + (f' ({meta["role"]})' if meta["role"] else ""),
-                 f'작성: {meta["written"]} (KST)', f'발견: {len(rows)}건']:
-        doc.add_paragraph(line, style="List Bullet")
+        p.add_run("점검 결과가 아닙니다. 연습용 가짜 서버에서 나온 기록입니다. 보고서에 넣지 마세요.").bold = True
+    _table(doc, ["항목", "내용"], [
+        ["대상", f'{doc_meta["target_name"]} ({doc_meta["url"]})'],
+        ["자산 ID", doc_meta["asset_id"]],
+        ["구역", doc_meta["zone"]],
+        ["프로젝트", doc_meta["project"]],
+        ["작성", f'{doc_meta["written"]} (KST)'],
+        ["작성 도구", doc_meta["tool"]],
+        ["발견 건수", f'{len(items)}건 (유형 {len(groups)}가지)'],
+    ])
+    _small(doc, "이 문서는 결과보고서 양식 가운데 딸깍이가 아는 것(3-2, 4-2, 5장)만 채운 것입니다. "
+                "총평·목표 달성·시나리오·진단 인력·이행 점검은 사람이 씁니다.")
+    _hole(doc, "[ ] 로 적힌 칸은 딸깍이가 알 수 없는 것입니다 — 사람이 채웁니다.")
 
-    doc.add_heading("한눈에", level=1)
-    _table(doc, ["#", "심각도", "항목", "위치", "ATT&CK", "상태"],
-           [[str(i), m["severity"], m["title"], "`" + m["location"] + "`", m["technique"], m["status"]]
-            for i, m in enumerate(meta["summary"], 1)])
-    note = doc.add_paragraph()
-    r = note.add_run("위치는 어디서 났는지 적어 둔 주소입니다 — 눌러 보는 링크가 아닙니다. "
-                     "브라우저로 그대로 열면 로그인이 필요하다고 하거나 데이터(JSON)만 나옵니다. "
-                     "무엇을 보내 무엇을 받았는지는 각 항목의 요청·응답에 그대로 있습니다.")
-    r.font.size = Pt(9)
-    r.font.color.rgb = GREY
+    # ── 3-2 위험도 적용 결과 ──────────────────────────────
+    doc.add_heading("3-2. 위험도 적용 결과", level=1)
+    doc.add_paragraph(f'[{doc_meta["zone"]}] {doc_meta["asset_id"]} {doc_meta["target_name"]} ({doc_meta["url"]})')
+    _table(doc, ["V-ID", "취약점 유형", "항목 코드", "건수", "CVSS (최고)", "위험도"],
+           [[vid, g[0]["module_name"], g[0]["kisa"] or "[ ]", f"{len(g)}건",
+             max((i["cvss_score"] for i in g if i["cvss_score"]), default="") or "[ ]",
+             g[0]["top_severity"]] for vid, g in groups])
 
-    for i, (r_row, m) in enumerate(zip(rows, meta["items"]), 1):
+    # ── 4-2 대상별 취약점 요약 ────────────────────────────
+    doc.add_heading("4-2. 대상별 취약점 요약", level=1)
+    _table(doc, ["구역", "자산 ID", "대상", "Critical", "High", "Medium", "Low", "Info", "합계"],
+           [[doc_meta["zone"], doc_meta["asset_id"], doc_meta["target_name"],
+             counts["critical"], counts["high"], counts["medium"], counts["low"], counts["info"], len(items)]])
+    _small(doc, "건수는 건 단위(V-xx-n) 기준입니다. 오탐으로 내린 것은 빠져 있습니다. "
+                "일부러 심어 둔 취약점이 몇 건인지는 사람이 가려 적습니다.")
+    doc.add_paragraph("취약점 유형 목록:")
+    _table(doc, ["V-ID", "취약점 유형", "대상", "건수", "최고 위험도", "시나리오 사용", "상세 / 대책"],
+           # 5-1 은 진단 방법이라 유형은 5-2 부터다
+           [[vid, g[0]["module_name"], doc_meta["asset_id"], f"{len(g)}건", g[0]["top_severity"], "[ ]",
+             f"5-{n} / 7-3"] for n, (vid, g) in enumerate(groups, 2)])
+
+    # ── 5. Part A 진단 상세 결과 ──────────────────────────
+    doc.add_heading("5. Part A. 진단 상세 결과", level=1)
+    doc.add_heading("5-1. 진단 방법", level=2)
+    _table(doc, ["구분", "담당 범위", "도구", "담당자"],
+           [["자동 진단", "딸깍이 모듈이 보는 범위(수집한 지점에 모듈을 돌린 결과)", doc_meta["tool"], "[ ]"],
+            ["수동 진단", "[ ]", "[ ]", "[ ]"]])
+    _small(doc, "자동 진단 결과는 수동 재현으로 확인된 것만 건으로 등록합니다. "
+                "아래 '상태' 칸이 확인됨인 것이 그것입니다.")
+
+    for n, (vid, g) in enumerate(groups, 2):
         doc.add_page_break()
-        doc.add_heading(f'{i}. {r_row["title"]}', level=1)
-        doc.add_heading("1. 취약점 개요", level=2)
+        doc.add_heading(f'5-{n}. {vid}. {g[0]["module_name"]}', level=2)
         _table(doc, ["항목", "내용"], [
-            ["취약점명", r_row["title"]],
-            ["점검대상", f'{t["name"]} ({t["url"]})'],
-            ["발견 경로", "`" + r_row["location"] + "`"],
-            ["취약점 설명", m["description"]],
-            ["영향도(CVSS 3.1)", m["impact"]],
-            ["CVSS Vector", m["vector"]],
-            ["발견 모듈", m["module"]],
-            ["ATT&CK", m["attack"]],
-            ["상태", m["status"]],
+            ["위험도", f'{g[0]["top_severity"]} (건 중 최고, CVSS {max((i["cvss_score"] for i in g if i["cvss_score"]), default="") or "[ ]"})'],
+            ["항목 코드 / CWE", f'{g[0]["kisa"] or "[ ]"} / [ ]'],
+            ["OWASP 2025", g[0]["owasp"] or "[ ]"],
+            ["건수", f"{len(g)}건"],
+            ["발견 방법", f'자동(딸깍이 — {g[0]["module_name"]})'],
+            ["보안 대책", "7-3 참조 — " + (g[0]["recommendation"] or "[ ]").split(".")[0][:80]],
         ])
-        doc.add_heading("2. 취약점 상세설명", level=2)
-        _code(doc, r_row["evidence"], "근거")
-        x = exchanges.get(r_row["id"])
-        if x:
-            _code(doc, x["request"], "요청")
-            _code(doc, x["response"], "응답(앞부분)")
-        doc.add_heading("3. 악용 시나리오", level=2)
-        p = doc.add_paragraph()
-        rr = p.add_run("여기는 사람이 씁니다 — 이 결과로 무엇을 할 수 있는지.")
-        rr.italic = True
-        rr.font.color.rgb = GREY
-        doc.add_heading("4. 조치방안", level=2)
-        doc.add_paragraph(r_row["recommendation"] or "—")
+        doc.add_paragraph("설명: " + (g[0]["module_desc"] or ""))
+        _hole(doc, "위험 평가 설명: [악용 전제 조건과 난이도, 등급 산정 근거를 사람이 적습니다]")
+        _hole(doc, "영향: [기밀성 · 무결성 · 가용성 · 금전 · 평판 · 규제 중 해당하는 것]")
+
+        doc.add_paragraph("건별 목록:")
+        _table(doc, ["건 ID", "위치 (URL · 파라미터)", "메서드", "위험도", "의도적", "시나리오 사용",
+                     "탐지 검증", "증거", "상태"],
+               [[f"{vid}-{k}", "`" + it["location"] + "`", it["method"], it["severity_label"],
+                 "[ ]", "[ ]", "[ ]", ("요청·응답 수록" if it["request"] else "근거만"), it["status_label"]]
+                for k, it in enumerate(g, 1)])
+
+        rep = next((i for i in g if i["request"]), g[0])
+        doc.add_paragraph(f'대표 PoC ({vid}-{g.index(rep) + 1}): {rep["title"]}')
+        _code(doc, rep["evidence"], "근거")
+        if rep["request"]:
+            _code(doc, rep["request"], "요청")
+            _code(doc, rep["response"], "응답(앞부분)")
+        _hole(doc, "재현 단계: [1. 2. 3. 사람이 적습니다 — 위 요청을 그대로 보내면 되는 경우에도 한 줄은 적습니다]")
+        doc.add_paragraph("조치방안: " + (rep["recommendation"] or "[ ]"))
 
     for p in doc.paragraphs:
         if p.style.name == "Normal":
