@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from flask import (Blueprint, Response, abort, current_app, flash, g, get_flashed_messages, jsonify, redirect,
                    render_template, request, url_for)
 
-from . import board, campaign, cve, cvss, discovery as dv, grouping, jobs, login as login_mod, needs, runfiles, scope, stats, wordlists
+from . import board, campaign, cve, cvss, discovery as dv, grouping, jobs, login as login_mod, mcp as mcp_mod, needs, runfiles, scope, stats, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -906,6 +906,14 @@ def surface_probe():
         flash(str(e), "error")
         return redirect(back)
 
+    points = _probe_points(t, mod, ids)
+    _execute_bg(mod, t, {**params, "points": len(points)}, _probe_call(mod, t, points, params))
+    return redirect(back)
+
+
+def _probe_points(t, mod, ids):
+    """고른 지점 id 들 → 모듈에 넘길 Point 목록. 주소 단위 모듈은 주소마다 한 줄로 묶는다."""
+    db = get_db()
     marks = ",".join("?" * len(ids))
     points = []
     if mod.unit == "endpoint":
@@ -926,7 +934,11 @@ def surface_probe():
                               "AND param != ''", [t["id"], r["url"], r["method"], r["place"]])
         points.append(Point(method=r["method"], url=r["url"], param=r["param"], place=r["place"], sample=r["sample"],
                             source=r["source"], id=r["id"], fields={s["param"]: s["sample"] for s in siblings}))
+    return points
 
+
+def _probe_call(mod, t, points, params):
+    """지점 점검 모듈을 돌리고 판정을 적는 일 — `_execute_bg` 에 넘길 함수를 만든다."""
     def call(target):
         # 작업자 스레드에서 돌 수 있으므로 연결을 여기서 다시 받는다.
         # 바깥 db 는 요청 스레드 것이라 sqlite 가 거부한다.
@@ -951,8 +963,7 @@ def surface_probe():
         skipped = len(points) - len(checks)
         return (f"지점 {len(checks)}개 — " + " · ".join(f"{VERDICTS[v]} {n}" for v, n in counts.items())
                 + (f", 건너뜀 {skipped}" if skipped else ""))
-    _execute_bg(mod, t, {**params, "points": len(points)}, call)
-    return redirect(back)
+    return call
 
 
 SHADOW_MIN = 5  # 이만큼 겹쳐야 '접두사를 빼먹은 것' 으로 본다 — 우연히 비슷한 주소 몇 개로는 안 지운다
@@ -1441,3 +1452,335 @@ def report(tid):
     body = "\n".join(lines) + "\n"
     return Response(body, mimetype="text/markdown; charset=utf-8",
                     headers={"Content-Disposition": f"attachment; filename=report_{tid}.md"})
+
+
+# ── MCP — AI 도구가 딸깍이를 도구로 쓴다(11-21 사용자 결정) ──────────────────────
+# 말을 주고받는 자리는 dashboard/mcp.py 에, **실제로 하는 일** 은 여기에 둔다. 화면이 쓰는
+# 바로 그 함수들(_execute_bg·_probe_points·_save_finding·stats)을 그대로 불러서, 화면으로 한
+# 것과 MCP 로 한 것이 다른 길로 가지 않게 한다.
+
+def _mcp_target(tid):
+    t = get_db().execute("SELECT * FROM targets WHERE id = ?", [tid]).fetchone()
+    if not t:
+        raise ValueError(f"그런 대상이 없습니다: {tid}. `targets` 로 목록을 보세요")
+    return t
+
+
+def _mcp_lines(rows, head=""):
+    return (head + "\n" if head else "") + ("\n".join(rows) if rows else "(없음)")
+
+
+def _mcp_targets(_a):
+    db = get_db()
+    out = []
+    for t in db.execute("SELECT * FROM targets ORDER BY id"):
+        n = db.execute("SELECT COUNT(*) FROM points WHERE target_id = ?", [t["id"]]).fetchone()[0]
+        f = db.execute("SELECT COUNT(*) FROM findings WHERE target_id = ?", [t["id"]]).fetchone()[0]
+        out.append(f'{t["id"]}\t{t["name"]}\t{t["url"]}\t역할 {t["role"] or "-"}\t지점 {n}\t결과 {f}')
+    return _mcp_lines(out, "id\t이름\t주소\t역할\t지점\t결과")
+
+
+def _mcp_points(a):
+    t = _mcp_target(a.get("target_id"))
+    sql = "SELECT * FROM points WHERE target_id = ?"
+    args = [t["id"]]
+    if a.get("params_only"):
+        sql += " AND param != ''"
+    if a.get("contains"):
+        sql += " AND url LIKE ?"
+        args.append("%" + str(a["contains"]) + "%")
+    sql += " ORDER BY url LIMIT ?"
+    args.append(int(a.get("limit") or 100))
+    rows = get_db().execute(sql, args).fetchall()
+    out = [f'{r["id"]}\t{r["method"]}\t{r["url"]}\t{r["param"] or "-"}\t{r["place"]}\t{r["source"] or "-"}'
+           for r in rows]
+    return _mcp_lines(out, "id\t메서드\t주소\t파라미터\t자리\t출처")
+
+
+def _mcp_modules(a):
+    t = _mcp_target(a.get("target_id"))
+    out = []
+    for m in _shown(_modules_for(t)).values():
+        names = ",".join(p["name"] for p in m.params) or "-"
+        out.append(f'{m.id}\t{m.name}\t{m.stage}\t{getattr(m, "vuln", "") or "-"}\t{m.severity}\t설정 {names}')
+    return _mcp_lines(sorted(out), "id\t이름\t단계\t종류\t심각도\t설정 칸\n"
+                                   "(단계 probe 는 points 로 지점을 골라야 돕니다)")
+
+
+def _mcp_findings(a):
+    sql = "SELECT f.*, t.name tname FROM findings f JOIN targets t ON t.id = f.target_id WHERE 1=1"
+    args = []
+    for key, col in (("target_id", "f.target_id"), ("status", "f.status"), ("severity", "f.severity")):
+        if a.get(key):
+            sql += " AND " + col + " = ?"
+            args.append(a[key])
+    if a.get("contains"):
+        sql += " AND (f.title LIKE ? OR f.location LIKE ?)"
+        args += ["%" + str(a["contains"]) + "%"] * 2
+    sql += " ORDER BY f.id DESC LIMIT ?"
+    args.append(int(a.get("limit") or 50))
+    rows = get_db().execute(sql, args).fetchall()
+    out = [f'{r["id"]}\t{r["tname"]}\t{r["severity"]}\t{STATUSES.get(r["status"], r["status"])}\t'
+           f'{r["title"]}\t{r["location"]}' for r in rows]
+    return _mcp_lines(out, "id\t대상\t심각도\t상태\t제목\t자리")
+
+
+def _mcp_finding(a):
+    r = get_db().execute("SELECT f.*, t.name tname, t.url turl FROM findings f JOIN targets t ON t.id = f.target_id "
+                         "WHERE f.id = ?", [a.get("id")]).fetchone()
+    if not r:
+        raise ValueError(f'그런 결과가 없습니다: {a.get("id")}')
+    return (f'#{r["id"]} {r["title"]}\n'
+            f'대상: {r["tname"]} {r["turl"]}\n자리: {r["location"]}\n'
+            f'심각도: {r["severity"]} · 상태: {STATUSES.get(r["status"], r["status"])} · 모듈: {r["module_id"]}\n'
+            f'\n[근거]\n{r["evidence"]}\n\n[권고]\n{r["recommendation"] or "(없음)"}')
+
+
+def _mcp_coverage(_a):
+    db = get_db()
+    real = [t for t in db.execute("SELECT * FROM targets ORDER BY id") if not _is_practice(t)]
+    bd = stats.breakdown(db, real, _modules())
+    label = {"found": "발견", "clear": "점검·없음", "ready": "모듈 있음·미실행", "none": "모듈 없음"}
+    out = [f'{r["key"]}\t{label[r["state"]]}\t{r["total"]}건\t{r["name"]}' for r in bd["owasp"]]
+    out.append("")
+    out += [f'{r["code"]}\t{label[r["state"]]}\t{r["found"]}건\t{r["name"]}' for r in bd["kisa"]]
+    return _mcp_lines(out, "항목\t상태\t건수\t이름")
+
+
+def _mcp_run_status(a):
+    rid = a.get("run_id")
+    rows = jobs.listing()
+    if rid:
+        rows = [j for j in rows if j["run_id"] == rid]
+        if not rows:
+            r = get_db().execute("SELECT * FROM runs WHERE id = ?", [rid]).fetchone()
+            if not r:
+                raise ValueError(f"그런 실행이 없습니다: {rid}")
+            return (f'{rid}\t{r["status"]}\t{r["module_id"]}\t보낸 요청 {r["sent"]}\t'
+                    f'{r["message"] or r["error"] or ""}')
+    out = [f'{j["run_id"]}\t{j["status"]}\t{j["module_id"]}\t{j["target"]}\t보낸 요청 {j["sent"]}\t'
+           f'{int(j["seconds"])}초\t{j["message"] or j["error"] or ""}' for j in rows]
+    return _mcp_lines(out, "run_id\t상태\t모듈\t대상\t요청\t시간\t메시지")
+
+
+def _mcp_run_module(a):
+    t = _mcp_target(a.get("target_id"))
+    mod = _modules_for(t).get(a.get("module_id", ""))
+    if not mod:
+        raise ValueError(f'이 대상에서 쓸 수 없는 모듈입니다: {a.get("module_id")}. `modules` 로 목록을 보세요')
+    given = a.get("params") or {}
+    params = _check_types(mod, {p["name"]: str(given.get(p["name"], p.get("default", ""))) for p in mod.params})
+    ids = [int(x) for x in (a.get("points") or [])]
+    if mod.stage == "probe":
+        if not ids:
+            raise ValueError(f"{mod.name} 은 지점 점검 모듈입니다. `points` 로 지점 id 를 골라 넣으세요")
+        pts = _probe_points(t, mod, ids)
+        if not pts:
+            raise ValueError("고른 지점을 찾지 못했습니다(그 대상의 지점 id 가 맞는지 보세요)")
+        run_id = _execute_bg(mod, t, {**params, "points": len(pts)}, _probe_call(mod, t, pts, params))
+        made = f"지점 {len(pts)}개"
+    elif mod.stage == "collect":
+        def call(target):
+            points = mod.run(target, params) or []
+            new, skipped = _save_points(mod, t["id"], points)
+            return f"지점 {len(points) - skipped}개 수집(새로 {new})"
+        run_id = _execute_bg(mod, t, params, call)
+        made = "수집"
+    elif mod.stage == "tool":
+        run_id = _execute_bg(mod, t, params, _tool_call(mod, t, params))
+        made = "도구"
+    else:
+        def call(target):
+            results = mod.run(target, params) or []
+            new = sum(_save_finding(mod, t["id"], f) for f in results)
+            return f"{len(results)}건 발견(새로 {new})"
+        run_id = _execute_bg(mod, t, params, call)
+        made = "점검"
+    if not run_id:
+        raise ValueError(f"지금 {jobs.MAX_LIVE}개가 돌고 있습니다. 하나 끝나면 다시 부르세요")
+    return (f'{mod.name} 을 {t["name"]} 에 돌리기 시작했습니다({made}).\n'
+            f'run_id {run_id} — 진행은 `run_status` 로 보세요. 뒤에서 돌므로 이 호출은 바로 돌아옵니다.')
+
+
+def _mcp_set_status(a):
+    status = a.get("status", "")
+    if status not in STATUSES:
+        raise ValueError("상태는 " + ", ".join(STATUSES) + " 중 하나여야 합니다")
+    db = get_db()
+    r = db.execute("SELECT * FROM findings WHERE id = ?", [a.get("id")]).fetchone()
+    if not r:
+        raise ValueError(f'그런 결과가 없습니다: {a.get("id")}')
+    ev = r["evidence"]
+    if a.get("note"):
+        # 판정만 바뀌고 까닭이 없으면 다음 사람이 처음부터 다시 봐야 한다 — 근거 끝에 붙여 둔다
+        ev = ev + f'\n\n[{STATUSES[status]} — MCP] {a["note"]}'
+    db.execute("UPDATE findings SET status = ?, evidence = ? WHERE id = ?", [status, ev, r["id"]])
+    db.commit()
+    return f'#{r["id"]} {r["title"]} → {STATUSES[status]}'
+
+
+# ── 점검 결과 → CVE 후보 → 시나리오 한 벌(11-21 사용자 제안) ─────────────────────
+# "딸깍이 점검으로 나온 정보로 CVE 위험 가능성 있는 목록을 뽑고, 그걸로 펜테스트 캠페인
+# 하나를 짜 주면 보고서에 올리기 편하다." 재료는 이미 다 있다 — 관찰한 버전(cve.observe),
+# 팀 CVE 목록, 전술이 붙은 모듈·결과. 손으로 옮겨 적던 그 일을 한 번에 한다.
+#
+# **짜 주는 것은 초안이다.** 노드의 상태는 결과의 처리 상태를 그대로 따른다(확인됨 → 확인,
+# 미확인 → 추정). 선은 전술 순서대로 한 줄로만 잇는다 — 어느 단계에서 무엇을 얻어 다음에
+# 넘겼는지는 팀이 보드에서 고쳐 적는다. 대시보드는 그 데이터를 갖고 있지 않다(board.py 머리).
+
+def _findings_of(tid):
+    return get_db().execute("SELECT * FROM findings WHERE target_id = ? ORDER BY id", [tid]).fetchall()
+
+
+def _mcp_cve_candidates(a):
+    t = _mcp_target(a.get("target_id"))
+    db = get_db()
+    rows = _findings_of(t["id"])
+    if a.get("ask_nvd"):
+        # 점검 대상이 아니라 NVD(services.nvd.nist.gov)로 나간다. 보내는 것은 제품·버전뿐이다
+        cve.refresh(db, cve.observe(rows))
+    got = cve.candidates(db, t, rows)
+    out = []
+    for o in got["observed"]:
+        head = f'{o["product"]} {o["version"]}' + (f' ({o["distro"]})' if o["distro"] else "")
+        out.append(f'\n[관찰] {head}\t근거 #{o["finding_id"]} {o["title"]} — {o["location"]}')
+        if not o.get("asked"):
+            out.append("   NVD 에 아직 안 물어봤습니다 — ask_nvd 를 켜면 물어봅니다")
+        for c in o["cves"][:8]:
+            mark = "팀" if c["team"] else ("KEV" if c["kev"] else "  ")
+            out.append(f'   {mark}\t{c["id"]}\t{c["score"] or "-"}\t{c["status"]}\t{c["summary"][:90]}')
+    if got["team"]:
+        out.append("\n[팀 목록] 문서에 적힌 것 — 밖에서 버전이 안 보여도 여기 있습니다")
+        for c in got["team"]:
+            seen = "지금도 보임" if c.get("seen_now") else ""
+            out.append(f'   {c["id"]}\t{c["status"]}\t{c["product"]} {c["version"]}\t{seen}')
+    return _mcp_lines(out, f'{t["name"]} — 관찰한 제품 {len(got["observed"])}개') if out else \
+        "관찰된 제품·버전이 없습니다. 기술 지문(tech_fingerprint)·서버 정보 노출 모듈을 먼저 돌리세요"
+
+
+# 결과를 어느 전술 열에 놓을지 — 모듈이 적어 둔 첫 전술을 쓴다. 없으면 '발견'(TA0043)
+FALLBACK_TACTIC = "TA0043"
+
+
+def _tactic_of(mid):
+    mod = _modules().get(mid)
+    got = (getattr(mod, "attack", None) or [{}])[0].get("tactic", "") if mod else ""
+    return got if got in TACTIC_NAME else FALLBACK_TACTIC
+
+
+def _mcp_make_campaign(a):
+    t = _mcp_target(a.get("target_id"))
+    db = get_db()
+    want = set(a.get("statuses") or ["confirmed"])
+    rows = [r for r in _findings_of(t["id"]) if r["status"] in want and r["severity"] != "info"]
+    if not rows:
+        raise ValueError(f'{t["name"]} 에 {"·".join(want)} 상태인 결과가 없습니다. '
+                         "statuses 에 open 을 넣거나 `findings` 로 먼저 보세요")
+    name = (a.get("name") or f'{t["name"]} 침투 시나리오').strip()
+    cid = campaign.create(db, t["id"], name, a.get("goal") or "")
+
+    # ① 관찰한 버전과 팀 CVE 를 앞단(정찰·초기 침투)에 놓는다 — 밖에서 보이는 것이 먼저다
+    got = cve.candidates(db, t, _findings_of(t["id"]))
+    first = []
+    for o in got["observed"][:6]:
+        nid = campaign.add_node(db, cid, "observed", "TA0043", f'{o["product"]} {o["version"]}',
+                                ref=f'{o["product"]} {o["version"]}', sub=o["location"], status="확인",
+                                note=f'근거: 결과 #{o["finding_id"]}')
+        first.append(nid)
+        for c in (o.get("cves") or [])[:2]:
+            campaign.add_node(db, cid, "cve", "TA0001", c["id"], ref=c["id"],
+                              sub=f'{o["product"]} {o["version"]} · 점수 {c["score"] or "-"}',
+                              status=c["status"], note=c["summary"][:300])
+    for c in got["team"][:6]:
+        campaign.add_node(db, cid, "cve", "TA0001", c["id"], ref=c["id"],
+                          sub=f'{c["product"]} {c["version"]}', status=c["status"], note=c.get("note", "")[:300])
+
+    # ② 결과를 모듈이 적어 둔 전술 열에 놓는다. 상태는 결과의 처리 상태를 그대로 따른다
+    by_tactic = {}
+    for r in rows:
+        tac = _tactic_of(r["module_id"])
+        nid = campaign.add_node(db, cid, "finding", tac, r["title"], ref=str(r["id"]), sub=r["location"],
+                                status="확인" if r["status"] == "confirmed" else "추정",
+                                note=f'결과 #{r["id"]} · {r["severity"]}')
+        by_tactic.setdefault(tac, []).append((nid, r))
+
+    # ③ 전술 순서대로 한 줄로 잇는다. 무엇을 얻어 넘겼는지는 팀이 보드에서 적는다
+    order = [tac for tac in TACTIC_ORDER if tac in by_tactic]
+    chain = [by_tactic[tac][0][0] for tac in order]
+    if first and chain:
+        chain = [first[0]] + chain
+    for src, dst in zip(chain, chain[1:]):
+        campaign.add_edge(db, cid, src, dst, "")
+
+    # ④ 보고서에 그대로 옮길 수 있는 줄거리
+    lines = [f'캠페인 #{cid} 「{name}」 을 {t["name"]} 에 만들었습니다.',
+             f'보드: /scenario?target={t["id"]}&campaign={cid}', ""]
+    if got["observed"] or got["team"]:
+        lines.append(f'정찰·초기 침투 — 관찰한 제품 {len(got["observed"])}개 · CVE 후보 '
+                     f'{sum(len(o.get("cves") or []) for o in got["observed"]) + len(got["team"])}개')
+    for i, tac in enumerate(order, 1):
+        got_rows = by_tactic[tac]
+        lines.append(f'{i}. {TACTIC_NAME[tac]} — {len(got_rows)}건')
+        for _nid, r in got_rows[:4]:
+            lines.append(f'   · [{r["severity"]}] {r["title"]} — {r["location"]}')
+        if len(got_rows) > 4:
+            lines.append(f'   · 그 밖 {len(got_rows) - 4}건')
+    lines += ["", "선은 전술 순서대로 한 줄만 그었습니다. **어느 단계에서 무엇을 얻어 다음에 넘겼는지**"
+                  "(토큰·비밀값·셸)는 보드에서 선을 눌러 적으세요 — 그건 사람이 아는 것입니다.",
+              "CVE 후보는 버전 범위가 맞는다는 뜻일 뿐 '추정' 입니다. 확인한 것만 상태를 올리세요."]
+    return "\n".join(lines)
+
+
+MCP_TOOLS = {
+    "targets": _mcp_targets, "points": _mcp_points, "modules": _mcp_modules,
+    "findings": _mcp_findings, "finding": _mcp_finding, "coverage": _mcp_coverage,
+    "run_status": _mcp_run_status, "run_module": _mcp_run_module, "set_status": _mcp_set_status,
+    "cve_candidates": _mcp_cve_candidates, "make_campaign": _mcp_make_campaign,
+}
+
+
+def _mcp_error(code, message, status):
+    body = {"jsonrpc": "2.0", "id": None, "error": {"code": code, "message": message}}
+    return Response(json.dumps(body, ensure_ascii=False), status=status, mimetype="application/json")
+
+
+@bp.post("/mcp")
+def mcp_endpoint():
+    """JSON-RPC 한 자리. 토큰이 없으면 아무것도 안 한다."""
+    if not mcp_mod.authorized():
+        return _mcp_error(-32001, "토큰이 필요합니다 — 연결 탭에 적힌 줄을 그대로 쓰세요", 401)
+    try:
+        payload = json.loads(request.get_data(as_text=True) or "{}")
+    except ValueError:
+        return _mcp_error(-32700, "JSON 이 아닙니다", 400)
+    out = mcp_mod.handle(payload, lambda name, args: MCP_TOOLS[name](args))
+    if out is None:                       # 알림 — 돌려줄 것이 없다
+        return Response("", status=202)
+    return Response(json.dumps(out, ensure_ascii=False), mimetype="application/json")
+
+
+@bp.get("/connect")
+def connect():
+    """연결 탭 — 붙이는 법, 켠 도구, 누가 무엇을 불렀는지."""
+    target, targets = _current_target()
+    return render_template("connect.html", target=target, targets=targets,
+                           command=mcp_mod.connect_command(request.host_url),
+                           tools=mcp_mod.TOOLS, write_on=mcp_mod.write_on(), calls=mcp_mod.recent())
+
+
+@bp.post("/connect/write")
+def connect_write():
+    """쓰기 도구 스위치. 한 번 켜면 계속 켜져 있다 — 부를 때마다 사람을 부르지는 않는다."""
+    mcp_mod.set_setting("mcp_write", "on" if request.form.get("on") == "1" else "off")
+    flash("쓰기 도구를 켰습니다 — AI 가 모듈을 돌리고 결과 상태를 바꿀 수 있습니다" if mcp_mod.write_on()
+          else "쓰기 도구를 껐습니다 — 읽기만 됩니다", "ok")
+    return redirect(url_for("dash.connect", target=request.form.get("target_id", type=int)))
+
+
+@bp.post("/connect/new-token")
+def connect_new_token():
+    """토큰을 새로 뽑는다 — 어딘가에 흘렸을 때. 붙여 둔 도구는 다시 붙여야 한다."""
+    mcp_mod.set_setting("mcp_token", "")
+    mcp_mod.token()
+    flash("토큰을 새로 만들었습니다. 붙여 둔 도구는 새 줄로 다시 붙이세요", "ok")
+    return redirect(url_for("dash.connect", target=request.form.get("target_id", type=int)))

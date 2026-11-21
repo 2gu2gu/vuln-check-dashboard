@@ -118,6 +118,20 @@ CREATE TABLE IF NOT EXISTS nvd_cache (
     body TEXT NOT NULL,
     fetched_at TEXT NOT NULL
 );
+-- 대시보드 자체의 설정 한 줄짜리들(MCP 토큰, 쓰기 스위치). 사람이 화면에서 켜고 끈다
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+);
+-- MCP 로 누가 무엇을 불렀는지. 연결 탭에 그대로 보인다 — 바깥에서 들어온 손이라 기록을 남긴다
+CREATE TABLE IF NOT EXISTS mcp_calls (
+    id INTEGER PRIMARY KEY,
+    tool TEXT NOT NULL,
+    args TEXT NOT NULL DEFAULT '',
+    ok INTEGER NOT NULL DEFAULT 1,
+    summary TEXT NOT NULL DEFAULT '',
+    called_at TEXT NOT NULL
+);
 """
 
 STATUSES = {"open": "미확인", "confirmed": "확인됨", "fixed": "조치됨", "false_positive": "오탐"}

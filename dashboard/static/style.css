@@ -967,6 +967,13 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
 .cal-sum .dday { color: var(--hit); }
 .add-target { margin-bottom: 12px; }
 
+/* ── 연결 탭(11-21): 붙이는 줄 · 쓰기 스위치 · 도구 표 ── */
+.row-gap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.tag.warn { border-color: var(--sv-high); color: var(--sv-high); }
+.table .tag { white-space: nowrap; }   /* 좁은 칸에서 '쓰 기' 로 갈라지지 않게 */
+.conn-state { font-size: 12px; color: var(--sub); }
+.conn-state.on { color: var(--cov-clear-ink); font-weight: 600; }
+
 /* ── 결과 탭 레퍼런스 반영(11-20): 상태 문장 · 비율 막대 · 도넛(주간 변화·스파크라인·누적 추이는 사용자 결정으로 뺌) ──
    노션 '대시보드 딸깍이 제작' 의 레퍼런스(Security Watch·Mosaic·Creator Dashboard)에서 그래프 모양만 가져왔다.
    색은 '보고서 디자인 레퍼런스' 대로 바탕·먹·포인트 셋 — 스파크라인·추이는 포인트색, 상태 막대만 위험도 색. */

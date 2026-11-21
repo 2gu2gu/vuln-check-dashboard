@@ -86,6 +86,10 @@ def create_app(test_config=None):
         allowed = app.config["ALLOWED_HOSTS"]
         if host not in LOCAL_HOSTS and "*" not in allowed and host not in allowed:
             abort(400, "허용되지 않은 Host")
+        # MCP 입구는 폼이 아니라 JSON-RPC 다 — 토큰(Authorization)으로 가리므로 CSRF 칸이 없다.
+        # 다른 사이트가 몰래 보내는 POST 를 막는 것이 CSRF 인데, 여기는 애초에 토큰이 없으면 거절한다.
+        if request.path == "/mcp":
+            return None
         if request.method == "POST" and app.config["CSRF"]:
             sent = request.form.get("_csrf", "")
             if not sent or not secrets.compare_digest(sent, session.get("csrf", "")):
