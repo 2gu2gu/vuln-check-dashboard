@@ -1717,7 +1717,8 @@ def _mcp_cve_candidates(a):
     out = []
     for o in got["observed"]:
         head = f'{o["product"]} {o["version"]}' + (f' ({o["distro"]})' if o["distro"] else "")
-        out.append(f'\n[관찰] {head}\t근거 #{o["finding_id"]} {o["title"]} — {o["location"]}')
+        how = o.get("how") or "배너"
+        out.append(f'\n[관찰·{how}] {head}\t근거 #{o["finding_id"]} {o["title"]} — {o["location"]}')
         if not o.get("asked"):
             out.append("   NVD 에 아직 안 물어봤습니다 — ask_nvd 를 켜면 물어봅니다")
         for c in o["cves"][:8]:
@@ -1782,7 +1783,7 @@ def _mcp_make_campaign(a):
         first.append(nid)
 
     # ② CVE — 관찰한 버전에 걸리는 것부터. 팀이 적어 둔 CVE 는 전술·상태·근거 문서를 그대로 쓴다
-    cve_nodes = []                      # (nid, tactic, cve_id, 제품)
+    cve_nodes = []                      # (nid, tactic, cve_id, 제품, 기법)
     def put_cve(c, product, score=""):
         tac = c.get("tactic") if c.get("tactic") in TACTIC_NAME else "TA0001"
         label = c.get("id") or c.get("name", "CVE")
@@ -1792,7 +1793,7 @@ def _mcp_make_campaign(a):
             note += f'\n근거 문서: {c["doc"]}'
         nid = campaign.add_node(db, cid, "cve", tac, label, ref=c.get("id") or label, sub=sub,
                                 status=c.get("status") or "추정", note=note)
-        cve_nodes.append((nid, tac, label, product.lower()))
+        cve_nodes.append((nid, tac, label, product.lower(), c.get("technique") or ""))
         return nid
 
     for o in got["observed"][:6]:
@@ -1811,7 +1812,7 @@ def _mcp_make_campaign(a):
                     key=lambda kv: (min(rank.get(x["severity"], 9) for x in kv[1]), -len(kv[1])))[:top]
     left = len(packs) - len(picked)
 
-    by_tactic = {}
+    by_tactic, by_technique = {}, {}
     for (tac, title), pack in picked:
         worst = min(pack, key=lambda x: rank.get(x["severity"], 9))
         more = f" 외 {len(pack) - 1}곳" if len(pack) > 1 else ""
@@ -1821,23 +1822,25 @@ def _mcp_make_campaign(a):
                                 note=f'결과 #{worst["id"]} · {worst["severity"]}'
                                      + (f' · 같은 제목 {len(pack)}건' if more else ""))
         by_tactic.setdefault(tac, []).append((nid, worst, len(pack)))
+        tech = worst["technique"] if "technique" in worst.keys() else ""
+        if tech:
+            by_technique.setdefault(tech, []).append((nid, worst, len(pack)))
 
-    # ④ 선 — **버전 → 그 버전의 CVE** 를 먼저 잇고, 그다음 전술 순서로 한 줄 잇는다.
-    #    무엇을 얻어 넘겼는지(토큰·셸)는 사람이 보드에서 적는다
-    for nid, tac, label, product in cve_nodes:
+    # ④ 선 — **까닭이 있는 것만 긋는다.** 전술 순서대로 한 줄 꿰던 것은 뺐다
+    #    (11-22 사용자 지적: 선 연결이 어설프다). 전술이 이어진다는 것은 공격이 이어졌다는 뜻이
+    #    아니다 — 그건 사람이 아는 것이고, campaign.py 머리에 적어 둔 원칙이기도 하다.
+    #        ① 관찰한 버전 → 그 버전에 걸리는 CVE        '버전이 맞음'
+    #        ② CVE → 같은 기법(technique)을 쓴 결과       '같은 기법 T1190'
+    #    그 둘 말고는 긋지 않는다. 단계 사이는 보드에서 팀이 긋는다.
+    drawn = 0
+    for nid, tac, label, product, tech in cve_nodes:
         home = next((v for k, v in seen_of.items() if product.startswith(k)), None)
         if home:
             campaign.add_edge(db, cid, home, nid, "버전이 맞음")
-    spine = {}
-    for nid, tac, label, _p in cve_nodes:
-        spine.setdefault(tac, nid)
-    for tac, got_rows in by_tactic.items():
-        spine.setdefault(tac, got_rows[0][0])
-    order = [tac for tac in TACTIC_ORDER if tac in spine]
-    chain = ([first[0]] if first else []) + [spine[tac] for tac in order]
-    for src, dst in zip(chain, chain[1:]):
-        if src != dst:
-            campaign.add_edge(db, cid, src, dst, "")
+            drawn += 1
+        for fid, row, _n in by_technique.get(tech, []):
+            campaign.add_edge(db, cid, nid, fid, f"같은 기법 {tech}")
+            drawn += 1
 
     # ⑤ 보고서에 그대로 옮길 줄거리
     lines = [f'캠페인 #{cid} 「{name}」 을 {t["name"]} 에 만들었습니다.',
@@ -1848,7 +1851,7 @@ def _mcp_make_campaign(a):
             lines.append(f'   · {o["product"]} {o["version"]} — 결과 #{o["finding_id"]} {o["location"]}')
     if cve_nodes:
         lines.append(f'CVE — {len(cve_nodes)}개 (버전이 맞는 것 + 팀 목록)')
-        for _nid, tac, label, product in cve_nodes[:8]:
+        for _nid, tac, label, product, _tech in cve_nodes[:8]:
             lines.append(f'   · [{TACTIC_NAME[tac]}] {label} — {product}')
     for i, tac in enumerate([x for x in TACTIC_ORDER if x in by_tactic], 1):
         got_rows = by_tactic[tac]
@@ -1860,8 +1863,10 @@ def _mcp_make_campaign(a):
             lines.append(f'   · 그 밖 {len(got_rows) - 4}가지')
     if left:
         lines.append(f'(결과는 심한 것부터 {top}가지만 올렸습니다 — {left}가지는 뺐습니다)')
-    lines += ["", "뼈대는 **관찰한 버전 → 그 버전의 CVE → 그 전술의 결과** 입니다. 선은 거기까지만 긋습니다 — "
-                  "어느 단계에서 무엇을 얻어 다음에 넘겼는지(토큰·비밀값·셸)는 보드에서 선을 눌러 적으세요.",
+    lines += ["", f'선은 **까닭이 있는 것만** {drawn}개 그었습니다 — 관찰한 버전 → 그 버전의 CVE'
+                  "('버전이 맞음'), CVE → 같은 기법을 쓴 결과('같은 기법 T…').",
+              "단계 사이(무엇을 얻어 다음에 넘겼는지 — 토큰·비밀값·셸)는 **긋지 않았습니다.** "
+              "전술이 이어진다는 것이 공격이 이어졌다는 뜻은 아니라서, 그건 보드에서 사람이 긋습니다.",
               "CVE 는 버전 범위가 맞는다는 뜻일 뿐입니다. 팀이 확인한 것만 '확인' 으로 올라가 있습니다."]
     return "\n".join(lines)
 

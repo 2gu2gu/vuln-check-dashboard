@@ -249,6 +249,18 @@ def test_make_campaign_hangs_the_cves_under_the_version_it_saw(client, app):
     assert sqli["tactic"] == "TA0001"
 
 
+def test_cve_candidates_reads_versions_out_of_the_paths_we_read(client, app):
+    """배너가 없어도 **읽어 낸 경로**에 버전이 박혀 있다(11-22 사용자 지시: 얻은 정보로 CVE 를 쫓아라)."""
+    add_target(client)
+    seed_finding(app, 1, title="경로 조작 퍼징으로 서버 구조 확인", module_id="traversal_probe",
+                 evidence="읽힌 파일 50\n  /opt/apache-tomcat-10.1.1/bin/catalina.sh (23.0KB)\n"
+                          "  /usr/lib/jvm/java-17-openjdk-amd64/bin/java (12KB)\n"
+                          "  /usr/lib/openssh/sftp-server (85.3KB)\n")
+    out = text_of(call(client, app, "cve_candidates", {"target_id": 1}))
+    assert "Apache Tomcat 10.1.1" in out and "OpenJDK 17" in out       # 경로에서 뽑아 온다
+    assert "읽은 경로" in out                                           # 어디서 알았는지 적는다
+
+
 def test_cve_candidates_reads_versions_out_of_the_evidence(client, app):
     add_target(client)
     seed_finding(app, 1, title="서버 정보 노출", module_id="header_probe",
