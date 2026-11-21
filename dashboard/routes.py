@@ -1324,7 +1324,17 @@ def campaign_node_add(cid):
 def campaign_node_update(cid, nid):
     f = request.form
     return _campaign_json(cid, lambda db: campaign.update_node(
-        db, cid, nid, tactic=f.get("tactic"), status=f.get("status"), note=f.get("note"), title=f.get("title")))
+        db, cid, nid, tactic=f.get("tactic"), status=f.get("status"), note=f.get("note"), title=f.get("title"),
+        x=f.get("x", type=float), y=f.get("y", type=float)))
+
+
+@bp.post("/campaigns/<int:cid>/arrange")
+def campaign_arrange(cid):
+    """'정렬' — 카드를 전술 띠 안에 가지런히 다시 놓는다(자유 배치여도 한 번에 정리되게, 11-22)."""
+    def go(db):
+        got = campaign.state(db, cid)
+        campaign.place(db, cid, campaign.arrange(got["nodes"]))
+    return _campaign_json(cid, go)
 
 
 @bp.post("/campaigns/<int:cid>/nodes/<int:nid>/delete")

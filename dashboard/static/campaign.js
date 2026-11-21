@@ -107,18 +107,53 @@
     return e;
   }
 
+  // ── 자유 배치(11-22) ──────────────────────────────────
+  // 카드는 칸에 갇히지 않는다. 자기 자리(x·y)를 들고 보드 위 아무 데나 놓인다.
+  // 전술은 배경 띠로 남는다 — 어느 띠 위에 놓였는지로 전술이 정해진다(서버 campaign.tactic_at 와 같은 셈).
+  var LANE_W = 260, CARD_W = 220, TOP = 54, PAD = 90;
+  var bands = document.getElementById("cp-bands");
+  var zoomer = document.getElementById("cp-zoomer");
+  var lanes = [].map.call(bands ? bands.children : [], function (b) { return b.dataset.tactic; });
+  var Z = 1;
+  try { Z = parseFloat(localStorage.getItem("cpZoom")) || 1; } catch (e) { Z = 1; }
+
+  function laneAt(x) {
+    var i = Math.max(0, Math.min(lanes.length - 1, Math.floor((x + CARD_W / 2) / LANE_W)));
+    return lanes[i];
+  }
+
+  function zoom(to) {
+    Z = Math.max(0.4, Math.min(1.6, Math.round(to * 20) / 20));
+    canvas.style.transform = "scale(" + Z + ")";
+    canvas.style.transformOrigin = "0 0";
+    if (zoomer) {
+      zoomer.style.width = (canvas.offsetWidth * Z) + "px";
+      zoomer.style.height = (canvas.offsetHeight * Z) + "px";
+    }
+    var at = document.getElementById("cp-zoom-at");
+    if (at) at.textContent = Math.round(Z * 100) + "%";
+    try { localStorage.setItem("cpZoom", Z); } catch (e) {}
+  }
+
   // ── 그리기 ────────────────────────────────────────────
   function render() {
     var used = {};
     state.nodes.forEach(function (n) { used[n.tactic] = true; });
-    canvas.querySelectorAll(".cp-col").forEach(function (col) {
-      col.classList.toggle("used", !!used[col.dataset.tactic]);
-      col.querySelector(".cp-drop").innerHTML = "";
+    if (bands) [].forEach.call(bands.children, function (b) {
+      b.classList.toggle("used", !!used[b.dataset.tactic]);
     });
+    canvas.querySelectorAll(".cp-node").forEach(function (d) { d.remove(); });
+    var far = 0;
     state.nodes.forEach(function (n) {
-      var drop = canvas.querySelector('.cp-drop[data-tactic="' + n.tactic + '"]');
-      if (drop) drop.appendChild(nodeEl(n));
+      var d = nodeEl(n);
+      d.style.left = n.x + "px";
+      d.style.top = n.y + "px";
+      canvas.appendChild(d);
+      far = Math.max(far, n.y + 150);
     });
+    canvas.style.width = (lanes.length * LANE_W) + "px";
+    canvas.style.height = Math.max(420, far + PAD) + "px";
+    zoom(Z);
     // 이미 올린 후보는 흐리게 — 같은 것을 또 찾지 않게
     var on = {};
     state.nodes.forEach(function (n) { on[n.kind + "|" + n.ref] = true; });
@@ -131,7 +166,8 @@
   function nodeEl(n) {
     var d = el("div", "cp-node k-" + n.kind);
     d.dataset.id = n.id;
-    d.draggable = true;
+    d.dataset.tactic = n.tactic;
+    d.addEventListener("pointerdown", startMove);      // 끌어서 아무 데나 — HTML5 끌어놓기는 확대·축소와 안 맞는다
     var top = el("div", "cp-node-top");
     top.appendChild(el("span", "cp-k", n.kind_label));
     if (n.status) { var st = el("span", "cp-st", n.status); st.dataset.st = n.status; top.appendChild(st); }
@@ -155,14 +191,49 @@
     h.title = "끌어서 다음 노드로 잇기";
     h.addEventListener("pointerdown", startLink);
     d.appendChild(h);
-    d.addEventListener("dragstart", function (e) {
-      if (e.target !== d) return;
-      e.dataTransfer.setData("text/plain", JSON.stringify({ move: n.id }));
-      e.dataTransfer.effectAllowed = "move";
-      document.body.classList.add("cp-dragging");
-    });
-    d.addEventListener("dragend", endDrag);
     return d;
+  }
+
+  // ── 카드 옮기기 ───────────────────────────────────────
+  // 놓은 자리와 **그 자리의 전술**을 같이 저장한다. 끌어다 놓는 것이 곧 전술을 정하는 일이다.
+  var moving = null;
+  function startMove(e) {
+    if (e.button !== 0) return;
+    if (e.target.closest(".cp-handle, .cp-x, .cp-node-note")) return;   // 잇기·지우기·메모는 그대로
+    var d = e.currentTarget;
+    var n = state.nodes.filter(function (x) { return String(x.id) === d.dataset.id; })[0];
+    if (!n) return;
+    e.preventDefault();
+    // 보드 왼쪽 위를 기준으로 센다 — 화면 좌표 그대로 쓰면 보드가 스크롤된 만큼 어긋난다
+    var c = canvas.getBoundingClientRect();
+    moving = { d: d, n: n, dx: (e.clientX - c.left) / Z - n.x, dy: (e.clientY - c.top) / Z - n.y, dirty: false };
+    d.classList.add("moving");
+    document.body.classList.add("cp-moving");
+    try { d.setPointerCapture(e.pointerId); } catch (err) {}
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", endMove, { once: true });
+  }
+  function onMove(e) {
+    if (!moving) return;
+    var c = canvas.getBoundingClientRect();
+    var x = Math.max(0, (e.clientX - c.left) / Z - moving.dx);
+    var y = Math.max(0, (e.clientY - c.top) / Z - moving.dy);
+    moving.n.x = x; moving.n.y = y; moving.dirty = true;
+    moving.d.style.left = x + "px";
+    moving.d.style.top = y + "px";
+    drawLines();
+  }
+  function endMove() {
+    document.removeEventListener("pointermove", onMove);
+    if (!moving) return;
+    var m = moving;
+    moving = null;
+    m.d.classList.remove("moving");
+    document.body.classList.remove("cp-moving");
+    if (!m.dirty) return;
+    var tactic = laneAt(m.n.x);
+    m.n.tactic = tactic;
+    post("/nodes/" + m.n.id, { x: Math.round(m.n.x), y: Math.round(m.n.y), tactic: tactic });
   }
 
   // ── 선 긋기 ────────────────────────────────────────────
@@ -172,10 +243,13 @@
   //   다음 열    오른쪽 → 왼쪽, 지금까지처럼 완만한 곡선
   //   뒤로 가기  오른쪽으로 나가 **열 아래 빈 자리**를 돌아 왼쪽으로 들어간다
   function anchor(node, side) {
+    // 화면 좌표는 확대·축소가 곱해져 있다 — 보드 좌표로 되돌려 쓴다(Z 로 나눈다)
     var c = canvas.getBoundingClientRect(), r = node.getBoundingClientRect();
-    if (side === "down") return { x: r.left + r.width / 2 - c.left, y: r.bottom - c.top };
-    if (side === "up") return { x: r.left + r.width / 2 - c.left, y: r.top - c.top };
-    return { x: (side === "out" ? r.right : r.left) - c.left, y: r.top + Math.min(r.height / 2, 28) - c.top };
+    var left = (r.left - c.left) / Z, top = (r.top - c.top) / Z;
+    var w = r.width / Z, h = r.height / Z;
+    if (side === "down") return { x: left + w / 2, y: top + h };
+    if (side === "up") return { x: left + w / 2, y: top };
+    return { x: side === "out" ? left + w : left, y: top + Math.min(h / 2, 28) };
   }
 
   function curve(a, b) {
@@ -197,18 +271,20 @@
   }
 
   function wire(s, t) {
-    var sc = s.closest(".cp-col"), tc = t.closest(".cp-col");
-    if (sc && sc === tc) {                       // 같은 열 — 위아래로 곧장
-      var top = s.getBoundingClientRect().top <= t.getBoundingClientRect().top;
+    // 자유 배치에서는 '같은 열' 이 아니라 **가까이 겹쳐 있나**로 가른다 — 위아래로 놓였으면 세로로 긋는다
+    var a0 = s.getBoundingClientRect(), b0 = t.getBoundingClientRect();
+    var sideways = Math.abs((a0.left + a0.right) / 2 - (b0.left + b0.right) / 2);
+    if (sideways < a0.width * 0.8) {
+      var top = a0.top <= b0.top;
       var a = anchor(top ? s : t, "down"), b = anchor(top ? t : s, "up");
       return { d: down(a, b), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     }
     var p = anchor(s, "out"), q = anchor(t, "in");
     if (q.x >= p.x) return { d: curve(p, q), x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
     // 뒤로 가는 선은 **두 카드 중 아래쪽 바로 밑**을 돌아간다. 보드 맨 아래까지 내려가면
-    // 열이 길 때 선 하나가 화면을 세로로 가로지른다(11-22 눈으로 확인)
+    // 선 하나가 화면을 세로로 가로지른다(11-22 눈으로 확인)
     var c = canvas.getBoundingClientRect();
-    var floor = Math.max(s.getBoundingClientRect().bottom, t.getBoundingClientRect().bottom) - c.top;
+    var floor = (Math.max(a0.bottom, b0.bottom) - c.top) / Z;
     return { d: around(p, q, floor), x: (p.x + q.x) / 2, y: floor + 26 };
   }
 
@@ -265,7 +341,7 @@
   // ── 끌어다 놓기: 후보 → 열, 노드 → 다른 열 ─────────────────
   function endDrag() {
     document.body.classList.remove("cp-dragging");
-    canvas.querySelectorAll(".cp-col.over").forEach(function (c) { c.classList.remove("over"); });
+    canvas.classList.remove("over");
   }
 
   document.querySelectorAll(".cp-cand[draggable=true]").forEach(function (c) {
@@ -276,31 +352,48 @@
         status: d.status || "", note: d.note || "" }));
       e.dataTransfer.effectAllowed = "copy";
       document.body.classList.add("cp-dragging");
-      var home = canvas.querySelector('.cp-col[data-tactic="' + d.tactic + '"]');
+      // 그 후보가 기본으로 속한 전술 띠를 밝혀 둔다 — 어디에 놓으면 되는지 보이게
+      var home = bands && bands.querySelector('.cp-band[data-tactic="' + d.tactic + '"]');
       if (home) home.classList.add("home");
     });
     c.addEventListener("dragend", function () {
       endDrag();
-      canvas.querySelectorAll(".cp-col.home").forEach(function (h) { h.classList.remove("home"); });
+      if (bands) bands.querySelectorAll(".cp-band.home").forEach(function (h) { h.classList.remove("home"); });
     });
   });
 
-  canvas.querySelectorAll(".cp-col").forEach(function (col) {
-    col.addEventListener("dragover", function (e) { e.preventDefault(); col.classList.add("over"); });
-    col.addEventListener("dragleave", function (e) { if (!col.contains(e.relatedTarget)) col.classList.remove("over"); });
-    col.addEventListener("drop", function (e) {
-      e.preventDefault();
-      endDrag();
-      var data;
-      try { data = JSON.parse(e.dataTransfer.getData("text/plain")); } catch (err) { return; }
-      var tactic = col.dataset.tactic;
-      if (data.move) {
-        var n = state.nodes.filter(function (x) { return x.id === data.move; })[0];
-        if (n && n.tactic !== tactic) post("/nodes/" + data.move, { tactic: tactic });
-        return;
+  // 후보를 보드 위 아무 데나 떨어뜨린다 — 떨어진 자리가 곧 자리이고, 그 자리의 띠가 전술이다
+  canvas.addEventListener("dragover", function (e) { e.preventDefault(); canvas.classList.add("over"); });
+  canvas.addEventListener("dragleave", function (e) {
+    if (!canvas.contains(e.relatedTarget)) canvas.classList.remove("over");
+  });
+  canvas.addEventListener("drop", function (e) {
+    e.preventDefault();
+    endDrag();
+    canvas.classList.remove("over");
+    var data;
+    try { data = JSON.parse(e.dataTransfer.getData("text/plain")); } catch (err) { return; }
+    var c = canvas.getBoundingClientRect();
+    var x = Math.max(0, Math.round((e.clientX - c.left) / Z - CARD_W / 2));
+    var y = Math.max(TOP, Math.round((e.clientY - c.top) / Z - 20));
+    data.tactic = laneAt(x);          // 놓은 자리가 우선 — 후보의 전술은 기본값일 뿐이다
+    data.x = x; data.y = y;
+    post("/nodes", data);
+  });
+
+  // ── 정렬 · 확대 축소 ──────────────────────────────────
+  var arrangeBtn = document.getElementById("cp-arrange");
+  if (arrangeBtn) arrangeBtn.addEventListener("click", function () { post("/arrange"); });
+  document.querySelectorAll("[data-zoom]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var how = b.dataset.zoom;
+      if (how === "in") zoom(Z + 0.1);
+      else if (how === "out") zoom(Z - 0.1);
+      else {                                   // 전체 보기 — 보드 너비를 창에 맞춘다
+        var room = canvas.parentElement.parentElement.clientWidth - 8;
+        zoom(room / canvas.offsetWidth);
       }
-      data.tactic = tactic;           // 놓은 열이 우선 — 후보의 전술은 기본값일 뿐이다
-      post("/nodes", data);
+      drawLines();
     });
   });
 
@@ -319,7 +412,7 @@
   }
   function moveLink(e) {
     var c = canvas.getBoundingClientRect();
-    linking.temp.setAttribute("d", curve(linking.a, { x: e.clientX - c.left, y: e.clientY - c.top }));
+    linking.temp.setAttribute("d", curve(linking.a, { x: (e.clientX - c.left) / Z, y: (e.clientY - c.top) / Z }));
   }
   function endLink(e) {
     document.removeEventListener("pointermove", moveLink);
