@@ -633,3 +633,29 @@ def test_every_finding_carries_a_request_you_can_send_again(app, client, monkeyp
         got = db.execute("SELECT evidence FROM findings WHERE title = '민감 파일 노출'").fetchone()["evidence"]
     assert "다시 보낼 요청: GET https://sesacedu.store/d?file=%25%32%65etc/passwd" in got
     assert "/etc/passwd · 424B" in got          # 원래 근거도 그대로
+
+
+def test_filter_links_and_rows_carry_what_the_page_needs_to_filter_in_place(app, client):
+    """거르려고 숫자를 눌렀을 뿐인데 쪽이 새로 열려 맨 위로 튀었다(11-21 사용자 지적).
+
+    줄마다 거를 값이 달려 있고 요약 숫자·막대가 그 값을 들고 있어야 쪽을 새로 열지 않고 거를 수 있다.
+    """
+    from dashboard.db import get_db
+    from tests.test_app import add_target
+    add_target(client, "https://sesacedu.store", name="t")
+    with app.app_context():
+        db = get_db()
+        tid = db.execute("SELECT id FROM targets").fetchone()["id"]
+        rid = db.execute("INSERT INTO runs (target_id, module_id, started_at, status) VALUES (?,?,?,?)",
+                         [tid, "header_probe", "2026-11-21", "done"]).lastrowid
+        db.execute("INSERT INTO findings (run_id, target_id, module_id, title, severity, location, evidence, "
+                   "recommendation, technique, status, created_at, last_seen) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                   [rid, tid, "header_probe", "t", "high", "/p", "", "", "T1595.002", "open",
+                    "2026-11-21", "2026-11-21"])
+        db.commit()
+    h = client.get(f"/?target={tid}").get_data(as_text=True)
+    assert 'data-sev="high"' in h and 'data-mod="header_probe"' in h and 'data-status="open"' in h
+    assert 'data-filter-sev=' in h and 'data-filter-target=' in h
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert "data-filter-sev" in js and "preventDefault" in js
+    assert "el.form.submit()" not in js          # 더는 쪽을 새로 열지 않는다
