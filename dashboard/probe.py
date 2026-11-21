@@ -86,6 +86,26 @@ def path_ids(url: str, skip: str = ""):
     return found
 
 
+def listing_for(url: str, param: str) -> str:
+    """경로 틀에서 그 변수의 **목록 주소** — 변수 바로 앞까지의 경로.
+
+    `/backend/lectures/{lid}/qna/{qnaid}` 의 `{qnaid}` 라면 `/backend/lectures/103/qna` 다.
+    앞선 변수는 찾아낸 번호로 채운다. 변수가 가운데에 있어도(`.../{aid}/file`) 뒤를 잘라 준다 —
+    11-21 실측에서 이 계산을 fill_path + rsplit 으로 하다가 한 칸을 더 잘라
+    `/backend/lectures/103` 을 읽었고, 그래서 비밀글 번호(qid)를 못 거뒀다.
+    """
+    u = urlsplit(url)
+    ids = path_ids(url, skip=param)
+    out = []
+    for seg in u.path.strip("/").split("/"):
+        if seg == "{" + param + "}":
+            break
+        if seg.startswith("{") and seg.endswith("}"):
+            seg = ids.get(seg[1:-1]) or "1"
+        out.append(seg)
+    return f"{u.scheme}://{u.netloc}/" + "/".join(out)
+
+
 def fill_path(url: str, param: str, value: str) -> str:
     """경로 틀에서 param 자리에 value 를 넣고, 나머지 변수는 찾아낸 번호로 채운다."""
     ids = path_ids(url, skip=param)
