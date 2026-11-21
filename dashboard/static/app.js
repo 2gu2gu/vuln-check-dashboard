@@ -638,10 +638,64 @@
     window.pollJobs = poll;   // 실행을 보낸 직후 바로 한 번 묻게
   })();
 
-  // 고르면 바로 적용되는 필터
-  document.querySelectorAll("[data-autosubmit]").forEach(function (el) {
-    el.addEventListener("change", function () { el.form.submit(); });
-  });
+  // 고르면 바로 적용되는 필터.
+  // 전에는 폼을 제출해 쪽을 새로 열었는데, 그러면 보던 자리를 잃고 맨 위로 튄다(11-21 사용자 지적).
+  // 결과 줄은 이미 다 화면에 있으니 서버에 다시 다녀올 일이 없다 — 그 자리에서 줄만 숨긴다.
+  // 주소는 history.replaceState 로 맞춰 둔다(새로 고침·공유했을 때 같은 화면이 나오게).
+  (function () {
+    var table = document.getElementById("findings");
+    var form = document.querySelector("form.filters");
+    if (!table || !form) return;
+    var pick = function (n) { var el = form.querySelector("[name=" + n + "]"); return el ? el.value : ""; };
+    var search = document.getElementById("q");
+
+    function apply(push) {
+      var sev = pick("severity"), mod = pick("module_id"), st = pick("status");
+      var term = (search && search.value.trim().toLowerCase()) || "";
+      var shown = 0;
+      table.querySelectorAll("tbody tr").forEach(function (tr) {
+        var out = (sev && tr.dataset.sev !== sev) || (mod && tr.dataset.mod !== mod) ||
+                  (st && tr.dataset.status !== st) ||
+                  (term && tr.textContent.toLowerCase().indexOf(term) === -1);
+        tr.hidden = !!out;
+        if (!out) shown++;
+      });
+      var head = document.querySelector(".list-head");
+      if (head) {
+        var tag = head.querySelector(".shown-count");
+        if (!tag) { tag = document.createElement("span"); tag.className = "sub small shown-count"; head.appendChild(tag); }
+        tag.textContent = (sev || mod || st || term) ? "  — " + shown + "건 보임" : "";
+      }
+      if (push) {
+        var q = new URLSearchParams(location.search);
+        [["severity", sev], ["module_id", mod], ["status", st]].forEach(function (kv) {
+          if (kv[1]) q.set(kv[0], kv[1]); else q.delete(kv[0]);
+        });
+        history.replaceState(null, "", location.pathname + (q.toString() ? "?" + q : ""));
+      }
+    }
+
+    form.querySelectorAll("[data-autosubmit]").forEach(function (el) {
+      el.addEventListener("change", function () { apply(true); });
+    });
+    if (search) search.addEventListener("input", function () { apply(false); });
+
+    // 위 요약 표·막대를 눌러도 쪽을 새로 열지 않는다 — 같은 대상일 때만
+    document.querySelectorAll("[data-filter-sev]").forEach(function (a) {
+      a.addEventListener("click", function (e) {
+        var mine = form.querySelector("[name=target]");
+        if (!mine || a.dataset.filterTarget !== mine.value) return;   // 다른 대상이면 그냥 이동
+        e.preventDefault();
+        var sel = form.querySelector("[name=severity]");
+        if (sel) sel.value = (sel.value === a.dataset.filterSev) ? "" : a.dataset.filterSev;  // 같은 걸 또 누르면 해제
+        apply(true);
+      });
+    });
+
+    var hasFilter = form.querySelector("[name=severity]").value || form.querySelector("[name=module_id]").value
+                    || form.querySelector("[name=status]").value;
+    if (hasFilter) apply(false);     // 주소로 들어왔을 때도 표시를 맞춘다
+  })();
 
   document.querySelectorAll("form[data-confirm]").forEach(function (f) {
     f.addEventListener("submit", function (e) {
@@ -827,14 +881,7 @@
     table.querySelectorAll("tr.sel").forEach(function (r) { r.classList.remove("sel"); });
   });
 
-  // 표 안 검색(항목·위치·모듈)
-  var q = $("q");
-  if (q) q.addEventListener("input", function () {
-    var term = q.value.trim().toLowerCase();
-    table.querySelectorAll("tbody tr").forEach(function (tr) {
-      tr.hidden = term && tr.textContent.toLowerCase().indexOf(term) === -1;
-    });
-  });
+  // 표 안 검색은 위의 거르기(apply)로 합쳤다 — 심각도·모듈·상태와 같이 걸려야 한다
 })();
 
 

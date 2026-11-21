@@ -73,6 +73,7 @@
             {% for g in r.segments %}
             <a class="hs-seg sv-{{ g.severity }}" style="width: {{ g.pct }}%"
                href="{{ url_for('dash.results', target=r.target.id, severity=g.severity) }}"
+               data-filter-sev="{{ g.severity }}" data-filter-target="{{ r.target.id }}"
                title="{{ r.target.name }} · {{ SEVERITY_LABEL[g.severity] }} {{ g.n }}건">{{ g.n }}</a>
             {% endfor %}
           </div>
@@ -207,7 +208,8 @@
           <td><a href="{{ url_for('dash.results', target=r.target.id) }}">{{ r.target.name }}</a></td>
           <td class="sub">{{ tp.role_name(r.target.role) if tp else r.target.role }}</td>
           {% for s in severities %}
-          <td class="num">{% if r.counts[s] %}<a href="{{ url_for('dash.results', target=r.target.id, severity=s) }}">{{ r.counts[s] }}</a>{% else %}<span class="sub">0</span>{% endif %}</td>
+          <td class="num">{% if r.counts[s] %}<a href="{{ url_for('dash.results', target=r.target.id, severity=s) }}"
+             data-filter-sev="{{ s }}" data-filter-target="{{ r.target.id }}">{{ r.counts[s] }}</a>{% else %}<span class="sub">0</span>{% endif %}</td>
           {% endfor %}
           <td class="num"><b>{{ r.total }}</b></td>
         </tr>
@@ -252,7 +254,8 @@
       <thead><tr><th>심각도</th><th>항목</th><th>경로</th><th class="col-opt">모듈</th><th>ATT&CK</th><th>상태</th><th class="col-opt">발견</th></tr></thead>
       <tbody>
       {% for f in findings %}
-        <tr data-id="{{ f.id }}" tabindex="0">
+        <tr data-id="{{ f.id }}" tabindex="0"
+            data-sev="{{ f.severity }}" data-mod="{{ f.module_id }}" data-status="{{ f.status }}">
           <td>{{ sev(f.severity) }}</td>
           <td>{{ f.title }}</td>
           <td class="mono loc" title="{{ f.location }}">{{ f.path }}</td>
