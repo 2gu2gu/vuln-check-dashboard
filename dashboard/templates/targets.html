@@ -247,8 +247,9 @@
           <div class="ep-line">
             <span class="mono">{{ gr.path }}</span>
             {% for e in gr.ends %}<span class="st st-{{ e.state }}" title="{{ e.method }} 확인 결과">{% if gr.ends | length > 1 %}{{ e.method }} {% endif %}{{ states.get(e.state, e.state) }}{% if e.status %} <b>{{ e.status }}</b>{% endif %}</span>{% endfor %}
-            {% if gr.risk %}<span class="risk {{ 'r-hi' if gr.risk >= 30 else ('r-mid' if gr.risk >= 15 else 'r-lo') }}" title="위험 점수 0~100 — 이유는 '근거'">
-              <i style="width: {{ gr.risk }}%"></i>위험 {{ gr.risk }}</span>{% endif %}
+            {% if gr.risk %}<span class="risk {{ 'r-hi' if gr.risk >= 30 else ('r-mid' if gr.risk >= 15 else 'r-lo') }}"
+              title="먼저 볼 자리인지 매긴 점수(0~100) — 취약점 점수가 아닙니다. 아래 막대가 그 눈금이고, 까닭은 이 줄의 '근거' 에 적혀 있습니다"
+              >위험 {{ gr.risk }}<i style="width: {{ gr.risk }}%"></i></span>{% endif %}
             <span class="sub small">{{ gr.params | length }}개 파라미터 · {% for s in gr.sources | sort %}{{ source_label.get(s, s) }}{{ ", " if not loop.last }}{% endfor %}</span>
             {# 주소 단위 점검(보안 헤더·정보 노출)의 판정은 이 주소 줄에 붙는다 — 파라미터가 없어도 보여야 한다 #}
             {% for c in gr.checks %}

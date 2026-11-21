@@ -675,9 +675,13 @@ html { scroll-behavior: smooth; }
 .st-method_mismatch, .st-redirect { color: var(--sev-low); }
 .st-server_error { color: var(--sev-high); background: var(--hit-soft); }
 .st-not_found, .st-soft_404, .st-unverified { color: var(--sub); border-style: dashed; }
+/* 위험 점수는 **눈금** 이다. 전에는 점수만큼 바탕을 채웠는데, 그러면 88 은 오른쪽 끝이, 40 은
+   글자 한가운데가 잘린 것처럼 보였다(11-21 사용자 지적: "위험 칸 왜저래"). 바탕은 그대로 두고
+   아래에 얇은 막대로 긋는다 — 잘린 것이 아니라 눈금이라는 게 한눈에 보인다. */
 .risk { position: relative; display: inline-flex; align-items: center; font-size: 12px; font-weight: 600;
-        min-width: 74px; padding: 0 7px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
-.risk i { position: absolute; left: 0; top: 0; bottom: 0; opacity: .22; }
+        min-width: 74px; padding: 0 7px; border-radius: 4px; background: var(--surface-2);
+        border: 1px solid var(--line); overflow: hidden; }
+.risk i { position: absolute; left: 0; bottom: 0; height: 2px; opacity: .85; }
 .risk.r-hi { color: var(--sev-high); } .risk.r-hi i { background: var(--sev-high); }
 .risk.r-mid { color: var(--sev-medium); } .risk.r-mid i { background: var(--sev-medium); }
 .risk.r-lo { color: var(--sev-low); } .risk.r-lo i { background: var(--sev-low); }

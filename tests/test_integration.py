@@ -93,6 +93,18 @@ def rpc(client, app, method, params=None):
     return r if r.status_code != 200 else json.loads(r.get_data(as_text=True))
 
 
+def _docx_text(blob):
+    """내려받은 Word 에서 글자만 뽑는다 — 표 안의 글자까지 본다."""
+    import io
+
+    from docx import Document
+    doc = Document(io.BytesIO(blob))
+    out = [p.text for p in doc.paragraphs]
+    for t in doc.tables:
+        out += [c.text for row in t.rows for c in row.cells]
+    return "\n".join(out)
+
+
 def tool(client, app, name, args=None):
     out = rpc(client, app, "tools/call", {"name": name, "arguments": args or {}})["result"]
     return "\n".join(c["text"] for c in out["content"]), out.get("isError") is True
@@ -127,7 +139,19 @@ def test_from_registering_a_target_to_the_report(app, client, monkeypatch):
     md = client.get("/report/1.md").get_data(as_text=True)
     data = client.get("/report/1.json").get_json()
     assert found[0]["title"] in md and "/courses" in md
+    # 위치는 코드로 적는다 — 링크가 되면 눌렀을 때 401·JSON 이 뜬다(11-21 사용자 지적)
+    assert f'| `{found[0]["location"]}` |' in md
+    assert "눌러 보는 링크가 아닙니다" in md
     assert [f["title"] for f in data["findings"]] == [found[0]["title"]]
+
+    # 내려받기 단추가 주는 것은 Word 다(11-21 사용자 지시)
+    doc = client.get("/report/1.docx")
+    assert doc.status_code == 200 and doc.get_data()[:2] == b"PK"      # zip 으로 시작하는 진짜 docx
+    assert "wordprocessingml" in doc.headers["Content-Type"]
+    assert ".docx" in doc.headers["Content-Disposition"]
+    text = _docx_text(doc.get_data())
+    assert found[0]["title"] in text and "1. 취약점 개요" in text and "4. 조치방안" in text
+    assert "눌러 보는 링크가 아닙니다" in text
 
     # 오탐으로 내리면 보고서에서 빠진다 — 지워서가 아니라 상태로 가린다
     client.post(f'/findings/{found[0]["id"]}/status', data={"status": "false_positive"})

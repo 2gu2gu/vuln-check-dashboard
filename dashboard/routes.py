@@ -1,7 +1,7 @@
 import json
 import re
 import sqlite3
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from flask import (Blueprint, Response, abort, current_app, flash, g, get_flashed_messages, jsonify, redirect,
                    render_template, request, url_for)
@@ -1418,6 +1418,48 @@ def report_json(tid):
                     headers={"Content-Disposition": f"attachment; filename=report_{tid}.json"})
 
 
+@bp.get("/report/<int:tid>.docx")
+def report_docx(tid):
+    """내려받기 단추가 주는 것 — Word(11-21 사용자 지시: 보고서는 md 말고 워드로)."""
+    from io import BytesIO
+
+    from . import report_docx as maker
+
+    t, rows, exchanges = _report_rows(tid)
+    mods = _modules()
+    meta = {
+        "practice": _is_practice(t), "project": _project_of(t).name, "role": _role_label(t),
+        "written": fmt_kst(now_iso()),
+        "summary": [{"severity": SEVERITY_LABEL[r["severity"]], "title": r["title"], "location": r["location"],
+                     "technique": r["technique"] or "", "status": STATUSES.get(r["status"], r["status"])}
+                    for r in rows],
+        "items": [],
+    }
+    for r in rows:
+        mod = mods.get(r["module_id"])
+        rated = _rate(r["cvss_vector"] if "cvss_vector" in r.keys() else "", mod)
+        saved = rated and rated["saved"]
+        meta["items"].append({
+            "description": f'{r["title"]} — {mod.description if mod else ""}',
+            "impact": rated["impact_text"] if saved else
+                      ((rated["impact_text"] + " — 미확정(모듈 제안값)") if rated else "미평가"),
+            "vector": rated["vector"] if rated else "—",
+            "module": mod.name if mod else r["module_id"],
+            "attack": f'{r["technique"]} ({technique_url(r["technique"])})' if r["technique"] else "—",
+            "status": STATUSES.get(r["status"], r["status"]),
+        })
+    buf = BytesIO()
+    maker.build(t, rows, exchanges, meta, buf)
+    buf.seek(0)
+    name = f"점검결과_{_slug_name(t['name'])}_{now_iso()[:10]}.docx"
+    return Response(buf.read(), mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
+
+
+def _slug_name(s):
+    return re.sub(r"[^0-9A-Za-z가-힣._-]+", "_", str(s or "")).strip("_") or "보고서"
+
+
 @bp.get("/report/<int:tid>.md")
 def report(tid):
     t, rows, exchanges = _report_rows(tid)
@@ -1435,8 +1477,13 @@ def report(tid):
              f"- 작성: {fmt_kst(now_iso())} (KST)", f"- 발견: {len(rows)}건", "",
              "| # | 심각도 | 항목 | 위치 | ATT&CK | 상태 |", "|---|---|---|---|---|---|"]
     for i, r in enumerate(rows, 1):
-        lines.append(f"| {i} | {SEVERITY_LABEL[r['severity']]} | {r['title']} | {r['location']} | "
+        # 주소는 **코드로** 적는다. 그냥 두면 보는 도구가 링크로 만들고, 누르면 토큰이 없어
+        # `{"code":"UNAUTHORIZED"}` 나 JSON 덩어리가 뜬다(11-21 사용자 지적). 증거는 아래 요청·응답이다
+        lines.append(f"| {i} | {SEVERITY_LABEL[r['severity']]} | {r['title']} | `{r['location']}` | "
                      f"{r['technique']} | {STATUSES.get(r['status'], r['status'])} |")
+    lines += ["", "> 위치는 **어디서 났는지** 적어 둔 주소입니다 — 눌러 보는 링크가 아닙니다. "
+                  "브라우저로 그대로 열면 로그인이 필요하다고 하거나(`UNAUTHORIZED`) 데이터(JSON)만 나옵니다. "
+                  "무엇을 보내 무엇을 받았는지는 각 항목의 **요청·응답**에 그대로 있습니다."]
     for i, r in enumerate(rows, 1):
         mod = mods.get(r["module_id"])
         rated = _rate(r["cvss_vector"] if "cvss_vector" in r.keys() else "", mod)
