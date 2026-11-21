@@ -1,4 +1,4 @@
-"""관찰한 버전 → CVE 후보. 수사보드의 후보 목록에 올라가는 재료.
+﻿"""관찰한 버전 → CVE 후보. 수사보드의 후보 목록에 올라가는 재료.
 
 레드팀은 밖에서 시작한다. 배너·오류 페이지에서 본 '제품/버전' 이 다음 공격을 고르는 단서다.
 여기서는 그 단서를 결과 행에서 뽑고(observe), 두 곳에서 CVE 를 찾는다.
@@ -33,8 +33,25 @@ USER_AGENT = "ttalkkak-dast/0.2"
 
 # 결과 증거에서 '제품/버전' 을 찾는다. 긴 이름을 앞에 둬야 'Apache Tomcat' 이 'Apache' 로 잘리지 않는다.
 VERSION_RE = re.compile(
-    r"(Apache Tomcat|Apache-Coyote|Microsoft-IIS|Next\.js|Node\.js|OpenSSL|Werkzeug|Express|Jetty|"
-    r"nginx|Apache|Python|PHP)[/ ]v?(\d+(?:\.\d+)+)(?:\s*\(([^)]{1,30})\))?", re.I)
+    r"(Apache Tomcat|Apache-Coyote|Microsoft-IIS|Next\.js|Node\.js|OpenSSL|OpenSSH|Werkzeug|Express|Jetty|"
+    r"Spring Boot|Spring Framework|log4j-core|MariaDB|MySQL|nginx|Apache|Python|PHP)"
+    r"[/ _]v?(\d+(?:\.\d+)+)(?:\s*\(([^)]{1,30})\))?", re.I)
+
+# 읽어 낸 **경로·파일 이름**에서도 버전을 뽑는다(11-22 사용자 지시: 얻은 정보에서 추론해 CVE 를 쫓아라).
+# 경로 조작으로 읽은 파일 목록에는 `/opt/apache-tomcat-10.1.1/...`, `/usr/lib/jvm/java-17-openjdk-amd64`
+# 처럼 **버전이 박힌 경로**가 그대로 들어 있다. 배너가 없어도 이것만으로 제품·버전을 알 수 있다.
+PATH_RE = [
+    (re.compile(r"apache-tomcat-(\d+(?:\.\d+)+)"), "apache tomcat"),
+    (re.compile(r"tomcat-?(\d+(?:\.\d+)+)/"), "apache tomcat"),
+    (re.compile(r"jvm/java-(\d+)(?:[.\-]\S*)?-openjdk"), "openjdk"),
+    (re.compile(r"openjdk[-_](\d+(?:\.\d+)*)"), "openjdk"),
+    (re.compile(r"openssh[-_](\d+(?:\.\d+)+)"), "openssh"),
+    (re.compile(r"log4j-core-(\d+(?:\.\d+)+)"), "log4j-core"),
+    (re.compile(r"spring-core-(\d+(?:\.\d+)+)"), "spring framework"),
+    (re.compile(r"spring-boot-(\d+(?:\.\d+)+)"), "spring boot"),
+    (re.compile(r"nginx-(\d+(?:\.\d+)+)"), "nginx"),
+    (re.compile(r"python(\d+\.\d+)/"), "python"),
+]
 
 # 제품 → NVD CPE (vendor, product). nginx 는 2022년 무렵부터 f5 이름으로 올라간다.
 PRODUCTS = {
@@ -50,22 +67,47 @@ PRODUCTS = {
     "next.js": ("Next.js", [("vercel", "next.js")]),
     "node.js": ("Node.js", [("nodejs", "node.js")]),
     "openssl": ("OpenSSL", [("openssl", "openssl")]),
+    # 경로·파일 이름에서 얻는 것들(11-22). 운영체제는 CPE 의 part 가 `o` 다
+    "openjdk": ("OpenJDK", [("oracle", "jdk"), ("oracle", "openjdk"), ("redhat", "openjdk")]),
+    "openssh": ("OpenSSH", [("openbsd", "openssh")]),
+    "log4j-core": ("log4j-core", [("apache", "log4j")]),
+    "spring framework": ("Spring Framework", [("vmware", "spring_framework"),
+                                              ("pivotal_software", "spring_framework")]),
+    "spring boot": ("Spring Boot", [("vmware", "spring_boot"), ("pivotal_software", "spring_boot")]),
+    "mysql": ("MySQL", [("oracle", "mysql")]),
+    "mariadb": ("MariaDB", [("mariadb", "mariadb")]),
+    "ubuntu": ("Ubuntu", [("canonical", "ubuntu_linux", "o")]),
 }
 
 
 def observe(findings):
-    """결과 행들 → [{product, version, distro, finding_id, title, location}] (제품·버전마다 하나)."""
+    """결과 행들 → [{product, version, distro, finding_id, title, location, how}] (제품·버전마다 하나).
+
+    두 곳에서 본다.
+        배너·본문   `Server: nginx/1.24.0`, `Apache Tomcat/10.1.1` 같은 글자 (how='배너')
+        읽은 경로   `/opt/apache-tomcat-10.1.1/...` 처럼 **버전이 박힌 경로** (how='읽은 경로')
+
+    경로 쪽은 경로 조작으로 읽어 낸 파일 목록에서 나온다 — 배너를 지워도 남는 단서다
+    (11-22 사용자 지시: 얻은 정보에서 추론해 CVE 를 쫓아라).
+    """
     seen = {}
+
+    def put(key, version, f, how, distro=""):
+        if key not in PRODUCTS:
+            return                             # Apache-Coyote 처럼 버전이 의미 없는 이름
+        name = PRODUCTS[key][0]
+        k = (name, version)
+        if k not in seen:
+            seen[k] = {"product": name, "key": key, "version": version, "distro": distro,
+                       "finding_id": f["id"], "title": f["title"], "location": f["location"], "how": how}
+
     for f in findings:
-        for m in VERSION_RE.finditer(f["evidence"] or ""):
-            key = m.group(1).lower()
-            if key not in PRODUCTS:
-                continue                       # Apache-Coyote 처럼 버전이 의미 없는 이름
-            name = PRODUCTS[key][0]
-            k = (name, m.group(2))
-            if k not in seen:
-                seen[k] = {"product": name, "key": key, "version": m.group(2), "distro": m.group(3) or "",
-                           "finding_id": f["id"], "title": f["title"], "location": f["location"]}
+        body = f["evidence"] or ""
+        for m in VERSION_RE.finditer(body):
+            put(m.group(1).lower(), m.group(2), f, "배너", m.group(3) or "")
+        for pat, key in PATH_RE:
+            for m in pat.finditer(body):
+                put(key, m.group(1), f, "읽은 경로")
     return list(seen.values())
 
 
@@ -83,8 +125,9 @@ def team_list(target, projects_pkg="projects"):
 
 # ── NVD ──────────────────────────────────────────────────
 
-def cpe(vendor, product, version):
-    return f"cpe:2.3:a:{vendor}:{product}:{version}"
+def cpe(vendor, product, version, part="a"):
+    """NVD 에 보낼 제품 글자. 운영체제(Ubuntu)는 part 가 `o` 라 따로 받는다(11-22)."""
+    return f"cpe:2.3:{part}:{vendor}:{product}:{version}"
 
 
 def _slim(item):
@@ -116,8 +159,8 @@ def refresh(db, observed, fetch=fetch_nvd, pause=NVD_PAUSE_S):
     """관찰한 제품마다 NVD 를 물어 nvd_cache 에 넣는다. (물은 수, 실패 [(cpe, 이유)])"""
     asked, failed = 0, []
     for o in observed:
-        for vendor, product in PRODUCTS[o["key"]][1]:
-            name = cpe(vendor, product, o["version"])
+        for vendor, product, *part in PRODUCTS[o["key"]][1]:
+            name = cpe(vendor, product, o["version"], part[0] if part else "a")
             if asked:
                 time.sleep(pause)
             asked += 1
@@ -150,8 +193,8 @@ def candidates(db, target, findings, projects_pkg="projects"):
     asked = False
     for o in observed:
         rows, when = [], None
-        for vendor, product in PRODUCTS[o["key"]][1]:
-            got, at = cached(db, cpe(vendor, product, o["version"]))
+        for vendor, product, *part in PRODUCTS[o["key"]][1]:
+            got, at = cached(db, cpe(vendor, product, o["version"], part[0] if part else "a"))
             if got is not None:
                 asked = True
                 when = max(when or at, at)
