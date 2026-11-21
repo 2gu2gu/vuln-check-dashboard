@@ -44,7 +44,11 @@ def run(target, points, params):
         r = probe.send(p, sent)
         verdict, ctx, excerpt = probe.judge_reflection(r.body, token, sent)
         lines = [f"{probe.request_line(p, sent)} → {r.status}"]
-        if verdict == "safe":
+        if ctx == "encoded":
+            # 주소에 넣은 값이 `%27%22%3C%3E` 꼴로 제 데이터에 적힌 것 — 화면에 그린 게 아니다
+            lines += ["그대로는 안 나옴 — **퍼센트 인코딩된 주소 글자**로만 나옴(실행될 자리가 아니다)",
+                      f"…{excerpt}…"]
+        elif verdict == "safe":
             lines.append("응답에 표식 없음")
         else:
             lines += [f"반사 위치: {probe.CONTEXT_LABEL[ctx]}", f"…{excerpt}…"]

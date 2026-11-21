@@ -35,6 +35,9 @@ def html(body):
     ("<p>vcdTOKEN&#39;&quot;&lt;&gt;</p>", "potential", "html"),
     ("<p>vcdTOKEN</p>", "potential", "html"),
     ("<p>nothing</p>", "safe", ""),
+    # 주소에 넣은 값이 퍼센트 인코딩된 채로 제 데이터에 적힌 것은 화면에 그린 게 아니다(11-21 실측:
+    # 관리자 웹 `/users/{userId}` 등 네 곳이 이 모양으로 '잠재' 가 됐다)
+    ('{"c":["","users","vcdTOKEN%27%22%3C%3E"]}', "safe", "encoded"),
 ])
 def test_judge_reflection(body, verdict, ctx):
     v, c, _ = probe.judge_reflection(body, "vcdTOKEN", "vcdTOKEN'\"<>")

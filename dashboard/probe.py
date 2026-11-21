@@ -177,12 +177,22 @@ def judge_reflection(body: str, token: str, sent: str):
     """보낸 값(sent, token 포함)이 응답에 어떻게 돌아왔는지 본다 → (verdict, 위치, 발췌).
 
     그대로 돌아옴                  → vuln      (특수문자가 걸러지지 않음 — 후보)
+    퍼센트 인코딩된 채로 돌아옴      → safe      (주소 글자다. 브라우저가 HTML 로 읽지 않는다)
     표식은 있는데 특수문자가 바뀜·빠짐 → potential (필터 있음 — 다른 패턴으로 더 볼 곳)
     표식 자체가 없음               → safe      (반사되지 않음)
+
+    퍼센트 인코딩(11-21): Next.js 같은 앱은 주소에 넣은 값을 `%27%22%3C%3E` 꼴로 제 데이터에
+    적어 둔다. 그건 **주소를 적어 둔 글자**지 화면에 그린 것이 아니라 실행될 자리가 없다.
+    관리자 웹의 `/users/{userId}` 등 네 곳이 이것 때문에 '잠재' 로 잡혔다(실측).
     """
     i = body.find(sent)
     if i >= 0:
         return "vuln", _context(body, i), _excerpt(body, i, len(sent))
+    enc = quote(sent, safe="")
+    if enc != sent:
+        k = body.find(enc)
+        if k >= 0:
+            return "safe", "encoded", _excerpt(body, k, len(enc))
     j = body.find(token)
     if j >= 0:
         return "potential", _context(body, j), _excerpt(body, j, len(token) + 12)
