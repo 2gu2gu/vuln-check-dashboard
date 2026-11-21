@@ -23,6 +23,7 @@ META = {
     "name": "새싹에듀 XSS 조합 넣어 보기 (심화)",
     "category": "입력 검증",
     "kisa": ["XS"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
+    "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",  # 제안값 — 사람이 고쳐 쓴다
     "vuln": "XSS",
     "kind": "active",
     "stage": "probe",

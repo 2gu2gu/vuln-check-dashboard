@@ -19,25 +19,75 @@ CLI** 다. 대시보드는 EC2-4 에서 돌고 거기에는 Node 도 그 스킬�
 """
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Pt, RGBColor
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+from docx.shared import Cm, Pt, RGBColor
 
+# ── 미감 양식의 서식(11-22 사용자 지시: 우리 미감 양식과 맞춰줘) ──────────────
+# `01_제출물/결과보고서_양식/1_결과보고서_양식_미감적용.docx` 에서 그대로 읽어 온 값이다.
+# 글꼴 Noto Sans KR, 본문 9.5pt, 제목 16/13/12pt, 표는 **가로줄만**(위아래 굵게, 안쪽 얇게,
+# 세로줄 없음), 머리 칸 배경 크림색. 색은 거의 검정 본문에 회색 보조, 강조는 청록 하나.
+BODY_FONT = "Noto Sans KR"
 MONO = "Consolas"
-GREY = RGBColor(0x55, 0x55, 0x55)
-HOLE = RGBColor(0xB0, 0x30, 0x30)   # 사람이 채울 자리 — 눈에 걸려야 한다
-CODE_LINES = 40                      # 요청·응답은 앞부분만. 통째로 넣으면 문서가 코드로 덮인다
+INK = RGBColor(0x1C, 0x1C, 0x1C)      # 본문
+SUB = RGBColor(0x55, 0x53, 0x4E)      # 보조 설명
+FAINT = RGBColor(0x8A, 0x87, 0x7F)    # 흐린 것
+ACCENT = RGBColor(0x2F, 0x5B, 0x63)   # 강조(청록)
+HOLE = RGBColor(0x9C, 0x3E, 0x39)     # 사람이 채울 자리 — 양식의 경고색
+HEAD_FILL = "ECEAE4"                  # 표 머리 칸 배경
+RULE = "D9D6CE"                       # 표 안쪽 가로줄
+GREY = SUB                            # 옛 이름(쓰던 자리 유지)
+CODE_LINES = 40                       # 요청·응답은 앞부분만. 통째로 넣으면 문서가 코드로 덮인다
+
+
+def _font(run, name):
+    """한글은 eastAsia 까지 적어야 Word 가 그 글꼴로 그린다."""
+    run.font.name = name
+    rpr = run._element.get_or_add_rPr()
+    rf = rpr.find(qn("w:rFonts"))
+    if rf is None:
+        rf = OxmlElement("w:rFonts")
+        rpr.append(rf)
+    for a in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+        rf.set(qn(a), name)
+    return run
+
+
+def _dress(doc):
+    """미감 양식의 판을 깐다 — 글꼴·크기·색·여백·머리말."""
+    st = doc.styles["Normal"]
+    st.font.size = Pt(9.5)
+    st.font.color.rgb = INK
+    st.font.name = BODY_FONT
+    st.element.rPr.rFonts.set(qn("w:eastAsia"), BODY_FONT)
+    for name, size in (("Title", 28), ("Heading 1", 16), ("Heading 2", 13), ("Heading 3", 12)):
+        s = doc.styles[name]
+        s.font.name = BODY_FONT
+        s.font.size = Pt(size)
+        s.font.color.rgb = INK
+        if s.element.rPr is not None and s.element.rPr.rFonts is not None:
+            s.element.rPr.rFonts.set(qn("w:eastAsia"), BODY_FONT)
+    for sec in doc.sections:
+        sec.top_margin, sec.bottom_margin = Cm(2.6), Cm(2.4)
+        sec.left_margin = sec.right_margin = Cm(2.3)
+        p = sec.header.paragraphs[0]
+        p.text = ""
+        r = _font(p.add_run("취약점 진단 및 모의해킹 결과 보고서    대외비 · 팀 내부용"), BODY_FONT)
+        r.font.size = Pt(8)
+        r.font.color.rgb = FAINT
 
 
 def _mono(p, text, size=9):
-    r = p.add_run(text)
-    r.font.name = MONO
+    r = _font(p.add_run(text), MONO)
     r.font.size = Pt(size)
+    r.font.color.rgb = INK
     return r
 
 
-def _small(doc, text, color=GREY, italic=False):
+def _small(doc, text, color=SUB, italic=False):
     p = doc.add_paragraph()
-    r = p.add_run(text)
-    r.font.size = Pt(9)
+    r = _font(p.add_run(text), BODY_FONT)
+    r.font.size = Pt(8.5)
     r.font.color.rgb = color
     r.italic = italic
     return p
@@ -59,22 +109,53 @@ def _code(doc, text, head=""):
         _small(doc, f"뒤로 {len(lines) - CODE_LINES}줄 더 있습니다. 전체는 결과 화면이나 JSON 보고서에 있습니다.")
 
 
+def _rules(t):
+    """표 테두리를 미감 양식대로 — 위아래만 굵게, 안쪽은 얇은 가로줄, 세로줄은 없다."""
+    pr = t._tbl.tblPr
+    old = pr.find(qn("w:tblBorders"))
+    if old is not None:
+        pr.remove(old)
+    b = OxmlElement("w:tblBorders")
+    for edge, val, sz, color in (("top", "single", "12", "1C1C1C"), ("bottom", "single", "12", "1C1C1C"),
+                                 ("left", "nil", "0", "auto"), ("right", "nil", "0", "auto"),
+                                 ("insideH", "single", "4", RULE), ("insideV", "nil", "0", "auto")):
+        e = OxmlElement(f"w:{edge}")
+        e.set(qn("w:val"), val)
+        e.set(qn("w:sz"), sz)
+        e.set(qn("w:space"), "0")
+        e.set(qn("w:color"), color)
+        b.append(e)
+    pr.append(b)
+
+
+def _fill(cell, color):
+    sh = OxmlElement("w:shd")
+    sh.set(qn("w:val"), "clear")
+    sh.set(qn("w:fill"), color)
+    cell._tc.get_or_add_tcPr().append(sh)
+
+
 def _table(doc, head, rows):
     t = doc.add_table(rows=1, cols=len(head))
-    t.style = "Table Grid"
+    _rules(t)
     for c, name in zip(t.rows[0].cells, head):
-        c.paragraphs[0].add_run(name).bold = True
+        _fill(c, HEAD_FILL)
+        r = _font(c.paragraphs[0].add_run(name), BODY_FONT)
+        r.bold = True
+        r.font.size = Pt(9)
     for row in rows:
         cells = t.add_row().cells
         for c, v in zip(cells, row):
             v = "" if v is None else str(v)
             p = c.paragraphs[0]
             if v.startswith("`") and v.endswith("`") and len(v) > 1:
-                _mono(p, v.strip("`"))
+                _mono(p, v.strip("`"), size=8.5)
             else:
-                r = p.add_run(v)
-                if v.strip() == "[ ]":
-                    r.font.color.rgb = HOLE
+                r = _font(p.add_run(v), BODY_FONT)
+                r.font.size = Pt(9)
+                r.font.color.rgb = HOLE if v.strip() == "[ ]" else INK
+                if v.endswith("(제안)"):
+                    r.font.color.rgb = SUB      # 사람이 확정하지 않은 값은 흐리게
     return t
 
 
@@ -82,6 +163,20 @@ def _method_of(request: str) -> str:
     """요청 첫 줄에서 메서드를 읽는다 — 결과에는 따로 안 들고 있다."""
     head = (request or "").lstrip().split(" ", 1)[0]
     return head if head in ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS") else "[ ]"
+
+
+def _top_cvss(group):
+    """그 유형에서 가장 높은 점수. '(제안)' 이 붙은 값도 숫자로 견준다."""
+    best, top = "", -1.0
+    for it in group:
+        head = (it["cvss_score"] or "").split(" ")[0]
+        try:
+            n = float(head)
+        except ValueError:
+            continue
+        if n > top:
+            top, best = n, it["cvss_score"]
+    return best or "[ ]"
 
 
 def _groups(items):
@@ -104,7 +199,7 @@ def build(doc_meta, items, path):
     — 둘 다 routes 가 DB 와 모듈에서 꺼내 넘긴다.
     """
     doc = Document()
-    doc.styles["Normal"].font.size = Pt(10)
+    _dress(doc)
     groups = _groups(items)
     counts = {k: 0 for k in ("critical", "high", "medium", "low", "info")}
     for it in items:
@@ -133,8 +228,7 @@ def build(doc_meta, items, path):
     doc.add_heading("3-2. 위험도 적용 결과", level=1)
     doc.add_paragraph(f'[{doc_meta["zone"]}] {doc_meta["asset_id"]} {doc_meta["target_name"]} ({doc_meta["url"]})')
     _table(doc, ["V-ID", "취약점 유형", "항목 코드", "건수", "CVSS (최고)", "위험도"],
-           [[vid, g[0]["module_name"], g[0]["kisa"] or "[ ]", f"{len(g)}건",
-             max((i["cvss_score"] for i in g if i["cvss_score"]), default="") or "[ ]",
+           [[vid, g[0]["module_name"], g[0]["kisa"] or "[ ]", f"{len(g)}건", _top_cvss(g),
              g[0]["top_severity"]] for vid, g in groups])
 
     # ── 4-2 대상별 취약점 요약 ────────────────────────────
@@ -163,7 +257,8 @@ def build(doc_meta, items, path):
         doc.add_page_break()
         doc.add_heading(f'5-{n}. {vid}. {g[0]["module_name"]}', level=2)
         _table(doc, ["항목", "내용"], [
-            ["위험도", f'{g[0]["top_severity"]} (건 중 최고, CVSS {max((i["cvss_score"] for i in g if i["cvss_score"]), default="") or "[ ]"})'],
+            ["위험도", f'{g[0]["top_severity"]} (건 중 최고, CVSS {_top_cvss(g)})'],
+            ["CVSS Vector", g[0]["cvss_vector"] or "[ ]"],
             ["항목 코드 / CWE", f'{g[0]["kisa"] or "[ ]"} / [ ]'],
             ["OWASP 2025", g[0]["owasp"] or "[ ]"],
             ["건수", f"{len(g)}건"],

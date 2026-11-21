@@ -1459,12 +1459,18 @@ def report_docx(tid):
         items.append({
             "module_id": r["module_id"], "module_name": mod.name if mod else r["module_id"],
             "module_desc": (mod.description if mod else "").replace("**", ""),
-            "kisa": " · ".join(f"{c} {standards.KISA[c][0]}" for c in (mod.kisa if mod else []) if c in standards.KISA),
+            # 항목 코드 — KISA 21항목이 있으면 그것, 없으면 자체 항목(X-xx). 비워 두지 않는다
+            "kisa": (" · ".join(standards.item_label(c) for c in (mod.kisa if mod else []))
+                     or (standards.item_label(mod.item) if mod and mod.item else "")),
             "owasp": " · ".join(f"{k} {standards.OWASP_NAME[k]}" for k in (mod.owasp if mod else [])),
             "title": r["title"], "location": r["location"], "severity": r["severity"],
             "severity_label": SEVERITY_LABEL[r["severity"]],
             "top_severity": SEVERITY_LABEL[top.get(r["module_id"], r["severity"])],
-            "cvss_score": (rated or {}).get("score", ""),
+            # 사람이 화면에서 벡터를 확정했으면 그 점수, 아직이면 모듈 제안값에 '(제안)' 을 붙인다.
+            # 비워 두면 보고서에서 '점수 없음' 으로 읽힌다(11-22 사용자 지적)
+            "cvss_score": ("" if not rated else
+                           (f'{rated["score"]}' if rated["saved"] else f'{rated["score"]} (제안)')),
+            "cvss_vector": (rated or {}).get("vector", ""),
             "status_label": STATUSES.get(r["status"], r["status"]),
             "recommendation": r["recommendation"] or "",
             "evidence": r["evidence"] or "", "request": x.get("request", ""), "response": x.get("response", ""),

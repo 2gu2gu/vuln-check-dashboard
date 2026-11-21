@@ -20,6 +20,9 @@ META = {
     "kind": "passive",
     "stage": "tool",
     "severity": "medium",
+    # KISA 웹 21항목에 서버 구성 칸이 없다 — 자체 항목으로 단다
+    "item": "X-02",
+    "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",  # 제안값 — 사람이 고쳐 쓴다
     # 서버에서 받아 온 명령 출력(설치 목록·버전)을 읽는 것이다. 권한을 올리는 일은 하지 않으므로
     # T1068(Exploitation for Privilege Escalation)을 뺐다 — 결과가 LPE 로 이어질 수 있다는 것과
     # 모듈이 그 일을 한다는 것은 다르다(11-21 사용자 지적)
