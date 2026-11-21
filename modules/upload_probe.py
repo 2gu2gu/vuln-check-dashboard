@@ -4,7 +4,10 @@
 과제 제출 확장자 검증 우회, 과제 업로드 경로 조작 쉘파일 업로드 RCE). 전부 **무엇을 받아 주는가** 로
 드러나고, 그건 올려 보면 알 수 있다.
 
-  ① 받는 구간  무해한 .txt 를 올린다. 2xx 가 아니면 업로드 자리가 아니거나 다른 칸이 더 필요하다
+  ① 받는 구간  무해한 .txt 를 올린다. 2xx 가 아니면 업로드 자리가 아니거나 다른 칸이 더 필요하다.
+               **2xx 라고 다 받는 자리는 아니다** — Next.js 같은 앱은 POST 에도 화면(HTML)을 그대로
+               돌려준다. 화면이 오거나, 파일을 빼고 보내도 같은 것이 오면 받는 자리가 아니다
+               (11-21 실측: 관리자 웹 화면 라우트 11곳이 이것 때문에 전부 '확장자 검증 없음' 으로 잘못 잡혔다)
   ② 기본       그냥 .jsp·.php·.html 을 올린다 — 받아 주면 확장자 검증이 없다
   ③ 심화       이름에 경로를 섞는다(`../`, 역슬래시, 절대 경로) — 받아 주면 올릴 자리를 고를 수 있다
   ④ 우회       검증이 있을 때 지나가는 모양: 겹친 확장자(.jsp.txt), 대소문자(.JsP), 널바이트, 세미콜론,
@@ -18,7 +21,7 @@
 """
 import uuid
 
-from dashboard import core
+from dashboard import core, probe
 from dashboard.core import Check
 
 META = {
@@ -112,12 +115,33 @@ def run(target, points, params):
             body, head = multipart(field, filename, ctype, content, extra)
             return core.fetch(p.url, method="POST", raw_body=body, content_type=head)
 
+        def send_without_file():
+            """파일 칸만 빼고 같은 요청을 보낸다 — 응답이 같으면 파일을 보고 있지 않다는 뜻이다."""
+            sep = "----ttalkkak" + uuid.uuid4().hex[:12]
+            parts = [f'--{sep}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+                     for k, v in extra]
+            parts.append(f"--{sep}--\r\n".encode())
+            return core.fetch(p.url, method="POST", raw_body=b"".join(parts),
+                              content_type=f"multipart/form-data; boundary={sep}")
+
         # ① 받는 구간 — 무해한 .txt
         r0 = send(f"{mark}.txt", "text/plain")
         note("screen", f"POST {p.url}  [{field}={mark}.txt] → {r0.status} · {len(r0.body)}B")
         if r0.status not in OK:
             note("screen", f"무해한 .txt 도 {r0.status} — 업로드 자리가 아니거나 다른 칸이 더 필요함(후보 제외). "
                            "HAR 에서 본 칸 이름과 같이 보낼 값을 설정에 적어 보세요")
+            out.append(Check(point=p, verdict="safe", evidence="\n".join(lines), response=r0))
+            continue
+        # 2xx 라고 다 받는 자리는 아니다 — 받는 자리인지 두 가지로 가린다
+        if "html" in r0.header("Content-Type").lower() or r0.body.lstrip()[:9].lower().startswith("<!doctype"):
+            note("screen", "올렸는데 **화면(HTML)** 이 돌아옴 — 업로드를 처리한 자리가 아니다(후보 제외). "
+                           "앱이 POST 에도 그 주소의 화면을 그려 주는 것뿐이다")
+            out.append(Check(point=p, verdict="safe", evidence="\n".join(lines), response=r0))
+            continue
+        bare = send_without_file()
+        note("screen", f"파일 칸을 빼고 같은 요청: → {bare.status} · {len(bare.body)}B")
+        if bare.status == r0.status and bare.body == r0.body:
+            note("screen", "파일을 보내나 안 보내나 **같은 응답** — 이 주소는 파일을 보고 있지 않다(후보 제외)")
             out.append(Check(point=p, verdict="safe", evidence="\n".join(lines), response=r0))
             continue
         keep = r0

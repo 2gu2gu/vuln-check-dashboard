@@ -164,7 +164,8 @@ def test_upload_builds_multipart_that_keeps_the_raw_filename():
 
 def test_upload_runnable_extension_accepted_is_vuln(monkeypatch):
     _ctx(monkeypatch)
-    _server(monkeypatch, lambda url, m, h, b: (200, "올렸습니다"))
+    _server(monkeypatch, lambda url, m, h, b: (200, "올렸습니다 " + str(len(b)))
+            if b'name="file"' in b else (400, "파일이 없습니다"))
     c = upload_probe.run(T, [_end()], {})[0]
     assert c.verdict == "vuln" and c.title == "업로드 확장자 검증 없음" and c.severity == "critical"
     assert ".jsp" in c.evidence                   # 어떤 확장자였는지는 근거에
@@ -175,6 +176,8 @@ def test_upload_path_in_the_name_accepted_is_vuln(monkeypatch):
     _ctx(monkeypatch)
 
     def h(url, m, hd, body):
+        if b'name="file"' not in body:
+            return 400, "파일이 없습니다"          # 진짜 업로드 자리는 파일이 없으면 거절한다
         name = body.split(b'filename="')[1].split(b'"')[0].decode("utf-8", "replace")
         if name.lower().endswith((".jsp", ".jspx", ".php", ".html")) and ".." not in name and "\\" not in name \
                 and not name.startswith("/"):
@@ -189,6 +192,8 @@ def test_upload_everything_blocked_is_safe(monkeypatch):
     _ctx(monkeypatch)
 
     def h(url, m, hd, body):
+        if b'name="file"' not in body:
+            return 400, "파일이 없습니다"          # 진짜 업로드 자리는 파일이 없으면 거절한다
         name = body.split(b'filename="')[1].split(b'"')[0].decode("utf-8", "replace")
         bad = (".." in name or "\\" in name or "%00" in name or ";" in name or name.startswith("/")
                or any(e in name.lower() for e in (".jsp", ".php", ".html")))
@@ -680,3 +685,38 @@ def test_no_approval_gate_is_left_anywhere(app, client):
     src = (routes.__file__,)
     import io as _io
     assert "자체 환경 확인'에 체크해야" not in _io.open(src[0], encoding="utf-8").read()
+
+
+def test_upload_does_not_call_a_page_an_upload_endpoint(monkeypatch):
+    """Next.js 는 POST 에도 그 주소의 화면을 그려 준다 — 그걸 '올라갔다' 고 하면 안 된다.
+
+    11-21 실측: 관리자 웹 화면 라우트 11곳이 전부 Critical '업로드 확장자 검증 없음' 으로 잡혔다.
+    """
+    from modules import upload_probe
+    _ctx(monkeypatch)
+    _server(monkeypatch, lambda url, m, h, b: (200, "<!doctype html><html>관리자 화면</html>"))
+    c = upload_probe.run(T, [_end("https://admin.sesacedu.store/users")], {})[0]
+    assert c.verdict == "safe" and "화면(HTML)" in c.evidence
+
+
+def test_upload_skips_a_place_that_ignores_the_file(monkeypatch):
+    """파일을 보내나 안 보내나 같은 응답이면 그 주소는 파일을 보고 있지 않다."""
+    from modules import upload_probe
+    _ctx(monkeypatch)
+    _server(monkeypatch, lambda url, m, h, b: (200, '{"ok":true}'))     # 무엇을 보내든 같다
+    c = upload_probe.run(T, [_end()], {})[0]
+    assert c.verdict == "safe" and "파일을 보내나 안 보내나" in c.evidence
+
+
+def test_upload_still_catches_a_real_endpoint(monkeypatch):
+    from modules import upload_probe
+    _ctx(monkeypatch)
+
+    def h(url, m, hd, body):
+        if b'name="file"' not in body:
+            return 400, '{"code":"FILE_REQUIRED"}'
+        name = body.split(b'filename="')[1].split(b'"')[0].decode("utf-8", "replace")
+        return 201, '{"work":"assignment/103/x_%s"}' % name
+    _server(monkeypatch, h)
+    c = upload_probe.run(T, [_end()], {})[0]
+    assert c.verdict == "vuln" and c.title == "업로드 확장자 검증 없음"
