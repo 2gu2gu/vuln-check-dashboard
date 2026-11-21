@@ -144,9 +144,10 @@ def test_idor_reads_the_other_account_header_line():
 # ── 요청 수 제한 ─────────────────────────────────────────────
 
 def test_rate_limit_no_block_at_all_is_vuln(monkeypatch):
-    sent = _server(monkeypatch, lambda url, h: (200, "로그인 실패"))
+    sent = _server(monkeypatch, lambda url, h: (200, "첫 화면") if url.endswith("/") else (200, "로그인 실패"))
     c = rate_limit_probe.run(T, [_end("https://sesacedu.store/login")], {"tries": "6"})[0]
-    assert c.verdict == "vuln" and c.title == "요청 수 제한 없음" and len(sent) == 6
+    assert c.verdict == "vuln" and c.title == "요청 수 제한 없음"
+    assert len([u for _m, u, _h in sent if u.endswith("/login")]) == 6
     assert "6 회까지 보냄" in c.evidence          # 몇 회였는지는 근거에 남는다
 
 
@@ -154,6 +155,8 @@ def test_rate_limit_429_is_safe(monkeypatch):
     n = {"i": 0}
 
     def handler(url, h):
+        if url.endswith("/"):
+            return 200, "첫 화면"
         n["i"] += 1
         return (429, "Too Many Requests") if n["i"] >= 4 else (200, "로그인 실패")
     _server(monkeypatch, handler)
@@ -165,6 +168,8 @@ def test_rate_limit_block_that_an_ip_header_undoes_is_vuln(monkeypatch):
     n = {"i": 0}
 
     def handler(url, h):
+        if url.endswith("/"):
+            return 200, "첫 화면"
         if h.get("X-Forwarded-For"):
             return 200, "로그인 실패"
         n["i"] += 1
@@ -177,10 +182,10 @@ def test_rate_limit_block_that_an_ip_header_undoes_is_vuln(monkeypatch):
 def test_rate_limit_post_runs_without_a_confirm_box(monkeypatch):
     """확인 칸은 뺐다(11-20 사용자 지시) — 계정이 잠길 수 있다는 경고는 설명에 남는다."""
     assert "잠길 수 있습니다" in rate_limit_probe.META["description"]
-    sent = _server(monkeypatch, lambda url, h: (200, "ok"))
+    sent = _server(monkeypatch, lambda url, h: (200, "첫 화면") if url.endswith("/") else (200, "ok"))
     c = rate_limit_probe.run(T, [_end()], {"method": "POST", "tries": "3"})[0]
-    assert c.verdict == "vuln" and len(sent) == 3
-    assert all(m == "POST" for m, _u, _h in sent)
+    posts = [m for m, _u, _h in sent if m == "POST"]
+    assert c.verdict == "vuln" and len(posts) == 3
 
 
 def test_rate_limit_post_body_is_read_line_by_line():
@@ -190,6 +195,8 @@ def test_rate_limit_post_body_is_read_line_by_line():
 
 def test_rate_limit_counts_a_retry_after_header_as_a_block(monkeypatch):
     def fetch(url, *, method="GET", headers=None, data=None, auth=True, **_kw):
+        if url.endswith("/"):
+            return Response(url=url, status=200, body="첫 화면")
         return Response(url=url, status=200, body="ok", headers=[("Retry-After", "30")])
     monkeypatch.setattr(core, "fetch", fetch)
     c = rate_limit_probe.run(T, [_end()], {"tries": "5"})[0]
@@ -308,3 +315,23 @@ def test_authz_header_trick_still_catches_a_backend_that_follows_it(monkeypatch)
     _server(monkeypatch, handler)
     c = authz_probe.run(T, [_end("https://sesacedu.store/backend/mypage")], {})[0]
     assert c.verdict == "vuln" and "차단 통과" in c.title
+
+
+def test_rate_limit_skips_a_route_that_does_not_exist(monkeypatch):
+    """404 쪽을 12번 받고 '제한 없음' 이라 할 수는 없다 — 셀 동작이 없다.
+
+    11-21 실측: 관리자 웹의 `/{Ed}` 같은 가짜 경로 4곳이 Next.js 404 쪽 때문에 잘못 잡혔다.
+    """
+    _ctx(monkeypatch)
+    sent = _server(monkeypatch, lambda url, h: (404, "<!doctype html>없는 쪽" * 20))
+    c = rate_limit_probe.run(T, [_end("https://admin.sesacedu.store/{Ed}")], {"tries": "12"})[0]
+    assert c.verdict == "safe" and "가는 길이 없다" in c.evidence
+    assert len(sent) <= 2                       # 첫 화면 한 번 + 지점 한 번이면 끝
+
+
+def test_rate_limit_skips_the_app_shell(monkeypatch):
+    _ctx(monkeypatch)
+    SHELL = "<!doctype html>앱 껍데기" * 10
+    _server(monkeypatch, lambda url, h: (200, SHELL))
+    c = rate_limit_probe.run(T, [_end("https://admin.sesacedu.store/dashboard")], {"tries": "12"})[0]
+    assert c.verdict == "safe" and "화면 틀이지" in c.evidence

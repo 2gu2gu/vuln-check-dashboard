@@ -4,7 +4,10 @@
 둘 있다(로그인 페이지 레이트리밋 전무, 쿠폰 코드 전사공격). 둘 다 '같은 주소에 빠르게 여러 번 보내고
 막히는지 보는 것' 으로 드러난다.
 
-  ① 받는 구간  한 번 보내 응답을 본다. 응답이 없으면 끝
+  ① 받는 구간  한 번 보내 응답을 본다. 응답이 없으면 끝.
+               **없는 길이면 셀 것이 없다** — 404·405 거나 앱 화면 틀이 돌아오면 그 주소에는
+               횟수를 셀 동작이 없다(11-21 실측: 관리자 웹의 `/{Ed}` 같은 가짜 경로 4곳이
+               Next.js 404 쪽을 12번 받고 '제한 없음' 으로 잘못 잡혔다)
   ② 기본       정한 횟수만큼 잇달아 보낸다. 429·503·Retry-After·'잠시 후'·lock 같은 신호가 나오는가
   ③ 심화       막히지 않았다면 응답 시간이 늘어나는가(느리게 하는 방어도 방어다)
   ④ 우회       막혔다면 X-Forwarded-For 를 바꿔 지나가는가 — 앞단이 IP 로만 세면 헤더 한 줄로 풀린다
@@ -17,7 +20,7 @@
 """
 import time
 
-from dashboard import core
+from dashboard import core, probe
 from dashboard.core import Check
 
 META = {
@@ -56,6 +59,7 @@ STAGE = {"screen": "① 받는 구간", "basic": "② 기본", "deep": "③ 심�
 BLOCKED = (429, 503)
 BLOCK_WORD = ("too many", "rate limit", "잠시 후", "잠금", "locked", "차단", "retry after", "제한")
 MAX_TRIES = 50
+NO_ROUTE = (404, 405, 410, 501)   # 길이 없거나 그 메서드를 안 받는다 — 셀 동작이 없다
 SLOW = 2.0  # 마지막 응답이 처음보다 이 배 넘게 느려지면 '느리게 하는 방어' 로 본다
 
 
@@ -87,6 +91,7 @@ def run(target, points, params):
     tries = max(2, min(int(params.get("tries") or 20), MAX_TRIES))
     method = (params.get("method") or "GET").upper()
     data = _body(params.get("body"))
+    shell = probe.app_shell(target)
     out = []
     for p in points:
         lines, verdict, keep, title = [], "safe", None, ""
@@ -103,6 +108,14 @@ def run(target, points, params):
         note("screen", f"{method} {p.url} → {r0.status} · {len(r0.body)}B · {int(first * 1000)}ms")
         if r0.status == 0:
             note("screen", "응답이 없음 — 볼 것이 없음(후보 제외)")
+            out.append(Check(point=p, verdict="safe", evidence="\n".join(lines), response=r0))
+            continue
+        if r0.status in NO_ROUTE:
+            note("screen", f"{r0.status} — 그 주소에 {method} 로 가는 길이 없다. 세어 볼 동작이 없음(후보 제외)")
+            out.append(Check(point=p, verdict="safe", evidence="\n".join(lines), response=r0))
+            continue
+        if shell is not None and r0.body == shell:
+            note("screen", "첫 화면과 글자 하나까지 같은 응답 — 화면 틀이지 횟수를 세는 동작이 아니다(후보 제외)")
             out.append(Check(point=p, verdict="safe", evidence="\n".join(lines), response=r0))
             continue
         keep = r0
