@@ -105,15 +105,16 @@ def _baseline(point, lad, shell):
         return s, probe.send(point, s)
     if point.place != "path":
         return "", None
-    # 한 단계 위 목록에서 이 변수의 진짜 번호를 거둔다 — /lectures/103/qna 를 읽어 qid 를 얻는 식
+    # 바로 앞 목록에서 이 변수의 진짜 번호를 거둔다 — /backend/lectures/103/qna 를 읽어 qid 를 얻는 식
     harvested = []
     try:
-        base = probe.fill_path(point.url, point.param, "")
-        listing = core.fetch(base.rstrip("/").rsplit("/", 1)[0])
+        where = probe.listing_for(point.url, point.param)
+        listing = core.fetch(where)
+        lad.note("screen", f"목록을 먼저 읽음: GET {where} → {listing.status} · {len(listing.body)}B")
         if listing.status in OPEN:
             harvested = probe._ids_from(listing.body)
             if harvested:
-                lad.note("screen", f"한 단계 위 목록에서 번호를 거둠: {', '.join(harvested[:6])}")
+                lad.note("screen", f"거둔 번호: {', '.join(harvested[:6])}")
     except OSError:
         pass
     for guess in harvested + [g for g in LOOKUP if g not in harvested]:

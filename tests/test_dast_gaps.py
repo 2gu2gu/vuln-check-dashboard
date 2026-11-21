@@ -574,3 +574,26 @@ def test_attack_mapping_says_what_the_module_does(app):
     # JWT 는 SAML 이 아니다 — 하위 기법이 아니라 상위 T1606 을 쓴다
     jwt = mods["jwt_probe"]
     assert [a["technique"] for a in jwt.attack] == ["T1606"]
+
+
+def test_listing_for_points_at_the_segment_right_before_the_variable(monkeypatch):
+    """`/lectures/{lid}/qna/{qnaid}` 의 목록은 `/lectures/103/qna` 다 — 한 칸 더 자르면 못 찾는다.
+
+    11-21 실측: fill_path + rsplit 으로 계산하다 `/backend/lectures/103` 을 읽어 qid 를 못 거뒀고,
+    그래서 비밀글 노출을 도구가 못 잡았다.
+    """
+    from dashboard import probe
+    monkeypatch.setattr(core, "run_cache", dict)
+
+    def fetch(url, **_k):
+        if url.endswith("/backend/lectures"):
+            return Response(url=url, status=200, body='{"lectures":[{"lectureId":103}]}')
+        if url.endswith("/backend/lectures/103"):
+            return Response(url=url, status=200, body='{"ok":1}' * 10)
+        return Response(url=url, status=404, body="")
+    monkeypatch.setattr(core, "fetch", fetch)
+    u = "https://sesacedu.store/backend/lectures/{lid}/qna/{qnaid}"
+    assert probe.listing_for(u, "qnaid") == "https://sesacedu.store/backend/lectures/103/qna"
+    # 변수가 가운데 있어도 뒤를 잘라 준다
+    v = "https://sesacedu.store/backend/lectures/{lid}/assignments/{aid}/file"
+    assert probe.listing_for(v, "aid") == "https://sesacedu.store/backend/lectures/103/assignments"
