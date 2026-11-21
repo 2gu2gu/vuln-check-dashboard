@@ -1,15 +1,41 @@
 {% extends "base.html" %}
-{% block title %}연결{% endblock %}
+{% block title %}MCP{% endblock %}
 {% block content %}
-{# AI 도구(Claude Code 등)가 딸깍이를 도구로 쓰게 붙이는 화면(11-21). 붙이는 줄 · 켠 도구 · 호출 기록. #}
-<h1>연결 <span class="sub">— AI 도구가 딸깍이를 도구로 씁니다(MCP)</span></h1>
+{# AI 도구(Claude Code 등)가 딸깍이를 도구로 쓰게 붙이는 화면(11-21).
+   맨 위는 **붙었는지 한눈에** — 줄을 복사해 터미널에 넣은 사람이 새로 고치지 않아도 불이 켜진다. #}
+<h1>MCP <span class="sub">— AI 도구가 딸깍이를 도구로 씁니다</span></h1>
 <p class="lead">사람이 화면을 눌러 하던 일을 <b>AI 에게 시킬 수 있습니다.</b> 지점을 보고, 모듈을 돌리고,
   나온 결과의 근거를 읽고, 다시 보내 확인하고, 틀린 줄을 오탐으로 바꾸는 일입니다.
   보내는 요청은 화면으로 돌릴 때와 <b>같은 길</b>을 지납니다 — 범위 밖 주소로는 나가지 않습니다.</p>
 
+{# ── 붙었나 ── 상태는 /connect/state 가 3초마다 새로 준다 #}
+<section class="panel mcp-live" id="mcp-live" data-state="{{ status.state }}">
+  <span class="mcp-dot" aria-hidden="true"></span>
+  <div class="mcp-live-text">
+    <strong id="mcp-head">
+      {%- if status.state == "live" %}붙어 있습니다
+      {%- elif status.state == "idle" %}조용합니다
+      {%- else %}아직 아무도 안 붙었습니다{% endif -%}
+    </strong>
+    <span class="sub small" id="mcp-sub">
+      {%- if status.state == "waiting" %}아래 줄을 터미널에 넣으면 <b>여기 불이 켜집니다</b>
+      {%- else %}{{ status.client }} · 마지막 {{ status.when }}{% if status.last_tool %}
+        <span class="mono">{{ status.last_tool }}</span>{% endif %}{% endif -%}
+    </span>
+  </div>
+  <div class="mcp-live-num">
+    <span><b id="mcp-calls">{{ status.calls }}</b>번 불렸습니다</span>
+    <span class="sub small">도구 {{ tools | length }}개 · 쓰기 {{ '켜짐' if write_on else '꺼짐' }}</span>
+  </div>
+</section>
+
 <section class="panel">
   <h2>붙이는 법</h2>
-  <p class="sub small">터미널에 이 한 줄을 넣습니다. <b>토큰이 들어 있으니</b> 아무 데나 붙여 넣지 마세요.</p>
+  <ol class="mcp-steps">
+    <li>아래 줄을 복사합니다. <b class="sub small">토큰이 들어 있으니 아무 데나 붙여 넣지 마세요</b></li>
+    <li>붙일 도구의 터미널에 그대로 넣습니다(Claude Code 기준).</li>
+    <li>위의 불이 <b>초록</b>으로 바뀌면 붙은 것입니다.</li>
+  </ol>
   <pre class="tool-text" id="mcp-cmd">{{ command }}</pre>
   <div class="row-gap">
     <button class="btn" type="button" data-copy="#mcp-cmd">줄 복사</button>
@@ -19,6 +45,8 @@
       <button class="btn ghost" type="submit">토큰 새로 만들기</button>
     </form>
   </div>
+  <p class="sub small">HTTP 라 <b>연결이 계속 이어져 있는 것이 아닙니다</b> — 도구가 말을 걸 때만 붙습니다.
+    그래서 위 불은 '지금 연결됨' 이 아니라 <b>최근 {{ fresh }}분 안에 말을 걸었나</b>를 보여 줍니다.</p>
 </section>
 
 <section class="panel">
@@ -52,7 +80,7 @@
 </section>
 
 <section class="panel">
-  <h2>호출 기록 <span class="sub">— 바깥에서 들어온 손이라 남겨 둡니다</span></h2>
+  <h2>주고받은 기록 <span class="sub">— 바깥에서 들어온 손이라 남겨 둡니다</span></h2>
   {% if calls %}
   <table class="table">
     <thead><tr><th>때</th><th>도구</th><th>보낸 값</th><th>결과</th></tr></thead>
@@ -60,7 +88,7 @@
       {% for c in calls %}
       <tr>
         <td class="sub small mono">{{ c.called_at | kst }}</td>
-        <td class="mono">{{ c.tool }}</td>
+        <td class="mono">{{ '붙음' if c.tool == 'initialize' else c.tool }}</td>
         <td class="sub small mono">{{ c.args }}</td>
         <td class="sub small">{% if not c.ok %}<span class="tag warn">실패</span> {% endif %}{{ c.summary }}</td>
       </tr>
@@ -68,7 +96,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="sub">아직 아무도 부르지 않았습니다.</p>
+  <p class="sub">아직 아무도 말을 걸지 않았습니다.</p>
   {% endif %}
 </section>
 {% endblock %}

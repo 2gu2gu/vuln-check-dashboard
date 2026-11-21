@@ -209,3 +209,38 @@ def test_every_listed_tool_is_actually_wired(name):
     from dashboard.routes import MCP_TOOLS
     assert name in MCP_TOOLS and name in mcp.BY_NAME
     assert set(MCP_TOOLS) == set(mcp.BY_NAME)
+
+
+# ── 붙었는지 보이는가(11-21 사용자 지적: 연결이 된 건지 직관적으로 안 보인다) ──
+
+def test_the_page_says_nobody_is_connected_yet(client):
+    page = client.get("/connect").get_data(as_text=True)
+    assert "아직 아무도 안 붙었습니다" in page
+    assert 'data-state="waiting"' in page
+
+
+def test_the_handshake_turns_the_light_on_and_names_the_tool(client, app):
+    rpc(client, app, "initialize", {"protocolVersion": "2025-06-18",
+                                    "clientInfo": {"name": "Claude Code", "version": "1.0.2"}})
+    st = client.get("/connect/state").get_json()
+    assert st["state"] == "live" and st["client"] == "Claude Code 1.0.2"
+    page = client.get("/connect").get_data(as_text=True)
+    assert 'data-state="live"' in page and "Claude Code 1.0.2" in page
+
+
+def test_the_light_does_not_count_the_handshake_as_a_call(client, app):
+    """'몇 번 불렸나' 는 도구를 부른 수다 — 인사까지 세면 아무것도 안 했는데 1 이 된다."""
+    rpc(client, app, "initialize", {"clientInfo": {"name": "t"}})
+    assert client.get("/connect/state").get_json()["calls"] == 0
+    call(client, app, "targets")
+    assert client.get("/connect/state").get_json()["calls"] == 1
+
+
+def test_a_tool_that_does_not_say_its_name_still_shows_up(client, app):
+    rpc(client, app, "initialize", {})
+    assert client.get("/connect/state").get_json()["client"] == "이름을 안 밝힌 도구"
+
+
+def test_the_tab_is_called_mcp(client):
+    page = client.get("/connect").get_data(as_text=True)
+    assert ">MCP\n" in page or ">MCP<" in page or "MCP </a>" in page.replace("\n", " ")

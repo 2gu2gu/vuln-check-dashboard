@@ -1765,7 +1765,15 @@ def connect():
     target, targets = _current_target()
     return render_template("connect.html", target=target, targets=targets,
                            command=mcp_mod.connect_command(request.host_url),
-                           tools=mcp_mod.TOOLS, write_on=mcp_mod.write_on(), calls=mcp_mod.recent())
+                           tools=mcp_mod.TOOLS, write_on=mcp_mod.write_on(), calls=mcp_mod.recent(),
+                           status=mcp_mod.status(), fresh=mcp_mod.FRESH_MIN)
+
+
+@bp.get("/connect/state")
+def connect_state():
+    """붙었는지만 묻는 자리. 화면이 몇 초마다 물어보고 불을 켠다 —
+    터미널에 줄을 넣은 사람이 **새로 고치지 않아도** 붙은 것이 보이게."""
+    return mcp_mod.status()
 
 
 @bp.post("/connect/write")
