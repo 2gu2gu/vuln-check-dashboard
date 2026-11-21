@@ -19,6 +19,10 @@ META = {
     "kind": "active",
     "stage": "tool",
     "severity": "medium",
+    # KISA 웹 21항목에는 포트가 없다 — 자체 항목으로 단다(보고서 '항목 코드' 칸이 비면 안 된다)
+    "item": "X-01",
+    # 열려 있으면 안 되는 포트가 밖에서 닿는 것 — 그 자체로는 정보 노출이다. 사람이 고쳐 쓴다
+    "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
     "transport": "tcp",        # HTTP 가 아니라 TCP 로 나간다는 표시(기록용)
     "attack": [{"tactic": "TA0043", "technique": "T1595.001", "name": "Active Scanning: Scanning IP Blocks"}],
     "description": "적어 둔 포트에 TCP 연결만 해 보고 밖에서 닿는지 확인합니다. 대상 호스트에만, 적어 둔 포트에만 보냅니다.",

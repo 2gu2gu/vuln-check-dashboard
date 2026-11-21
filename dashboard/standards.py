@@ -47,6 +47,31 @@ KISA = {
     "WM": ("불필요한 Method 악용", "A02"),
 }
 
+# KISA 웹 21항목 **밖**의 자체 진단 항목 — 결과보고서 양식의 `X-xx`(공통 ID 체계).
+# 21항목은 웹 애플리케이션만 다뤄서 서버 포트·구성 같은 것은 들어갈 칸이 없다. 그렇다고
+# 보고서에 빈칸으로 두면 '항목 코드 없음' 이 되므로(11-21 사용자 지적: 포트 확인은 딸깍이가
+# 넣으면 된다), 그런 모듈은 여기 코드를 단다.
+EXTRA = {
+    "X-01": ("열린 포트·불필요한 서비스", "A02"),
+    "X-02": ("서버 설정·구성", "A02"),
+}
+
+
+def item_label(code: str) -> str:
+    """항목 코드 하나 → '코드 이름'. KISA 든 자체 항목이든 같은 모양으로 적는다."""
+    if code in KISA:
+        return f"{code} {KISA[code][0]}"
+    if code in EXTRA:
+        return f"{code} {EXTRA[code][0]}"
+    return code
+
+
+def check_item(code) -> str:
+    """META["item"] 검사 — 자체 항목 코드는 여기 등록된 것만 쓴다."""
+    if code and code not in EXTRA:
+        raise ValueError(f"item 은 {tuple(EXTRA)} 중 하나여야 합니다 (받은 값: {code!r})")
+    return code or ""
+
 
 def check_kisa(codes) -> list:
     """META["kisa"] 검사. 없는 코드를 적으면 모듈이 안 올라간다 — 보고서와 말이 갈라지면 안 된다."""

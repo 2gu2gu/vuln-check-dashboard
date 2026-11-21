@@ -145,5 +145,16 @@ def test_unrated_finding_says_so(app, client):
     client.post("/modules/http_security_headers/run", data={"target_id": tid, "path": "/"},
                 follow_redirects=True)
     md = client.get(f"/report/{tid}.md").get_data(as_text=True)
-    # 보안 헤더 모듈은 제안 벡터가 없다 — 없는 것을 있는 척하지 않는다
-    assert "**미평가**" in md
+    # 모듈이 제안 벡터를 들고 있으면 그 점수를 쓰되 **확정이 아니라고** 적는다(11-22: 빈칸으로 두지 않는다)
+    assert "미확정(모듈 제안값)" in md
+
+    # 제안 벡터조차 없으면 '미평가' 다 — 없는 것을 있는 척하지 않는다
+    with app.app_context():
+        db = get_db()
+        run = db.execute("INSERT INTO runs (target_id, module_id, params, status, started_at) "
+                         "VALUES (?,'사라진모듈','{}','done','2026-11-22T00:00:00')", [tid]).lastrowid
+        db.execute("INSERT INTO findings (run_id, target_id, module_id, title, severity, location, evidence, "
+                   "status, created_at) VALUES (?,?,'사라진모듈','옛 모듈이 남긴 것','high','/x','근거','open',"
+                   "'2026-11-22T00:00:00')", [run, tid])
+        db.commit()
+    assert "**미평가**" in client.get(f"/report/{tid}.md").get_data(as_text=True)

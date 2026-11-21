@@ -20,6 +20,7 @@ META = {
     "name": "정보 노출 점검",
     "category": "정보 수집",
     "kisa": ["IL", "EP", "WM"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
+    "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",  # 제안값 — 사람이 고쳐 쓴다
     "vuln": "정보노출",
     "kind": "active",
     "stage": "probe",

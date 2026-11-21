@@ -162,6 +162,7 @@ META = {
     "name": "새싹에듀 커뮤니티 저장형 XSS (등록→확인→자동삭제)",
     "category": "입력 검증",
     "kisa": ["XS"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
+    "cvss": "CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:H/I:L/A:N",  # 제안값(저장형) — 사람이 고쳐 쓴다
     "vuln": "XSS",
     "kind": "active",
     "stage": "check",
