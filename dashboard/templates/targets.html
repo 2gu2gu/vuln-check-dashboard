@@ -228,7 +228,6 @@
       {% for p in m.params %}{{ param_input(p, m.id ~ "__") }}{% endfor %}
     </div>
     {% endfor %}
-    <label class="check"><input type="checkbox" name="confirm" value="yes"> 자체 환경({{ target.name }})임을 확인했습니다</label>
     <button class="btn" type="submit">선택 지점 점검</button>
     {% else %}
     <span class="sub">이 대상에 쓸 지점 점검 모듈이 없습니다.</span>

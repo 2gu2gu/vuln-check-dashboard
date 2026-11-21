@@ -468,12 +468,14 @@ def module_needs(mod, t=None):
 
 
 def _guard(mod, t, back):
-    """실행 전 확인. 문제가 있으면 돌아갈 redirect, 없으면 None."""
+    """실행 전 확인. 문제가 있으면 돌아갈 redirect, 없으면 None.
+
+    실행마다 '자체 환경 확인' 을 누르게 하던 것은 뺐다(11-21 사용자 지시). 범위를 지키는 것은
+    체크박스가 아니라 `core.fetch` 의 `scope.ensure_in_scope` 다 — 범위 밖 주소는 애초에 요청이
+    나가지 않는다. 사람이 매번 같은 칸을 누르는 것은 그 위에 얹힌 문턱이었을 뿐이다.
+    """
     if mod.project not in ("", t["project"]):
         flash(f"{mod.name} 은 {_projects()[mod.project].name} 전용 모듈입니다", "error")
-        return redirect(back)
-    if mod.kind == "active" and request.form.get("confirm") != "yes":
-        flash("능동 모듈은 '자체 환경 확인'에 체크해야 실행됩니다", "error")
         return redirect(back)
     missing = needs.blocking(mod, list(_parse_headers(t["headers"])) if t["headers"] else [])
     if missing:

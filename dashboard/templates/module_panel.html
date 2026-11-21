@@ -43,7 +43,6 @@
         {% for p in mod.params %}{{ param_input(p, (mod.id ~ "__") if is_probe else "") }}{% endfor %}
         <div class="mp-run">
           {% if mod.kind == "active" %}
-          <label class="check"><input type="checkbox" name="confirm" value="yes"> 자체 환경({{ target.name }}) 확인</label>
           {% endif %}
           <button class="btn" type="submit">{% if is_probe %}고른 지점 점검 <span class="mp-count">0</span>개{% else %}{{ RUN_VERB[mod.stage] }}{% endif %}</button>
         </div>

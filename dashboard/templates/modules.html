@@ -74,7 +74,6 @@
       <button class="btn" type="button" disabled title="준비할 것을 먼저 채우세요 — 눌러서 펴면 보입니다">{{ RUN_VERB[m.stage] }}</button>
       {% else %}
       {% if m.kind == "active" %}
-      <label class="check"><input type="checkbox" name="confirm" value="yes" form="run-{{ m.id }}"> 자체 환경({{ target.name }}) 확인</label>
       {% endif %}
       <button class="btn" type="submit" form="run-{{ m.id }}" title="{{ target.name }} 에 {{ RUN_VERB[m.stage] }}">{{ RUN_VERB[m.stage] }}</button>
       {% endif %}

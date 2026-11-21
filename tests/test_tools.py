@@ -250,11 +250,12 @@ def test_tool_run_and_drill(app, tool_client):
     assert "mail" in page and "members — 컬럼" in page
 
 
-def test_tool_needs_confirm(app, tool_client):
+def test_tool_runs_without_a_confirm_box(app, tool_client):
+    """확인 칸은 뺐다(11-21 사용자 지시) — 설정만 맞으면 돈다."""
     page = tool_client.post("/tools/run", data={
         "target_id": 1, "module_id": "sesacedu_lecture_sqli", "mode": "probe", "dbms": "sqlite",
         "limit": "5", "offset": "0", "table": "", "column": "", "sql": ""}, follow_redirects=True).get_data(as_text=True)
-    assert "체크해야" in page
+    assert "체크해야" not in page and 'name="confirm"' not in page
 
 
 def test_tool_rejects_bad_select_option(app, tool_client):
@@ -291,13 +292,12 @@ def test_tool_module_runs_from_modules_tab(app, tool_client):
     assert "members" in page and "컬럼 보기" in page
 
 
-def test_tool_module_from_modules_tab_still_needs_confirm(app, tool_client):
+def test_tool_module_from_modules_tab_runs_without_a_confirm_box(app, tool_client):
+    """모듈 탭에서 불러도 확인 칸은 없다(11-21). 도구는 탭으로 넘기고 실행은 거기서 한다."""
     form = {k: v for k, v in RUN_FORM.items() if k not in ("module_id", "confirm")}
     page = tool_client.post("/modules/sesacedu_lecture_sqli/run", data=form,
                             follow_redirects=True).get_data(as_text=True)
-    assert "체크해야" in page
-    with app.app_context():
-        assert get_db().execute("SELECT COUNT(*) c FROM runs").fetchone()["c"] == 0
+    assert "체크해야" not in page
 
 
 def test_tool_result_type_checked(app, tool_client, monkeypatch):

@@ -76,16 +76,20 @@ def test_run_passive_module_and_flow(app, client, monkeypatch, fake_fetch):
     assert report.status_code == 200 and "HSTS 헤더 없음" in report.get_data(as_text=True)
 
 
-def test_active_module_needs_confirm(app, client, monkeypatch, fake_fetch):
+def test_active_module_runs_without_a_confirm_box(app, client, monkeypatch, fake_fetch):
+    """실행마다 '자체 환경 확인' 을 누르게 하던 문턱은 뺐다(11-21 사용자 지시).
+
+    범위를 지키는 것은 체크박스가 아니라 core.fetch 의 scope 검사다 — 그건 그대로다
+    (test_hardening.py 가 범위 밖 주소는 요청이 안 나가는 것을 본다).
+    """
     add_target(client, "https://sesacedu.store")
     tid = target_id(app, "https://sesacedu.store")
     f = fake_fetch({})
     monkeypatch.setattr(exposed_paths, "fetch", f)
-    page = client.post("/modules/sesacedu_exposed_paths/run", data={"target_id": tid},
-                       follow_redirects=True).get_data(as_text=True)
-    assert "체크해야" in page and f.calls == []
-    client.post("/modules/sesacedu_exposed_paths/run", data={"target_id": tid, "confirm": "yes"})
-    assert f.calls
+    client.post("/modules/sesacedu_exposed_paths/run", data={"target_id": tid}, follow_redirects=True)
+    assert f.calls                      # 체크 없이도 돈다
+    page = client.get(f"/modules?target={tid}").get_data(as_text=True)
+    assert 'name="confirm"' not in page  # 화면에도 칸이 없다
 
 
 def test_project_module_blocked_on_other_project(app, client):
