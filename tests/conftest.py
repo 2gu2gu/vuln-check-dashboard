@@ -6,8 +6,9 @@ from dashboard.core import Response
 
 @pytest.fixture
 def app(tmp_path):
+    # 실행 결과 파일도 테스트 폴더에 둔다 — 안 그러면 테스트가 개발용 instance/runs 에 남는다(11-21)
     return create_app({"TESTING": True, "SECRET_KEY": "test", "DATABASE": str(tmp_path / "t.sqlite3"),
-                       "CSRF": False, "DELAY_MS": 0})
+                       "RUNS_DIR": str(tmp_path / "runs"), "CSRF": False, "DELAY_MS": 0})
 
 
 @pytest.fixture(autouse=True)

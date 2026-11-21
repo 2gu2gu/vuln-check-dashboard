@@ -53,7 +53,8 @@ def find(app, target, module_id, run_id=None):
         path = folder / f"{run_id:04d}.txt"
         return path if path.exists() else None
     try:
-        files = sorted(folder.glob("[0-9]*.txt"))
+        # 번호로 센다 — 이름순으로 세면 자릿수가 넘어갔을 때(0999 다음 10000) 뒤집힌다
+        files = sorted(folder.glob("[0-9]*.txt"), key=lambda p: (len(p.stem), p.stem))
     except OSError:
         return None
     return files[-1] if files else None

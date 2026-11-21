@@ -477,12 +477,24 @@ def _guard(mod, t, back):
     if mod.project not in ("", t["project"]):
         flash(f"{mod.name} 은 {_projects()[mod.project].name} 전용 모듈입니다", "error")
         return redirect(back)
-    missing = needs.blocking(mod, list(_parse_headers(t["headers"])) if t["headers"] else [])
-    if missing:
-        n = missing[0]
-        flash(f"{mod.name} 은 {n['label']}{(' ' + n['name']) if n['name'] else ''} 가 있어야 돌아갑니다 — {n['how']}", "error")
+    blocked = _need_block(mod, t)
+    if blocked:
+        flash(blocked, "error")
         return redirect(back)
     return None
+
+
+def _need_block(mod, t):
+    """돌리기 전에 없으면 안 되는 것 — 있으면 사람이 읽을 한 줄, 없으면 ''.
+
+    화면과 MCP 가 **같은 문턱**을 보게 한 자리다(11-21 화이트박스 점검). MCP 쪽에만 이 검사가
+    없었다 — 토큰이 있어야 도는 모듈이 토큰 없이 돌아 '다 막혀 있다' 는 거짓 결과를 냈다.
+    """
+    missing = needs.blocking(mod, list(_parse_headers(t["headers"])) if t["headers"] else [])
+    if not missing:
+        return ""
+    n = missing[0]
+    return f"{mod.name} 은 {n['label']}{(' ' + n['name']) if n['name'] else ''} 가 있어야 돌아갑니다 — {n['how']}"
 
 
 def _check_types(mod, values):
@@ -1568,6 +1580,9 @@ def _mcp_run_module(a):
     mod = _modules_for(t).get(a.get("module_id", ""))
     if not mod:
         raise ValueError(f'이 대상에서 쓸 수 없는 모듈입니다: {a.get("module_id")}. `modules` 로 목록을 보세요')
+    blocked = _need_block(mod, t)
+    if blocked:
+        raise ValueError(blocked)
     given = a.get("params") or {}
     params = _check_types(mod, {p["name"]: str(given.get(p["name"], p.get("default", ""))) for p in mod.params})
     ids = [int(x) for x in (a.get("points") or [])]
@@ -1583,7 +1598,9 @@ def _mcp_run_module(a):
         def call(target):
             points = mod.run(target, params) or []
             new, skipped = _save_points(mod, t["id"], points)
-            return f"지점 {len(points) - skipped}개 수집(새로 {new})"
+            # 범위 밖이라 빠진 수까지 적는다 — 화면과 같은 말이 남아야 둘을 견줄 수 있다
+            return (f"지점 {len(points) - skipped}개 수집(새로 {new})"
+                    + (f", 범위 밖 {skipped}개 제외" if skipped else ""))
         run_id = _execute_bg(mod, t, params, call)
         made = "수집"
     elif mod.stage == "tool":
