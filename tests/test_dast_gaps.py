@@ -720,3 +720,32 @@ def test_upload_still_catches_a_real_endpoint(monkeypatch):
     _server(monkeypatch, h)
     c = upload_probe.run(T, [_end()], {})[0]
     assert c.verdict == "vuln" and c.title == "업로드 확장자 검증 없음"
+
+
+def test_forum_stored_xss_runs_end_to_end(monkeypatch):
+    """#128 에서 조합을 묶으며 landed 초기화를 빠뜨려 실행이 죽었다(11-21 실서버에서 드러남).
+
+    등록→확인→삭제가 한 바퀴 돌고, 통한 조합이 **한 건**으로 묶여 나오는지 본다.
+    """
+    from projects.sesacedu.modules import sesacedu_forum_stored_xss as m
+    posts = {}
+
+    def fetch(url, *, method="GET", raw_body=None, data=None, headers=None, **_k):
+        if method == "POST" and url.endswith("/backend/forum/posts"):
+            import json as _j
+            pid = len(posts) + 1
+            posts[pid] = _j.loads(raw_body.decode())["content"] if raw_body else ""
+            return Response(url=url, status=200, body='{"result": {"postId": %d}}' % pid)
+        if method == "DELETE":
+            return Response(url=url, status=200, body="{}")
+        pid = url.rstrip("/").rsplit("/", 1)[-1]
+        body = posts.get(int(pid), "") if pid.isdigit() else ""
+        import json as _j
+        return Response(url=url, status=200,
+                        body=_j.dumps({"result": {"post": {"contentFormat": "HTML", "content": body}}}))
+    monkeypatch.setattr(core, "fetch", fetch)
+    monkeypatch.setattr(core, "auth_headers", lambda: {"Authorization": "Bearer t"})
+    out = m.run(T, {"count": "3", "start_vector": "1"})
+    hits = [f for f in out if f.title.startswith("커뮤니티 게시글 저장형 XSS")]
+    assert len(hits) <= 1                       # 조합이 여럿 통해도 자리는 하나다
+    assert any("시험한 입력값 목록" in f.title for f in out)
