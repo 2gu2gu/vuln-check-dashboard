@@ -29,8 +29,8 @@ META = {
     "kind": "active",
     "stage": "check",
     "severity": "high",
-    "attack": [{"tactic": "TA0006", "technique": "T1606.002", "name": "Forge Web Credentials: SAML Tokens"},
-               {"tactic": "TA0005", "technique": "T1548", "name": "Abuse Elevation Control Mechanism"}],
+    # JWT 는 SAML 이 아니라서 하위 기법(.002)이 아니라 상위 T1606 이다. T1548 은 호스트 권한 제어라 뺐다
+    "attack": [{"tactic": "TA0006", "technique": "T1606", "name": "Forge Web Credentials"}],
     "description": "대상 인증 헤더의 **JWT 를 뜯어** alg·만료·민감 클레임을 보고, 확인 주소에 "
                    "**서명만 바꾼 토큰·alg=none 토큰·권한 클레임을 올린 토큰**을 보내 그대로 통하는지 봅니다. "
                    "통하면 서명 검증이 없는 것이고, 그 자리에서 계정 탈취가 됩니다.",
@@ -133,12 +133,12 @@ def run(target, params):
     alg = str(head.get("alg", "")).lower()
     if alg in ("none", ""):
         out.append(Finding(title="JWT 가 서명 없이 쓰이고 있습니다(alg=none)", severity="high", location=where,
-                           evidence=shown, recommendation=SIGN, technique="T1606.002"))
+                           evidence=shown, recommendation=SIGN, technique="T1606"))
     exp = body.get("exp")
     if exp is None:
         out.append(Finding(title="JWT 에 만료(exp)가 없습니다", severity="medium", location=where,
                            evidence=shown + "\n\nexp 클레임이 없어 한 번 새면 계속 쓸 수 있습니다.",
-                           recommendation=SIGN, technique="T1606.002"))
+                           recommendation=SIGN, technique="T1606"))
     elif isinstance(exp, (int, float)):
         left = int(exp - time.time())
         if left <= 0:
@@ -153,13 +153,13 @@ def run(target, params):
         elif left > 86400:
             out.append(Finding(title="JWT 만료가 너무 깁니다", severity="low", location=where,
                                evidence=shown + f"\n\nexp 까지 {left // 3600}시간 남았습니다.",
-                               recommendation=SIGN, technique="T1606.002"))
+                               recommendation=SIGN, technique="T1606"))
     leaked = [k for k in body if any(s in k.lower() for s in SENSITIVE)]
     if leaked:
         out.append(Finding(title="JWT 본문에 민감한 클레임", severity="low", location=where,
                            evidence=shown + f"\n\n민감한 클레임: {', '.join(leaked)}\n"
                                     "JWT 본문은 서명만 붙은 것이고 **암호가 아니다** — 누구나 읽는다.",
-                           recommendation="토큰 본문에는 식별자만 넣고 개인정보는 넣지 않습니다.", technique="T1606.002"))
+                           recommendation="토큰 본문에는 식별자만 넣고 개인정보는 넣지 않습니다.", technique="T1606"))
 
     # 2. 손댄 토큰 보내기 — 확인 주소가 있을 때만
     url = (params.get("verify_url") or "").strip()
@@ -184,7 +184,7 @@ def run(target, params):
             out.append(Finding(
                 title=f"JWT 서명 검증 없음 — {kind}이 통함", severity="critical" if "권한" in kind else "high",
                 location=url, evidence="\n".join(lines) + f"\n\n보낸 토큰:\n{bad}\n\n원래 토큰 내용:\n{shown}",
-                recommendation=SIGN, technique="T1606.002", response=r))
+                recommendation=SIGN, technique="T1606", response=r))
             break
     else:
         lines.append("손댄 토큰은 모두 막혔다 — 서명 검증이 있다")
@@ -203,7 +203,7 @@ def run(target, params):
             out.append(Finding(
                 title="JWT 폐기 장치 없음 — 로그아웃 뒤에도 토큰이 통함", severity="high", location=url,
                 evidence="\n".join(told) + f"\n\n토큰:\n{token}",
-                recommendation=SIGN, technique="T1606.002", response=again))
+                recommendation=SIGN, technique="T1606", response=again))
         else:
             told.append(f"로그아웃 뒤에는 {again.status} — 폐기 장치가 있다")
             out.append(Finding(title="JWT 폐기 장치는 있습니다", severity="info", location=url,

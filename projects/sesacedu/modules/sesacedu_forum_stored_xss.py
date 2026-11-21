@@ -283,21 +283,28 @@ def run(target, params):
         tried.append((i + 1, tag, event, payload, verdict))
         if verdict in SEVERITY:
             hits += 1
-            findings.append(Finding(
-                title="커뮤니티 게시글 저장형 XSS" if verdict == "vuln"
-                      else "커뮤니티 게시글 저장형 XSS 의심",
-                severity=SEVERITY[verdict],
-                location=f"{base}{CREATE} (content, 조합 {i + 1}: {tag}/{event})",
-                evidence="\n".join([
-                    f"조합 {i + 1}: {tag} / {event}",
-                    f"넣은 content: {payload}",
-                    f"등록 postId {pid} → 조회 응답 판정: {detail}",
-                    deleted_note,
-                    "HTTP 응답 기준입니다. 실제 실행은 브라우저로 해당 글을 열어 확인하세요.",
-                ]),
-                recommendation="저장/출력 시 사용자 입력을 이스케이프하거나, HTML 을 허용해야 한다면 "
-                               "허용 태그 화이트리스트(sanitizer)를 적용하세요.",
-                response=read))
+            # 조합마다 결과를 만들지 않는다 — **한 곳의 한 문제**다. 통한 조합은 모아 두었다가
+            # 아래에서 한 건으로 적는다(11-21: 여기서 /backend/forum/posts 가 24줄이 됐다)
+            landed.setdefault(verdict, []).append(
+                (i + 1, tag, event, payload, pid, detail, deleted_note, read))
+
+    # 통한 조합을 묶어 자리마다 한 건으로 적는다
+    for verdict, got in landed.items():
+        head = "커뮤니티 게시글 저장형 XSS" + ("" if verdict == "vuln" else " 의심")
+        lines = [f"{len(got)}개 조합이 저장돼 그대로 돌아왔습니다. 자리는 하나입니다 — content.", ""]
+        for n, tag, event, payload, pid, detail, note, _r in got:
+            lines += [f"조합 {n}: {tag} / {event}",
+                      f"  넣은 content: {payload}",
+                      f"  등록 postId {pid} → 조회 응답 판정: {detail}",
+                      f"  {note}"]
+        lines += ["", "HTTP 응답 기준입니다. 실제 실행은 브라우저로 해당 글을 열어 확인하세요."]
+        findings.append(Finding(
+            title=head, severity=SEVERITY[verdict],
+            location=f"{base}{CREATE} (content)",
+            evidence="\n".join(lines),
+            recommendation="저장/출력 시 사용자 입력을 이스케이프하거나, HTML 을 허용해야 한다면 "
+                           "허용 태그 화이트리스트(sanitizer)를 적용하세요.",
+            response=got[-1][7]))
 
     if delete_fail:
         findings.append(Finding(

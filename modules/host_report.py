@@ -20,9 +20,12 @@ META = {
     "kind": "passive",
     "stage": "tool",
     "severity": "medium",
+    # 서버에서 받아 온 명령 출력(설치 목록·버전)을 읽는 것이다. 권한을 올리는 일은 하지 않으므로
+    # T1068(Exploitation for Privilege Escalation)을 뺐다 — 결과가 LPE 로 이어질 수 있다는 것과
+    # 모듈이 그 일을 한다는 것은 다르다(11-21 사용자 지적)
     "attack": [
         {"tactic": "TA0007", "technique": "T1082", "name": "System Information Discovery"},
-        {"tactic": "TA0004", "technique": "T1068", "name": "Exploitation for Privilege Escalation"},
+        {"tactic": "TA0043", "technique": "T1592.002", "name": "Gather Victim Host Information: Software"},
     ],
     "description": "서버에서 받은 sudo --version · ss -tlnp 출력을 붙여 넣으면 버전과 열린 포트를 정리하고 기준에 못 미치는 것을 표시합니다. 요청은 보내지 않습니다.",
     "needs": [
