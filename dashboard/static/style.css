@@ -953,9 +953,11 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
 .cal-day.out { visibility: hidden; }
 .cal-day.k-final { background: var(--text); color: var(--surface); box-shadow: none; }
 .cal-day.k-mid { box-shadow: 0 0 0 2px var(--text); color: var(--surface); }
-.cal-day.k-mid.lv-0 { color: var(--text); }
+.cal-day.k-mid.lv-0, .cal-day.k-mid.lv-1 { color: var(--text); }   /* 연한 칸에는 먹으로 */
 .cal-day.today { outline: 2px solid var(--accent); outline-offset: 2px; }
-.cal-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px; }
+/* 범례는 그림(그리드) 폭 안에 둔다 — 넓게 펴면 첫 묶음이 그림 바깥으로 밀려 혼자 떨어진다(11-21) */
+.cal-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px;
+              max-width: 368px; margin: 8px auto 0; }
 .lg-group { display: inline-flex; align-items: center; gap: 4px; }
 .cal-legend .cal-day { width: 12px; height: 12px; border-radius: 3px; }
 .cal-legend .sub { margin: 0 3px; }
@@ -963,7 +965,6 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
 .cal-sum b { color: var(--text); font-variant-numeric: tabular-nums; }
 .cal-sum .dot { margin: 0 6px; color: var(--line); }
 .cal-sum .dday { color: var(--hit); }
-.cal-src { margin: 0; text-align: center; }
 .add-target { margin-bottom: 12px; }
 
 /* ── 결과 탭 레퍼런스 반영(11-20): 상태 문장 · 비율 막대 · 도넛(주간 변화·스파크라인·누적 추이는 사용자 결정으로 뺌) ──
