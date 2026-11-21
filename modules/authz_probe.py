@@ -33,8 +33,8 @@ META = {
     "stage": "probe",
     "unit": "endpoint",
     "severity": "high",
-    "attack": [{"tactic": "TA0001", "technique": "T1190", "name": "Exploit Public-Facing Application"},
-               {"tactic": "TA0005", "technique": "T1548", "name": "Abuse Elevation Control Mechanism"}],
+    # 권한 검증이 빠진 주소를 찾는 것이다. 호스트의 권한 제어(sudo·UAC)를 건드리는 T1548 이 아니다
+    "attack": [{"tactic": "TA0001", "technique": "T1190", "name": "Exploit Public-Facing Application"}],
     "description": "고른 **주소마다** 인증 헤더를 **붙여 한 번, 떼고 한 번** 보내 응답을 견줍니다. "
                    "같은 응답이면 인증 없이 열리는 것입니다. 막혀 있으면 ③ 경로 변형(`//`·`/.`·대소문자·`;`·`%2e`)과 "
                    "④ 경로 알림 헤더(X-Original-URL)로 차단을 지나가는지 봅니다. 읽기(GET)만 보냅니다.",

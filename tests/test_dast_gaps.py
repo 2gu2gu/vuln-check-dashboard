@@ -554,3 +554,23 @@ def test_titles_do_not_carry_details_that_split_one_problem(monkeypatch):
     assert {c.title for c in out} == {"보안 헤더·쿠키·CORS 설정 미흡"}   # 빠진 것이 달라도 한 종류
     assert "빠진 것:" in out[0].evidence                                # 무엇이 빠졌는지는 근거에
     assert "Content-Security-Policy" in out[0].evidence
+
+
+def test_attack_mapping_says_what_the_module_does(app):
+    """ATT&CK 은 '이 모듈이 무엇을 하는가' 다 — 결과가 무엇으로 이어질 수 있는가가 아니다.
+
+    11-21 사용자 지적: DAST 에 은닉(TA0005)·권한 상승(TA0004) 모듈이 있을 리 없는데 보드에 떴다.
+    인증·인가와 JWT 가 T1548(호스트 권한 제어 악용), 서버 출력 읽기가 T1068(LPE)을 달고 있었다.
+    """
+    from dashboard import routes
+    with app.test_request_context():
+        mods = routes._modules()
+    host = {"TA0004": "권한 상승", "TA0005": "은닉", "TA0112": "방어 무력화", "TA0003": "지속성",
+            "TA0008": "내부 이동", "TA0011": "명령·제어", "TA0040": "영향"}
+    bad = [(m.id, a["tactic"], a["technique"]) for m in mods.values()
+           for a in m.attack if a["tactic"] in host]
+    assert not bad, f"웹 점검 모듈이 호스트 전술을 달고 있다: {bad}"
+    assert not [(m.id, a) for m in mods.values() for a in m.attack if a["technique"] == "T1548"]
+    # JWT 는 SAML 이 아니다 — 하위 기법이 아니라 상위 T1606 을 쓴다
+    jwt = mods["jwt_probe"]
+    assert [a["technique"] for a in jwt.attack] == ["T1606"]
