@@ -152,7 +152,9 @@ def test_from_registering_a_target_to_the_report(app, client, monkeypatch):
     text = _docx_text(doc.get_data())
     # 팀 결과보고서 양식의 절 이름·표가 그대로 나온다(01_제출물/결과보고서_양식)
     assert "3-2. 위험도 적용 결과" in text and "4-2. 대상별 취약점 요약" in text
-    assert "5. Part A. 진단 상세 결과" in text and "5-1. 진단 방법" in text
+    assert "5  Part A. 진단 상세 결과" in text and "5-1. 진단 방법" in text
+    assert "RESULT REPORT" in text and "표지 정보" in text          # 템플릿 통합본의 표지
+    assert "■ Critical" in text                                   # 등급 머리 칸(색은 서식에)
     assert "V-01" in text and "V-01-1" in text and "A-01" in text and "외부(DMZ)" in text
     assert found[0]["title"] in text and "대표 PoC" in text
     assert "[ ]" in text                       # 사람이 채울 자리는 비워 두고 보여 준다
