@@ -1812,7 +1812,7 @@ def _mcp_make_campaign(a):
                     key=lambda kv: (min(rank.get(x["severity"], 9) for x in kv[1]), -len(kv[1])))[:top]
     left = len(packs) - len(picked)
 
-    by_tactic, by_technique = {}, {}
+    by_tactic, finding_nodes = {}, []
     for (tac, title), pack in picked:
         worst = min(pack, key=lambda x: rank.get(x["severity"], 9))
         more = f" 외 {len(pack) - 1}곳" if len(pack) > 1 else ""
@@ -1822,25 +1822,28 @@ def _mcp_make_campaign(a):
                                 note=f'결과 #{worst["id"]} · {worst["severity"]}'
                                      + (f' · 같은 제목 {len(pack)}건' if more else ""))
         by_tactic.setdefault(tac, []).append((nid, worst, len(pack)))
-        tech = worst["technique"] if "technique" in worst.keys() else ""
-        if tech:
-            by_technique.setdefault(tech, []).append((nid, worst, len(pack)))
+        finding_nodes.append((nid, worst, len(pack)))
 
     # ④ 선 — **까닭이 있는 것만 긋는다.** 전술 순서대로 한 줄 꿰던 것은 뺐다
     #    (11-22 사용자 지적: 선 연결이 어설프다). 전술이 이어진다는 것은 공격이 이어졌다는 뜻이
     #    아니다 — 그건 사람이 아는 것이고, campaign.py 머리에 적어 둔 원칙이기도 하다.
     #        ① 관찰한 버전 → 그 버전에 걸리는 CVE        '버전이 맞음'
-    #        ② CVE → 같은 기법(technique)을 쓴 결과       '같은 기법 T1190'
-    #    그 둘 말고는 긋지 않는다. 단계 사이는 보드에서 팀이 긋는다.
+    #        ② CVE → **그 제품 이야기를 하는** 결과       '같은 제품'
+    #    기법(technique)이 같다는 것만으로는 긋지 않는다 — T1190 은 거의 모든 웹 취약점에 붙어
+    #    서로 상관없는 CVE 와 결과가 줄줄이 이어졌다(11-22 눈으로 확인). 제품 이름·별명이
+    #    결과의 제목·자리·근거에 나올 때만 잇는다. 그 둘 말고는 사람이 보드에서 긋는다.
     drawn = 0
     for nid, tac, label, product, tech in cve_nodes:
         home = next((v for k, v in seen_of.items() if product.startswith(k)), None)
         if home:
             campaign.add_edge(db, cid, home, nid, "버전이 맞음")
             drawn += 1
-        for fid, row, _n in by_technique.get(tech, []):
-            campaign.add_edge(db, cid, nid, fid, f"같은 기법 {tech}")
-            drawn += 1
+        words = cve.nicknames(product)
+        for fid, row, _n in finding_nodes:
+            hay = " ".join([row["title"], row["location"], (row["evidence"] or "")[:2000]]).lower()
+            if any(w in hay for w in words):
+                campaign.add_edge(db, cid, nid, fid, "같은 제품")
+                drawn += 1
 
     # ⑤ 보고서에 그대로 옮길 줄거리
     lines = [f'캠페인 #{cid} 「{name}」 을 {t["name"]} 에 만들었습니다.',

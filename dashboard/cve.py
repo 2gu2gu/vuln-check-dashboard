@@ -80,6 +80,35 @@ PRODUCTS = {
 }
 
 
+# 제품 이름이 결과에 그대로 안 나오는 경우가 많다 — 별명으로도 찾는다(11-22, 캠페인 선 긋기).
+# 예: Log4Shell 점검 결과의 제목은 'jndi 조회…' 라 'log4j-core' 라는 글자가 없다.
+NICKNAMES = {
+    "log4j-core": ["log4j", "log4shell", "jndi"],
+    "apache tomcat": ["tomcat", "catalina", "coyote"],
+    "spring framework": ["spring"],
+    "spring boot": ["spring boot", "actuator"],
+    "next.js": ["next.js", "_next", "rsc"],
+    "openjdk": ["openjdk", "jvm", "java-"],
+    "openssh": ["openssh", "sshd"],
+    "swagger-ui": ["swagger", "api-docs"],
+    "snakeyaml": ["yaml"],
+    "nginx": ["nginx"],
+    "ubuntu": ["ubuntu"],
+    "mysql": ["mysql"],
+    "mariadb": ["mariadb"],
+}
+
+
+def nicknames(product: str) -> list:
+    """제품 이름 → 결과에서 찾아볼 글자들(소문자)."""
+    p = (product or "").strip().lower()
+    for key, words in NICKNAMES.items():
+        if p.startswith(key):
+            return words
+    head = p.split(" ")[0]
+    return [head] if len(head) > 2 else []
+
+
 def observe(findings):
     """결과 행들 → [{product, version, distro, finding_id, title, location, how}] (제품·버전마다 하나).
 

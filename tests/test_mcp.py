@@ -204,6 +204,34 @@ def test_make_campaign_groups_the_same_title_and_takes_the_worst_first(client, a
     assert "민감 파일 읽기" in out and "1가지는 뺐습니다" in out
 
 
+def test_make_campaign_links_a_cve_to_the_finding_that_talks_about_that_product(client, app):
+    """CVE 와 결과는 **같은 제품 이야기를 할 때만** 잇는다(11-22: 선 연결이 어설프다).
+
+    Log4Shell 점검 결과의 제목에는 'log4j' 라는 글자가 없다 — 'jndi' 로 찾는다.
+    """
+    add_target(client)
+    seed_finding(app, 1, title="jndi 조회로 응답이 끊김(바깥 연결 시도)", module_id="jndi_probe",
+                 severity="critical", evidence="${jndi:ldap://…} 를 보냈더니 응답이 끊김")
+    seed_finding(app, 1, title="커뮤니티 게시글 저장형 XSS", module_id="sesacedu_forum_stored_xss",
+                 severity="high", evidence="contentFormat=HTML 로 그대로 저장됨")
+    client.post("/connect/write", data={"on": "1"}, follow_redirects=True)
+    call(client, app, "make_campaign", {"target_id": 1, "name": "제품으로 잇기"})
+
+    with app.app_context():
+        db = get_db()
+        node = {r["id"]: dict(r) for r in db.execute("SELECT * FROM campaign_nodes WHERE campaign_id = 1")}
+        got = [(node[r["src"]]["title"], node[r["dst"]]["title"], r["label"])
+               for r in db.execute("SELECT * FROM campaign_edges WHERE campaign_id = 1")]
+    jndi = [(s, d, lb) for s, d, lb in got if "jndi" in d]
+    assert jndi and all(lb == "같은 제품" for _s, _d, lb in jndi)
+    with app.app_context():
+        subs = {r["title"]: r["sub"] for r in get_db().execute(
+            "SELECT title, sub FROM campaign_nodes WHERE campaign_id = 1 AND kind = 'cve'")}
+    assert all("log4j" in subs[s].lower() for s, _d, _lb in jndi)   # log4j CVE 만 걸린다
+    # 저장형 XSS 는 어느 CVE 하고도 제품이 안 맞는다 — 선을 긋지 않는다
+    assert not [1 for _s, d, _lb in got if "저장형 XSS" in d]
+
+
 def test_make_campaign_can_stand_on_the_team_cves_alone(client, app):
     """확인된 결과가 없어도 **팀이 적어 둔 CVE** 가 있으면 그것으로 뼈대를 세운다(11-22: CVE 중심)."""
     add_target(client)
@@ -241,6 +269,9 @@ def test_make_campaign_hangs_the_cves_under_the_version_it_saw(client, app):
     linked = [e for e in edges if e["src"] in {v["id"] for v in ver}
               and e["dst"] in {c["id"] for c in cves}]
     assert linked and linked[0]["label"] == "버전이 맞음"
+    # 상관없는 CVE 와 결과를 잇지 않는다 — 기법(T1190)만 같다고 긋던 것을 뺐다(11-22)
+    labels = {e["label"] for e in edges}
+    assert "같은 기법 T1190" not in labels
     # 팀이 적어 둔 전술·상태를 그대로 쓴다 — 딸깍이가 지어내지 않는다
     tomcat = [c for c in cves if c["ref"] == "CVE-2025-24813"][0]
     assert tomcat["tactic"] == "TA0001" and tomcat["status"] == "확인" and "readonly" in tomcat["note"]
