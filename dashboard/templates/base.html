@@ -86,7 +86,10 @@
       {% endif %}
       {% endif %}
       <div class="top-spacer"></div>
-      {% if target %}<a class="btn ghost" href="{{ url_for('dash.report', tid=target.id) }}">보고서 내려받기</a>
+      {# 내려받기는 Word 다(11-21 사용자 지시). 마크다운·JSON 은 주소로 그대로 열린다 —
+         md 는 사람이 손보기 좋고 JSON 은 다른 도구가 읽는다 #}
+      {% if target %}<a class="btn ghost" href="{{ url_for('dash.report_docx', tid=target.id) }}">보고서 내려받기 <span class="sub small">Word</span></a>
+      <a class="btn ghost" href="{{ url_for('dash.report', tid=target.id) }}" title="손볼 수 있는 글자 형식(Markdown)">MD</a>
       <a class="btn ghost" href="{{ url_for('dash.report_json', tid=target.id) }}" title="다른 도구(보고서 자동화 등)가 읽는 형식">JSON</a>{% endif %}
       <a class="btn ghost icon" href="{{ url_for('dash.help', target=target.id if target else none) }}#{{ request.endpoint.split('.')[-1] if request.endpoint else '' }}"
          title="이 화면 사용법" aria-label="이 화면 사용법">

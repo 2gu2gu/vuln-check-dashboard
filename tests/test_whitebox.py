@@ -257,6 +257,22 @@ def test_the_module_popup_shows_the_points_of_the_target_you_picked(client, app)
     assert "/modules/upload_probe/panel?target=2" in page
 
 
+def test_the_risk_score_reads_as_a_gauge_not_a_cut_off_box(client, app):
+    """점수만큼 바탕을 채우면 88 은 끝이, 40 은 글자 한가운데가 잘린 것처럼 보인다(11-21 사용자 지적)."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    chip = (root / "dashboard" / "templates" / "targets.html").read_text(encoding="utf-8")
+    chip = chip.split('class="risk', 1)[1].split("</span>", 1)[0]
+    assert chip.index("위험 {{ gr.risk }}") < chip.index("<i ")       # 막대는 글자 뒤(아래)에 깔린다
+    assert "취약점 점수가 아닙니다" in chip                            # 무엇을 재는 숫자인지 말해 준다
+
+    css = client.get("/static/style.css").get_data(as_text=True)
+    bar = css.split(".risk i {", 1)[1].split("}", 1)[0]
+    assert "bottom: 0" in bar and "height: 2px" in bar               # 바탕이 아니라 아래 눈금이다
+    assert "top: 0" not in bar                                       # 위에서 아래까지 채우면 잘린 것처럼 보인다
+
+
 # ── ④ 시간 읽기 ─────────────────────────────────────────────
 
 def test_an_old_line_without_a_timezone_is_read_as_utc():
