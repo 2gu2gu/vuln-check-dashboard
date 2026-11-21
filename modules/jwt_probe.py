@@ -5,7 +5,10 @@
 
   1. 뜯어 보기(요청 없음)  alg·exp·민감 클레임. 서명을 뺀 토큰, alg 를 none 으로 바꾼 토큰을 만들 재료다
   2. 손댄 토큰 보내기       확인 주소에 ① 원래 ② 서명만 바꾼 것 ③ alg=none ④ 클레임을 올린 것을 보낸다
-                           원래만 2xx 면 서명을 보고 있는 것이고, 손댄 것도 2xx 면 서명을 안 보는 것이다
+                           원래만 2xx 면 서명을 보고 있는 것이고, 손댄 것도 2xx 면 서명을 안 보는 것이다.
+                           **먼저 토큰을 아예 빼고 한 번 보낸다** — 그것도 2xx 로 같은 것이 오면 그 주소는
+                           애초에 로그인을 안 보는 자리다. 거기서는 무엇을 보내도 통하니 '서명 검증 없음' 이
+                           아니다(11-21: 화면 라우트를 2xx 로 읽어 오탐 81건을 만든 것과 같은 뿌리)
 
 **서명 검증을 안 하는 서버에서는 ④ 로 관리자가 된다.** 그래서 ④ 는 role·auth·authority 같은 클레임을
 올려 보고 2xx 가 오면 그 자리에서 취약으로 적는다.
@@ -176,6 +179,20 @@ def run(target, params):
         out.append(Finding(title="확인 주소에서 원래 토큰이 통하지 않습니다", severity="info", location=url,
                            evidence="\n".join(lines), recommendation="", response=base))
         return out
+    # 토큰을 **아예 빼고** 같은 곳을 한 번 읽는다. 그래도 열리면 그 주소는 로그인을 안 보는 자리고,
+    # 손댄 토큰이 통하는 것은 서명을 안 봐서가 아니다. 뒤의 폐기 확인도 같은 잣대를 쓰니 여기서 멈춘다.
+    bare = core.fetch(url, auth=False)
+    lines.append(f"토큰을 빼고: → {bare.status} · {len(bare.body)}B")
+    if bare.status in range(200, 300) and bare.body == base.body:
+        lines.append("  토큰이 없어도 **같은 것이 열린다** — 이 주소는 로그인을 보지 않는다")
+        out.append(Finding(
+            title="확인 주소가 토큰을 보지 않습니다", severity="info", location=url,
+            evidence="\n".join(lines) + "\n\n여기서는 무엇을 보내도 통하니 서명을 보는지 알 수 없습니다. "
+                     "**로그인해야만 열리는 GET 주소**(내 정보, 내 주문 같은 것)를 확인 주소로 넣으세요. "
+                     "HAR 에서 Authorization 을 달고 나간 요청의 주소가 그것입니다.",
+            recommendation="", response=bare))
+        return out
+
     for kind, bad, means in variants(head, body, signature):
         r = core.fetch(url, headers={name: f"Bearer {bad}"}, auth=False)
         lines.append(f"{kind}: → {r.status} · {len(r.body)}B")

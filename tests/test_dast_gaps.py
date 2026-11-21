@@ -89,9 +89,13 @@ def test_jwt_sensitive_claims_are_reported(monkeypatch):
 
 
 def test_jwt_tampered_token_that_still_works_is_reported(monkeypatch):
-    """서명만 바꾼 토큰이 통하면 서명 검증이 없는 것이다."""
+    """서명만 바꾼 토큰이 통하면 서명 검증이 없는 것이다.
+
+    가짜 서버도 **토큰이 없으면 401** 을 준다. 아무에게나 200 을 주는 자리는 로그인을 안 보는
+    자리지 서명을 안 보는 자리가 아니다 — 그 둘을 섞으면 화면 라우트를 취약으로 적게 된다.
+    """
     _ctx(monkeypatch, {"Authorization": "Bearer " + token(body={"exp": int(time.time()) + 60})})
-    _server(monkeypatch, lambda url, m, h, b: (200, "내 정보"))
+    _server(monkeypatch, lambda url, m, h, b: (200, "내 정보") if h.get("Authorization") else (401, ""))
     out = jwt_probe.run(T, {"verify_url": "https://sesacedu.store/backend/mypage"})
     assert any("서명 검증 없음" in f.title and f.severity in ("high", "critical") for f in out)
 
@@ -107,7 +111,7 @@ def test_jwt_signature_checked_is_only_info(monkeypatch):
 def test_jwt_raised_claim_is_critical(monkeypatch):
     t = token(body={"exp": int(time.time()) + 60, "auth": 1})
     _ctx(monkeypatch, {"Authorization": "Bearer " + t})
-    _server(monkeypatch, lambda url, m, h, b: (200, "ok"))
+    _server(monkeypatch, lambda url, m, h, b: (200, "ok") if h.get("Authorization") else (401, ""))
     out = jwt_probe.run(T, {"verify_url": "https://sesacedu.store/backend/mypage"})
     # 서명만 바꾼 것이 먼저 걸리므로 '권한' 까지 가지 않는다 — 올리는 토큰이 만들어지는지는 variants 로 본다
     kinds = [k for k, _, _ in jwt_probe.variants({"alg": "HS256"}, {"auth": 1}, "sig")]
@@ -124,6 +128,23 @@ def test_jwt_still_working_after_logout_is_reported(monkeypatch):
     out = jwt_probe.run(T, {"verify_url": "https://sesacedu.store/backend/mypage",
                             "logout_url": "https://sesacedu.store/backend/auth/logout"})
     assert any("폐기 장치 없음" in f.title for f in out)
+
+
+def test_jwt_does_not_call_an_unprotected_url_a_missing_signature(monkeypatch):
+    """확인 주소가 누구에게나 열려 있으면 손댄 토큰이 통하는 것은 당연하다 — 취약이 아니다.
+
+    11-21 에 오탐 81건을 만든 것과 같은 뿌리다. SPA 화면 라우트나 공개 API 를 확인 주소로 넣으면
+    토큰을 빼도 같은 200 이 온다. 그걸 '서명 검증 없음 critical' 로 적으면 안 된다.
+    """
+    _ctx(monkeypatch, {"Authorization": "Bearer " + token(body={"exp": int(time.time()) + 60})})
+    sent = _server(monkeypatch, lambda url, m, h, b: (200, "<!doctype html>앱 껍데기"))
+    out = jwt_probe.run(T, {"verify_url": "https://sesacedu.store/mypage",
+                            "logout_url": "https://sesacedu.store/backend/auth/logout"})
+    assert not any("서명 검증 없음" in f.title or "폐기 장치 없음" in f.title for f in out)
+    hit = [f for f in out if "토큰을 보지 않습니다" in f.title]
+    assert len(hit) == 1 and hit[0].severity == "info" and "HAR" in hit[0].evidence
+    # 토큰을 뺀 요청에서 멈춘다 — 손댄 토큰도, 로그아웃도 보내지 않는다
+    assert len(sent) == 2 and not any(s["method"] == "POST" for s in sent)
 
 
 def test_jwt_without_a_verify_url_only_reads_the_token(monkeypatch):
@@ -749,3 +770,70 @@ def test_forum_stored_xss_runs_end_to_end(monkeypatch):
     hits = [f for f in out if f.title.startswith("커뮤니티 게시글 저장형 XSS")]
     assert len(hits) <= 1                       # 조합이 여럿 통해도 자리는 하나다
     assert any("시험한 입력값 목록" in f.title for f in out)
+
+
+# ── 같은 뿌리를 다시 밟지 않게 하는 잣대 ────────────────────
+
+# 11-21 에 오탐 81건을 만든 것은 한 가지 착각이었다. **2xx 가 왔으니 통한 것**이라는 착각.
+# React·Next.js 앱은 어느 주소로 무엇을 보내도 200 과 화면(HTML)을 돌려준다. 그래서
+# '인증 없이 열린다'·'파일을 받아 준다'·'12번 보내도 안 막는다'가 전부 거짓이 됐다.
+#
+# 그러니 능동 모듈은 **2xx 하나로 판정하지 않는 자기 잣대**가 있어야 한다. 잣대는 둘 중 하나다.
+#   ① `probe.app_shell` — 대상 첫 화면을 받아 두고, 같은 본문이 오면 후보에서 뺀다
+#   ② 2xx 가 거짓일 수 없는 다른 증거 — 파일 내용, 마커, 지연, 보낸 것과 안 보낸 것의 차이
+# 아래 표는 ②를 쓰는 모듈과 그 이유다. 새 모듈을 만들면서 둘 다 없으면 이 테스트가 막는다.
+OWN_YARDSTICK = {
+    "content_discovery": "없는 주소를 두 번 넣어 기준 응답을 만들고 그와 같으면 없는 것으로 본다",
+    "exposed_paths": "없는 주소(`__dashboard_<난수>`) 응답과 본문이 같으면 뺀다",
+    "header_probe": "본문이 아니라 응답 헤더만 본다 — 2xx 로 속을 자리가 없다",
+    "info_leak_probe": "본문에서 비밀값·오류 패턴을 찾는다. 껍데기에는 그 패턴이 없다",
+    "jndi_probe": "응답이 아니라 **지연**으로 판정한다(두 번 끊기면 취약)",
+    "jwt_probe": "토큰을 **아예 빼고** 한 번 보낸 것을 잣대로 쓴다 — 그래도 열리면 멈춘다",
+    "lecture_sqli": "도구. 사람이 보낸 질의의 응답 차이를 보여 주고 판정은 사람이 한다",
+    "material_traversal": "도구. 받아 온 파일 내용을 사람이 본다",
+    "material_traversal_fuzz": "도구. 받아 온 파일 내용을 사람이 본다",
+    "payload_probe": "사람이 넣은 입력값이 응답에 어떻게 나오는지만 보여 준다",
+    "port_check": "도구. TCP 연결 여부라 HTTP 2xx 와 무관하다",
+    "reflection_check": "되돌아온 **마커**를 찾는다. 껍데기에는 마커가 없다",
+    "sesacedu_forum_stored_xss": "등록한 글을 **다시 읽어** 입력값이 그대로 있는지 본다",
+    "sesacedu_xss": "되돌아온 마커를 찾는다",
+    "sqli_probe": "참·거짓 질의의 응답 차이와 DB 오류 문구를 본다",
+    "stored_xss_probe": "넣은 값을 다시 읽어 그대로 나오는지 본다",
+    "surface_collect": "주소를 모으기만 하고 취약 판정을 하지 않는다",
+    "surface_discover": "주소를 모으기만 하고 취약 판정을 하지 않는다",
+    "traversal_probe": "`root:x:0:0` 같은 **파일 내용**을 찾는다. 껍데기에는 없다",
+    "upload_probe": "화면(HTML)이면 빼고, **파일 칸을 뺀 같은 요청**과 응답이 같으면 뺀다",
+    "xss_probe": "되돌아온 마커를 찾는다",
+}
+
+
+def _active_modules():
+    import os
+    import re
+    found = {}
+    for d in ("modules", os.path.join("projects", "sesacedu", "modules")):
+        for fn in sorted(os.listdir(d)):
+            if not fn.endswith(".py") or fn.startswith("_"):
+                continue
+            src = open(os.path.join(d, fn), encoding="utf-8").read()
+            if re.search(r'"kind":\s*"active"', src):
+                found[fn[:-3]] = src
+    return found
+
+
+def test_every_active_module_has_something_better_than_a_2xx_to_judge_by():
+    """2xx 하나로 '통했다' 고 적는 모듈이 더 생기지 않게 막는다(11-21 오탐 81건의 뿌리).
+
+    `probe.app_shell` 을 쓰거나, 위 표에 왜 2xx 로 속지 않는지 적어야 한다. 새 모듈을 만들면
+    이 테스트가 먼저 막고, 사람이 그 자리에서 '무엇을 보고 판정하는가' 를 적게 된다.
+    """
+    mods = _active_modules()
+    assert len(mods) > 15                      # 모듈을 못 찾은 채로 통과하지 않게
+    missing = sorted(name for name, src in mods.items()
+                     if "app_shell" not in src and name not in OWN_YARDSTICK)
+    assert not missing, (
+        f"{missing} — 2xx 말고 무엇을 보고 판정하는지 정하세요. 첫 화면을 잣대로 쓰려면 "
+        "`probe.app_shell(target)` 을 받아 같은 본문이면 후보에서 빼고, 다른 증거로 판정한다면 "
+        "test_dast_gaps.py 의 OWN_YARDSTICK 에 그 이유를 한 줄 적습니다")
+    stale = sorted(set(OWN_YARDSTICK) - set(mods))
+    assert not stale, f"{stale} — 없어진 모듈이 표에 남아 있습니다"
