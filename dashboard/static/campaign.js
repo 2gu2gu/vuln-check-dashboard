@@ -165,14 +165,48 @@
     return d;
   }
 
+  // ── 선 긋기 ────────────────────────────────────────────
+  // 같은 열 안에서 이으면 오른쪽으로 나갔다 왼쪽으로 돌아오느라 카드 위를 가로질렀다
+  // (11-22 사용자 지적: 선이 꼬이고 겹친다). 그래서 어디로 가는지에 따라 길을 가른다.
+  //   같은 열    아래 → 위로 곧장 내려 긋는다
+  //   다음 열    오른쪽 → 왼쪽, 지금까지처럼 완만한 곡선
+  //   뒤로 가기  오른쪽으로 나가 **열 아래 빈 자리**를 돌아 왼쪽으로 들어간다
   function anchor(node, side) {
     var c = canvas.getBoundingClientRect(), r = node.getBoundingClientRect();
+    if (side === "down") return { x: r.left + r.width / 2 - c.left, y: r.bottom - c.top };
+    if (side === "up") return { x: r.left + r.width / 2 - c.left, y: r.top - c.top };
     return { x: (side === "out" ? r.right : r.left) - c.left, y: r.top + Math.min(r.height / 2, 28) - c.top };
   }
 
   function curve(a, b) {
     var dx = Math.max(40, Math.abs(b.x - a.x) / 2);
     return "M" + a.x + " " + a.y + " C" + (a.x + dx) + " " + a.y + " " + (b.x - dx) + " " + b.y + " " + b.x + " " + b.y;
+  }
+
+  function down(a, b) {
+    var dy = Math.max(16, (b.y - a.y) / 2);
+    return "M" + a.x + " " + a.y + " C" + a.x + " " + (a.y + dy) + " " + b.x + " " + (b.y - dy) + " " + b.x + " " + b.y;
+  }
+
+  function around(a, b, floor) {
+    // 오른쪽으로 조금 나갔다가 바닥을 따라 되돌아와 왼쪽으로 들어간다 — 카드 위를 지나지 않는다
+    var y = floor + 26;
+    return "M" + a.x + " " + a.y + " C" + (a.x + 50) + " " + a.y + " " + (a.x + 50) + " " + y + " " + a.x + " " + y
+         + " L" + (b.x - 30) + " " + y
+         + " C" + (b.x - 60) + " " + y + " " + (b.x - 60) + " " + b.y + " " + b.x + " " + b.y;
+  }
+
+  function wire(s, t) {
+    var sc = s.closest(".cp-col"), tc = t.closest(".cp-col");
+    if (sc && sc === tc) {                       // 같은 열 — 위아래로 곧장
+      var top = s.getBoundingClientRect().top <= t.getBoundingClientRect().top;
+      var a = anchor(top ? s : t, "down"), b = anchor(top ? t : s, "up");
+      return { d: down(a, b), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    }
+    var p = anchor(s, "out"), q = anchor(t, "in");
+    if (q.x >= p.x) return { d: curve(p, q), x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+    var floor = canvas.scrollHeight - 18;        // 뒤로 가는 선은 바닥을 돌아간다
+    return { d: around(p, q, floor), x: (p.x + q.x) / 2, y: floor + 26 };
   }
 
   function drawLines() {
@@ -184,15 +218,15 @@
       var s = canvas.querySelector('.cp-node[data-id="' + e.src + '"]');
       var t = canvas.querySelector('.cp-node[data-id="' + e.dst + '"]');
       if (!s || !t) return;
-      var a = anchor(s, "out"), b = anchor(t, "in");
+      var w = wire(s, t);
       var p = document.createElementNS(SVGNS, "path");
       p.setAttribute("class", "cp-edge");
-      p.setAttribute("d", curve(a, b));
+      p.setAttribute("d", w.d);
       p.setAttribute("marker-end", "url(#cp-arrow)");
       svg.appendChild(p);
       var lab = el("div", "cp-label" + (e.label ? "" : " empty"));
-      lab.style.left = ((a.x + b.x) / 2) + "px";
-      lab.style.top = ((a.y + b.y) / 2) + "px";
+      lab.style.left = w.x + "px";
+      lab.style.top = w.y + "px";
       var txt = el("span", "", e.label || "넘긴 것?");
       txt.title = "눌러서 고칩니다";
       txt.addEventListener("click", function () {

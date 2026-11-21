@@ -1736,10 +1736,13 @@ def _mcp_make_campaign(a):
     t = _mcp_target(a.get("target_id"))
     db = get_db()
     want = set(a.get("statuses") or ["confirmed"])
-    rows = [r for r in _findings_of(t["id"]) if r["status"] in want and r["severity"] != "info"]
+    only = set(a.get("severity") or [])
+    top = max(1, int(a.get("top") or 20))
+    rows = [r for r in _findings_of(t["id"])
+            if r["status"] in want and r["severity"] != "info" and (not only or r["severity"] in only)]
     if not rows:
-        raise ValueError(f'{t["name"]} 에 {"·".join(want)} 상태인 결과가 없습니다. '
-                         "statuses 에 open 을 넣거나 `findings` 로 먼저 보세요")
+        raise ValueError(f'{t["name"]} 에 {"·".join(want)} 상태' + (f' · {"·".join(only)}' if only else "") +
+                         "인 결과가 없습니다. statuses 에 open 을 넣거나 `findings` 로 먼저 보세요")
     name = (a.get("name") or f'{t["name"]} 침투 시나리오').strip()
     cid = campaign.create(db, t["id"], name, a.get("goal") or "")
 
@@ -1759,14 +1762,27 @@ def _mcp_make_campaign(a):
         campaign.add_node(db, cid, "cve", "TA0001", c["id"], ref=c["id"],
                           sub=f'{c["product"]} {c["version"]}', status=c["status"], note=c.get("note", "")[:300])
 
-    # ② 결과를 모듈이 적어 둔 전술 열에 놓는다. 상태는 결과의 처리 상태를 그대로 따른다
-    by_tactic = {}
+    # ② 결과를 모듈이 적어 둔 전술 열에 놓는다. **같은 제목은 한 노드로 묶는다** — 후보 패널이
+    #    하는 것과 같다. 안 묶으면 '요청 수 제한 없음' 이 일곱 장씩 쌓여 보드를 못 쓴다
+    #    (11-22 사용자 지적: 확인됨으로 만들면 사용자 웹만 156건이다). 심한 것부터 top 개까지.
+    rank = {s: i for i, s in enumerate(SEVERITIES)}
+    packs = {}
     for r in rows:
-        tac = _tactic_of(r["module_id"])
-        nid = campaign.add_node(db, cid, "finding", tac, r["title"], ref=str(r["id"]), sub=r["location"],
-                                status="확인" if r["status"] == "confirmed" else "추정",
-                                note=f'결과 #{r["id"]} · {r["severity"]}')
-        by_tactic.setdefault(tac, []).append((nid, r))
+        packs.setdefault((_tactic_of(r["module_id"]), r["title"]), []).append(r)
+    picked = sorted(packs.items(),
+                    key=lambda kv: (min(rank.get(x["severity"], 9) for x in kv[1]), -len(kv[1])))[:top]
+    left = len(packs) - len(picked)
+
+    by_tactic = {}
+    for (tac, title), pack in picked:        # `got` 은 위에서 CVE 후보가 쓰고 있다 — 겹치면 터진다
+        worst = min(pack, key=lambda x: rank.get(x["severity"], 9))
+        more = f" 외 {len(pack) - 1}곳" if len(pack) > 1 else ""
+        nid = campaign.add_node(db, cid, "finding", tac, title, ref=str(worst["id"]),
+                                sub=worst["location"] + more,
+                                status="확인" if worst["status"] == "confirmed" else "추정",
+                                note=f'결과 #{worst["id"]} · {worst["severity"]}'
+                                     + (f' · 같은 제목 {len(pack)}건' if more else ""))
+        by_tactic.setdefault(tac, []).append((nid, worst, len(pack)))
 
     # ③ 전술 순서대로 한 줄로 잇는다. 무엇을 얻어 넘겼는지는 팀이 보드에서 적는다
     order = [tac for tac in TACTIC_ORDER if tac in by_tactic]
@@ -1784,11 +1800,14 @@ def _mcp_make_campaign(a):
                      f'{sum(len(o.get("cves") or []) for o in got["observed"]) + len(got["team"])}개')
     for i, tac in enumerate(order, 1):
         got_rows = by_tactic[tac]
-        lines.append(f'{i}. {TACTIC_NAME[tac]} — {len(got_rows)}건')
-        for _nid, r in got_rows[:4]:
-            lines.append(f'   · [{r["severity"]}] {r["title"]} — {r["location"]}')
+        lines.append(f'{i}. {TACTIC_NAME[tac]} — {len(got_rows)}가지')
+        for _nid, r, n in got_rows[:4]:
+            lines.append(f'   · [{r["severity"]}] {r["title"]} — {r["location"]}'
+                         + (f' 외 {n - 1}곳' if n > 1 else ""))
         if len(got_rows) > 4:
-            lines.append(f'   · 그 밖 {len(got_rows) - 4}건')
+            lines.append(f'   · 그 밖 {len(got_rows) - 4}가지')
+    if left:
+        lines.append(f'(심한 것부터 {top}가지만 올렸습니다 — {left}가지는 뺐습니다. top 을 올리면 더 올라갑니다)')
     lines += ["", "선은 전술 순서대로 한 줄만 그었습니다. **어느 단계에서 무엇을 얻어 다음에 넘겼는지**"
                   "(토큰·비밀값·셸)는 보드에서 선을 눌러 적으세요 — 그건 사람이 아는 것입니다.",
               "CVE 후보는 버전 범위가 맞는다는 뜻일 뿐 '추정' 입니다. 확인한 것만 상태를 올리세요."]

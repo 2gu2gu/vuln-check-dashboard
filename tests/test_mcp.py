@@ -177,6 +177,33 @@ def test_make_campaign_lays_the_findings_out_in_tactic_columns(client, app):
     assert "observed" in kinds                         # 근거에 보인 Tomcat 10.1.1 도 올라간다
 
 
+def test_make_campaign_groups_the_same_title_and_takes_the_worst_first(client, app):
+    """확인됨으로 만들면 사용자 웹만 156건이었다 — 보드가 못 쓰게 된다(11-22 사용자 지적).
+
+    같은 제목은 한 노드로 묶고(후보 패널이 하는 것과 같다), 심각도로 고르고, 가짓수에 상한을 둔다.
+    """
+    add_target(client)
+    for i in range(7):
+        seed_finding(app, 1, title="요청 수 제한 없음", module_id="rate_limit_probe", severity="medium",
+                     location=f"https://sesacedu.store/backend/a{i}")
+    seed_finding(app, 1, title="민감 파일 읽기", module_id="traversal_probe", severity="critical")
+    client.post("/connect/write", data={"on": "1"}, follow_redirects=True)
+
+    out = text_of(call(client, app, "make_campaign", {"target_id": 1, "name": "묶기"}))
+    assert "외 6곳" in out                                  # 일곱 건이 한 줄로
+    with app.app_context():
+        n = get_db().execute("SELECT COUNT(*) FROM campaign_nodes WHERE campaign_id = 1 AND kind = 'finding'"
+                             ).fetchone()[0]
+    assert n == 2                                           # 제목 두 가지 = 노드 두 개
+
+    # 심각도로 좁히면 그것만, 상한을 걸면 심한 것부터
+    out = text_of(call(client, app, "make_campaign",
+                       {"target_id": 1, "name": "크리티컬만", "severity": ["critical"]}))
+    assert "민감 파일 읽기" in out and "요청 수 제한 없음" not in out
+    out = text_of(call(client, app, "make_campaign", {"target_id": 1, "name": "한 가지만", "top": 1}))
+    assert "민감 파일 읽기" in out and "1가지는 뺐습니다" in out
+
+
 def test_make_campaign_says_what_to_do_when_nothing_is_confirmed(client, app):
     add_target(client)
     seed_finding(app, 1, status="open")

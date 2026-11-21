@@ -215,7 +215,12 @@ TOOLS = [
          "name": {"type": "string", "description": "캠페인 이름(비우면 '<대상> 침투 시나리오')"},
          "goal": {"type": "string", "description": "이 시나리오의 목표 한 줄"},
          "statuses": {"type": "array", "items": {"type": "string"},
-                      "description": "어떤 처리 상태의 결과를 넣을지(기본 confirmed 만). open 을 넣으면 미확인도"}},
+                      "description": "어떤 처리 상태의 결과를 넣을지(기본 confirmed 만). open 을 넣으면 미확인도"},
+         "severity": {"type": "array", "items": {"type": "string"},
+                      "description": "넣을 심각도(critical·high·medium·low). 비우면 info 만 뺀다. "
+                                     "확인됨이 많은 대상은 critical·high 로 좁히는 게 읽기 좋다"},
+         "top": {"type": "integer",
+                 "description": "보드에 올릴 가짓수 상한(기본 20). 같은 제목은 한 노드로 묶고 심한 것부터 올린다"}},
          ["target_id"])},
 
     {"name": "set_status", "write": True,
