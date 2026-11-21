@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}연결{% endblock %}
+{% block content %}
+{# AI 도구(Claude Code 등)가 딸깍이를 도구로 쓰게 붙이는 화면(11-21). 붙이는 줄 · 켠 도구 · 호출 기록. #}
+<h1>연결 <span class="sub">— AI 도구가 딸깍이를 도구로 씁니다(MCP)</span></h1>
+<p class="lead">사람이 화면을 눌러 하던 일을 <b>AI 에게 시킬 수 있습니다.</b> 지점을 보고, 모듈을 돌리고,
+  나온 결과의 근거를 읽고, 다시 보내 확인하고, 틀린 줄을 오탐으로 바꾸는 일입니다.
+  보내는 요청은 화면으로 돌릴 때와 <b>같은 길</b>을 지납니다 — 범위 밖 주소로는 나가지 않습니다.</p>
+
+<section class="panel">
+  <h2>붙이는 법</h2>
+  <p class="sub small">터미널에 이 한 줄을 넣습니다. <b>토큰이 들어 있으니</b> 아무 데나 붙여 넣지 마세요.</p>
+  <pre class="tool-text" id="mcp-cmd">{{ command }}</pre>
+  <div class="row-gap">
+    <button class="btn" type="button" data-copy="#mcp-cmd">줄 복사</button>
+    <form method="post" action="{{ url_for('dash.connect_new_token') }}" class="inline"
+          onsubmit="return confirm('토큰을 새로 만들면 붙여 둔 도구는 다시 붙여야 합니다. 할까요?')">
+      {{ csrf_field() }}<input type="hidden" name="target_id" value="{{ target.id if target }}">
+      <button class="btn ghost" type="submit">토큰 새로 만들기</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>쓰기 도구</h2>
+  <p class="sub small">읽기는 늘 됩니다. <b>모듈을 돌리고 결과 상태를 바꾸는 것</b>만 이 스위치를 봅니다.
+    한 번 켜면 계속 켜져 있습니다 — 부를 때마다 묻지 않습니다.</p>
+  <form method="post" action="{{ url_for('dash.connect_write') }}" class="inline">
+    {{ csrf_field() }}<input type="hidden" name="target_id" value="{{ target.id if target }}">
+    <input type="hidden" name="on" value="{{ '0' if write_on else '1' }}">
+    <button class="btn {{ 'ghost' if write_on else '' }}" type="submit">
+      {{ '쓰기 도구 끄기' if write_on else '쓰기 도구 켜기' }}</button>
+    <span class="conn-state {{ 'on' if write_on else '' }}">지금 {{ '켜짐' if write_on else '꺼짐' }}</span>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>켠 도구 <span class="sub">— {{ tools | length }}개 · 읽기 {{ tools | rejectattr('write') | list | length }} ·
+    쓰기 {{ tools | selectattr('write') | list | length }}</span></h2>
+  <table class="table">
+    <thead><tr><th>이름</th><th>종류</th><th>하는 일</th></tr></thead>
+    <tbody>
+      {% for t in tools %}
+      <tr>
+        <td class="mono">{{ t.name }}</td>
+        <td>{% if t.write %}<span class="tag warn">쓰기</span>{% else %}<span class="tag">읽기</span>{% endif %}</td>
+        <td class="sub small">{{ t.description | strong }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2>호출 기록 <span class="sub">— 바깥에서 들어온 손이라 남겨 둡니다</span></h2>
+  {% if calls %}
+  <table class="table">
+    <thead><tr><th>때</th><th>도구</th><th>보낸 값</th><th>결과</th></tr></thead>
+    <tbody>
+      {% for c in calls %}
+      <tr>
+        <td class="sub small mono">{{ c.called_at | kst }}</td>
+        <td class="mono">{{ c.tool }}</td>
+        <td class="sub small mono">{{ c.args }}</td>
+        <td class="sub small">{% if not c.ok %}<span class="tag warn">실패</span> {% endif %}{{ c.summary }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="sub">아직 아무도 부르지 않았습니다.</p>
+  {% endif %}
+</section>
+{% endblock %}
