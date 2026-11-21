@@ -222,6 +222,41 @@ def test_the_module_list_tells_which_ones_need_points_first(client, app):
     assert "surface_import" not in got            # 다른 모듈의 부품(hidden)은 안 내보낸다
 
 
+# ── 대상 고르기(11-21 사용자 지적: 관리자 웹으로 바꿨는데 지점 목록이 사용자 웹) ──
+
+def test_the_header_target_box_goes_somewhere_when_you_pick(client):
+    """칸만 바뀌고 쪽이 그대로면, 고른 대상과 화면에 보이는 대상이 어긋난다.
+
+    고르면 바로 가는 일은 app.js 가 한다 — 틀(`data-autosubmit`)과 손이 둘 다 있어야 한다.
+    뒤로 가기 때 브라우저가 옛 선택을 되살리지 못하게 `autocomplete=off` 도 함께 본다.
+    """
+    add_target(client)
+    page = client.get("/modules").get_data(as_text=True)
+    assert 'id="target" name="target" data-autosubmit autocomplete="off"' in page
+    js = client.get("/static/app.js").get_data(as_text=True)
+    assert '[data-autosubmit]' in js and "el.form.submit()" in js
+
+
+def test_the_module_popup_shows_the_points_of_the_target_you_picked(client, app):
+    add_target(client, name="사용자 웹", url="https://sesacedu.store", role="user_web")
+    add_target(client, name="관리자 웹", url="https://admin.sesacedu.store", role="admin_web")
+    with app.app_context():
+        db = get_db()
+        for tid, url in ((1, "https://sesacedu.store/courses"),
+                         (2, "https://admin.sesacedu.store/users")):
+            db.execute("INSERT INTO points (target_id, method, url, param, place, source, first_seen, last_seen) "
+                       "VALUES (?,'GET',?,'','path','import','2026-11-21','2026-11-21')", [tid, url])
+        db.commit()
+
+    # 표에는 주소에서 호스트를 뺀 경로만 적힌다
+    panel = client.get("/modules/upload_probe/panel?target=2&partial=1").get_data(as_text=True)
+    assert "/users" in panel and "/courses" not in panel
+    assert "/courses" in client.get("/modules/upload_probe/panel?target=1&partial=1").get_data(as_text=True)
+    # 모듈 화면이 그 팝업 주소를 target 과 함께 들고 있어야 한다
+    page = client.get("/modules?target=2").get_data(as_text=True)
+    assert "/modules/upload_probe/panel?target=2" in page
+
+
 # ── ④ 시간 읽기 ─────────────────────────────────────────────
 
 def test_an_old_line_without_a_timezone_is_read_as_utc():

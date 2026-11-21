@@ -123,7 +123,8 @@ def test_probe_flow_and_dedupe(app, client, seeded, monkeypatch):
     data = {"target_id": tid, "module_id": "reflection_check", "confirm": "yes",
             "point": [ids["category"], ids["level"], ids["title"]]}
     page = client.post("/surface/probe", data=data, follow_redirects=True).get_data(as_text=True)
-    assert "취약 1 · 잠재 1 · 안전 0, 건너뜀 1" in page  # POST(title)는 기본값 GET 이라 안 보냄
+    # POST(title)는 기본값 GET 이라 안 보냄. '확인 못 함' 은 11-21 에 생긴 넷째 판정이다
+    assert "취약 1 · 잠재 1 · 안전 0 · 확인 못 함 0, 건너뜀 1" in page
 
     with app.app_context():
         db = get_db()
