@@ -263,11 +263,14 @@
   }
 
   function around(a, b, floor) {
-    // 오른쪽으로 조금 나갔다가 바닥을 따라 되돌아와 왼쪽으로 들어간다 — 카드 위를 지나지 않는다
-    var y = floor + 26;
-    return "M" + a.x + " " + a.y + " C" + (a.x + 50) + " " + a.y + " " + (a.x + 50) + " " + y + " " + a.x + " " + y
-         + " L" + (b.x - 30) + " " + y
-         + " C" + (b.x - 60) + " " + y + " " + (b.x - 60) + " " + b.y + " " + b.x + " " + b.y;
+    // 뒤로 가는 선: 보낸 카드 **아래로 내려가** 밑을 따라 되돌아가서 받는 카드 **밑에서 올라간다**.
+    // 옆구리로 돌아 들어가면 카드 오른쪽을 지나 왼쪽으로 꺾여 '뒤로 도는' 모양이 된다
+    // (11-22 사용자 지적). 아래로만 다니면 어디로 돌아가는지 한눈에 보인다.
+    var y = floor + 26, r = 18;
+    return "M" + a.x + " " + a.y
+         + " C" + a.x + " " + (a.y + r) + " " + a.x + " " + (y - r) + " " + (a.x - r) + " " + y
+         + " L" + (b.x + r) + " " + y
+         + " C" + b.x + " " + y + " " + b.x + " " + (y - r) + " " + b.x + " " + b.y;
   }
 
   function wire(s, t) {
@@ -281,11 +284,11 @@
     }
     var p = anchor(s, "out"), q = anchor(t, "in");
     if (q.x >= p.x) return { d: curve(p, q), x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-    // 뒤로 가는 선은 **두 카드 중 아래쪽 바로 밑**을 돌아간다. 보드 맨 아래까지 내려가면
-    // 선 하나가 화면을 세로로 가로지른다(11-22 눈으로 확인)
+    // 뒤로 가는 선은 아래로 내려가 **두 카드 중 아래쪽 바로 밑**을 따라 되돌아간다
     var c = canvas.getBoundingClientRect();
     var floor = (Math.max(a0.bottom, b0.bottom) - c.top) / Z;
-    return { d: around(p, q, floor), x: (p.x + q.x) / 2, y: floor + 26 };
+    var down1 = anchor(s, "down"), up2 = anchor(t, "down");
+    return { d: around(down1, up2, floor), x: (down1.x + up2.x) / 2, y: floor + 26 };
   }
 
   function drawLines() {
