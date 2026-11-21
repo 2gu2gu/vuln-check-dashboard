@@ -615,11 +615,35 @@ def _execute_bg(mod, t, params, call):
     return run_id
 
 
+REPLAY = "다시 보낼 요청"
+
+
+def _replay_line(xid):
+    """근거 끝에 붙일 **그대로 다시 보낼 수 있는 요청 한 줄**.
+
+    자리표시자(`file=<double-full>`)만 적혀 있으면 사람도 도구도 돌려 볼 수 없다 — 11-21 에
+    결과 246건을 재현할 때 민감 파일 11건이 이것 때문에 재현 불가였다. 보낸 요청은 요청 기록에
+    이미 남아 있으니, 그 한 줄을 근거로 끌어올린다.
+    """
+    if not xid:
+        return ""
+    row = get_db().execute("SELECT method, url, req_body FROM exchanges WHERE id = ?", [xid]).fetchone()
+    if not row:
+        return ""
+    line = f"{REPLAY}: {row['method']} {row['url']}"
+    if row["req_body"]:
+        line += "\n  본문: " + row["req_body"][:300]
+    return line
+
+
 def _save_finding(mod, tid, f):
     """같은 대상·모듈·제목·위치면 새로 쌓지 않고 갱신한다. 조치됨이었는데 다시 나오면 미확인으로 되돌린다(재발)."""
     db, now = get_db(), now_iso()
     tech = f.technique or mod.attack[0]["technique"]
     xid = getattr(f.response, "exchange_id", 0) or None
+    line = _replay_line(xid)
+    if line and REPLAY not in (f.evidence or ""):
+        f.evidence = (f.evidence or "").rstrip() + "\n\n" + line
     row = db.execute("SELECT id, status FROM findings WHERE target_id = ? AND module_id = ? AND title = ? AND location = ?",
                      [tid, mod.id, f.title, f.location]).fetchone()
     if row:

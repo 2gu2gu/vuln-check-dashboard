@@ -597,3 +597,39 @@ def test_listing_for_points_at_the_segment_right_before_the_variable(monkeypatch
     # 변수가 가운데 있어도 뒤를 잘라 준다
     v = "https://sesacedu.store/backend/lectures/{lid}/assignments/{aid}/file"
     assert probe.listing_for(v, "aid") == "https://sesacedu.store/backend/lectures/103/assignments"
+
+
+def test_every_finding_carries_a_request_you_can_send_again(app, client, monkeypatch):
+    """근거에 자리표시자만 있으면 사람도 도구도 돌려 볼 수 없다(11-21: 민감 파일 11건이 그랬다).
+
+    결과에 근거 응답이 붙어 있으면, 그 응답을 만든 요청 한 줄을 근거 끝에 올린다.
+    """
+    from dashboard.db import get_db
+    from tests.test_app import add_target
+    add_target(client, "https://sesacedu.store", name="t")
+    with app.app_context():
+        from dashboard import routes
+        from dashboard.core import Finding
+        db = get_db()
+        tid = db.execute("SELECT id FROM targets").fetchone()["id"]
+        rid = db.execute("INSERT INTO runs (target_id, module_id, started_at, status) VALUES (?,?,?,?)",
+                         [tid, "m", "2026-11-21", "done"]).lastrowid
+        xid = db.execute(
+            "INSERT INTO exchanges (run_id, target_id, module_id, method, url, status, created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            [rid, tid, "m", "GET", "https://sesacedu.store/d?file=%25%32%65etc/passwd", 200,
+             "2026-11-21"]).lastrowid
+        db.commit()
+
+        class R:
+            exchange_id = xid
+        mod = routes._modules()["header_probe"]
+        f = Finding(title="민감 파일 노출", severity="high",
+                    location="https://sesacedu.store/d?file=<double-full>",   # 자리표시자여도
+                    evidence="/etc/passwd · 424B", recommendation="", response=R())
+        import flask
+        flask.g.run_id = rid
+        routes._save_finding(mod, tid, f)
+        got = db.execute("SELECT evidence FROM findings WHERE title = '민감 파일 노출'").fetchone()["evidence"]
+    assert "다시 보낼 요청: GET https://sesacedu.store/d?file=%25%32%65etc/passwd" in got
+    assert "/etc/passwd · 424B" in got          # 원래 근거도 그대로
