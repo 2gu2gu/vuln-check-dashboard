@@ -1081,3 +1081,33 @@
     if (c && c.dataset.panel) window.openModulePanel(c.dataset.panel);
   }
 })();
+
+// ── MCP 탭: 붙었는지 스스로 켜지는 불 ─────────────────────
+// 줄을 복사해 터미널에 넣는 사람은 이 화면을 보고 있다. 새로 고치라고 하지 않고
+// 몇 초마다 물어봐서 붙는 순간 불이 켜지게 한다(11-21 사용자 지적: 붙었는지 안 보인다).
+(function () {
+  var box = document.getElementById("mcp-live");
+  if (!box) return;
+  var head = document.getElementById("mcp-head");
+  var sub = document.getElementById("mcp-sub");
+  var calls = document.getElementById("mcp-calls");
+  var SAY = { live: "붙어 있습니다", idle: "조용합니다", waiting: "아직 아무도 안 붙었습니다" };
+
+  function draw(d) {
+    var was = box.dataset.state;
+    box.dataset.state = d.state;
+    head.textContent = SAY[d.state] || "";
+    calls.textContent = d.calls;
+    if (d.state === "waiting") {
+      sub.innerHTML = "아래 줄을 터미널에 넣으면 <b>여기 불이 켜집니다</b>";
+    } else {
+      sub.textContent = d.client + " · 마지막 " + d.when + (d.last_tool ? " " + d.last_tool : "");
+    }
+    // 처음 붙는 순간에만 화면을 한 번 새로 그린다 — 기록 표에도 그 줄이 보이게
+    if (was === "waiting" && d.state === "live") setTimeout(function () { location.reload(); }, 1200);
+  }
+
+  setInterval(function () {
+    fetch("/connect/state").then(function (r) { return r.json(); }).then(draw).catch(function () {});
+  }, 3000);
+})();

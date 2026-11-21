@@ -23,11 +23,13 @@ MCP 로 불렀다고 범위 밖 주소에 나가지 않는다. 이 파일은 입
 """
 import json
 import secrets
+from datetime import datetime, timezone
 
 from flask import request
 
 from . import __version__
 
+from .core import KST, now_iso
 from .db import STATUSES, get_db
 
 PROTOCOL = "2025-06-18"          # 우리가 말할 줄 아는 MCP 판. 클라이언트가 다른 판을 부르면 그쪽을 따라 적는다
@@ -75,14 +77,60 @@ def authorized():
 
 def log(tool, args, ok, summary):
     db = get_db()
-    db.execute("INSERT INTO mcp_calls (tool, args, ok, summary, called_at) VALUES (?, ?, ?, ?, datetime('now'))",
-               [tool, json.dumps(args, ensure_ascii=False)[:500], 1 if ok else 0, summary[:300]])
+    db.execute("INSERT INTO mcp_calls (tool, args, ok, summary, called_at) VALUES (?, ?, ?, ?, ?)",
+               [tool, json.dumps(args, ensure_ascii=False)[:500], 1 if ok else 0, summary[:300], now_iso()])
     db.execute("DELETE FROM mcp_calls WHERE id NOT IN (SELECT id FROM mcp_calls ORDER BY id DESC LIMIT ?)", [LOG_KEEP])
     db.commit()
 
 
 def recent(n=30):
     return get_db().execute("SELECT * FROM mcp_calls ORDER BY id DESC LIMIT ?", [n]).fetchall()
+
+
+# 붙어 있다고 말할 수 있는 시간. HTTP 라 **연결이 유지되는 것이 아니다** — 요청이 올 때만 붙는다.
+# 그래서 '지금 연결됨' 이라고 적으면 거짓말이 된다. 최근에 말을 걸었는지로 적는다.
+FRESH_MIN = 15
+
+
+def _ago(iso):
+    """그때로부터 몇 분 지났나 → (분, 사람이 읽는 말). 못 읽는 값이면 (None, '')."""
+    try:
+        then = datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return None, ""
+    if then.tzinfo is None:
+        # 띠 없는 값은 옛 줄이다 — 그때는 sqlite 의 datetime('now')(UTC)로 적었다.
+        # 지금은 now_iso()(KST, 띠 붙음)로 적는다. 옛 줄을 KST 로 읽으면 9시간이 어긋난다
+        then = then.replace(tzinfo=timezone.utc)
+    mins = int((datetime.now(KST) - then).total_seconds() // 60)
+    if mins < 1:
+        return mins, "방금"
+    if mins < 60:
+        return mins, f"{mins}분 전"
+    if mins < 60 * 24:
+        return mins, f"{mins // 60}시간 전"
+    return mins, f"{mins // 1440}일 전"
+
+
+def status():
+    """연결 상태 한 덩이 — 화면이 그대로 그린다.
+
+    state 는 셋이다.
+        waiting  아직 아무도 말을 건 적이 없다
+        live     최근 FRESH_MIN 분 안에 말을 걸었다
+        idle     붙었던 적은 있는데 한참 조용하다
+    """
+    db = get_db()
+    last = db.execute("SELECT * FROM mcp_calls ORDER BY id DESC LIMIT 1").fetchone()
+    hello = db.execute("SELECT * FROM mcp_calls WHERE tool = 'initialize' ORDER BY id DESC LIMIT 1").fetchone()
+    n = db.execute("SELECT COUNT(*) FROM mcp_calls WHERE tool != 'initialize'").fetchone()[0]
+    if last is None:
+        return {"state": "waiting", "client": "", "when": "", "calls": 0, "last_tool": ""}
+    mins, when = _ago(last["called_at"])
+    return {"state": "live" if (mins is not None and mins <= FRESH_MIN) else "idle",
+            "client": (hello["summary"] if hello else "") or "이름을 안 밝힌 도구",
+            "when": when, "calls": n,
+            "last_tool": "" if last["tool"] == "initialize" else last["tool"]}
 
 
 # ── 도구 ───────────────────────────────────────────────────────
@@ -222,6 +270,10 @@ def handle(payload, call_tool):
 
     if method == "initialize":
         asked = (params.get("protocolVersion") or "").strip()
+        who = params.get("clientInfo") or {}
+        # 누가 붙었는지는 이 인사에만 들어 있다. 화면의 '붙어 있음' 은 이 줄을 보고 적는다
+        log("initialize", {"client": who.get("name", ""), "version": who.get("version", "")}, True,
+            (who.get("name") or "이름을 안 밝힌 도구") + (f' {who["version"]}' if who.get("version") else ""))
         return _ok(rid, {
             "protocolVersion": asked or PROTOCOL,
             "capabilities": {"tools": {"listChanged": False}},

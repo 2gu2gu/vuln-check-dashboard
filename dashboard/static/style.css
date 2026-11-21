@@ -974,6 +974,29 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
 .conn-state { font-size: 12px; color: var(--sub); }
 .conn-state.on { color: var(--cov-clear-ink); font-weight: 600; }
 
+/* 붙었나 — 한눈에 보이는 줄. 불 하나, 누가·언제, 몇 번 불렸나 */
+.mcp-live { display: flex; align-items: center; gap: 14px; }
+.mcp-live-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.mcp-live-text strong { font-size: 17px; letter-spacing: -0.02em; }
+.mcp-live-num { text-align: right; display: flex; flex-direction: column; gap: 2px; white-space: nowrap; }
+.mcp-live-num b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.mcp-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--line);
+           box-shadow: 0 0 0 4px var(--surface-2); }
+.mcp-live[data-state="live"] { border-color: var(--cov-clear-ink); }
+.mcp-live[data-state="live"] .mcp-dot { background: var(--cov-clear-ink); animation: mcp-pulse 2s ease-out infinite; }
+.mcp-live[data-state="idle"] .mcp-dot { background: var(--sv-medium); }
+@keyframes mcp-pulse {
+  0% { box-shadow: 0 0 0 0 var(--cov-clear-soft); }
+  70% { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .mcp-live[data-state="live"] .mcp-dot { animation: none; } }
+.mcp-steps { margin: 0 0 10px; padding-left: 20px; font-size: 13px; line-height: 1.8; }
+@media (max-width: 640px) {
+  .mcp-live { flex-wrap: wrap; }
+  .mcp-live-num { text-align: left; }
+}
+
 /* ── 결과 탭 레퍼런스 반영(11-20): 상태 문장 · 비율 막대 · 도넛(주간 변화·스파크라인·누적 추이는 사용자 결정으로 뺌) ──
    노션 '대시보드 딸깍이 제작' 의 레퍼런스(Security Watch·Mosaic·Creator Dashboard)에서 그래프 모양만 가져왔다.
    색은 '보고서 디자인 레퍼런스' 대로 바탕·먹·포인트 셋 — 스파크라인·추이는 포인트색, 상태 막대만 위험도 색. */
