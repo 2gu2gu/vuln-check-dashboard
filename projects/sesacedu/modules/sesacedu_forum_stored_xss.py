@@ -248,6 +248,7 @@ def run(target, params):
     delete_fail = []
     tried = []          # (번호, 태그, 문맥, payload, 판정) — 결과에 '무엇을 넣었는지' 남긴다
     tested = hits = 0
+    landed = {}         # 판정별로 통한 조합 — 한 자리당 결과 하나로 묶는다(11-21, #128)
     for i in range(start - 1, min(start - 1 + count, len(PAYLOADS))):
         tag, event, template = PAYLOADS[i]
         marker = probe.marker()
