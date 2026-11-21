@@ -205,7 +205,10 @@
     }
     var p = anchor(s, "out"), q = anchor(t, "in");
     if (q.x >= p.x) return { d: curve(p, q), x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-    var floor = canvas.scrollHeight - 18;        // 뒤로 가는 선은 바닥을 돌아간다
+    // 뒤로 가는 선은 **두 카드 중 아래쪽 바로 밑**을 돌아간다. 보드 맨 아래까지 내려가면
+    // 열이 길 때 선 하나가 화면을 세로로 가로지른다(11-22 눈으로 확인)
+    var c = canvas.getBoundingClientRect();
+    var floor = Math.max(s.getBoundingClientRect().bottom, t.getBoundingClientRect().bottom) - c.top;
     return { d: around(p, q, floor), x: (p.x + q.x) / 2, y: floor + 26 };
   }
 
