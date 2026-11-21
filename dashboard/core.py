@@ -71,14 +71,16 @@ class Point:
             raise ValueError(f"place 는 {PLACES} 중 하나: {self.place}")
 
 
-VERDICTS = {"vuln": "취약", "potential": "잠재", "safe": "안전"}
+# '확인 못 함' 은 안전과 다르다(11-21 사용자 지적: 파일 업로드가 전부 안전으로 나왔는데
+# 실제로는 쉘 파일이 올라갔다). 때려 보지도 못한 자리를 안전이라고 적으면 판이 거짓말을 한다.
+VERDICTS = {"vuln": "취약", "potential": "잠재", "safe": "안전", "unknown": "확인 못 함"}
 
 
 @dataclass
 class Check:
     """지점 점검 모듈이 지점마다 돌려주는 판정."""
     point: Point
-    verdict: str             # vuln / potential / safe
+    verdict: str             # vuln / potential / safe / unknown(때려 보지 못함)
     evidence: str = ""
     title: str = ""          # 취약일 때 결과 제목(비면 모듈 이름)
     severity: str = ""       # 취약일 때 심각도(비면 META severity)

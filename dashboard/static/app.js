@@ -8,6 +8,18 @@
     try { localStorage.setItem("theme", root.dataset.theme); } catch (e) {}
   });
 
+  // ── 고르면 바로 가는 칸(data-autosubmit) ──────────────────
+  // 머리의 **대상 고르기**가 여기 걸린다. 선택만 바뀌고 쪽은 그대로여서, 고른 대상과 화면에
+  // 보이는 대상이 어긋났다(11-21 사용자 지적: 관리자 웹으로 바꿨는데 지점 목록이 사용자 웹).
+  // 요청 기록 탭의 거르개도 같은 이유로 안 먹었다. 결과 탭 거르개만 예외 — 거기는 쪽을 새로
+  // 열지 않고 그 자리에서 줄만 숨긴다(아래 '고르면 바로 적용되는 필터').
+  document.addEventListener("change", function (e) {
+    var el = e.target;
+    if (!el || !el.matches || !el.matches("[data-autosubmit]") || !el.form) return;
+    if (el.form.classList.contains("filters") && document.getElementById("findings")) return;
+    el.form.submit();
+  });
+
   // ── 왼쪽 메뉴 드로어 ─────────────────────────────────────
   // 연 상태를 기억한다 — 화면을 옮길 때마다 다시 열게 하면 성가시다.
   // 좁은 화면에서만 본문을 덮으므로, Esc·뒤 누르기로 닫는 것도 그때만 한다.

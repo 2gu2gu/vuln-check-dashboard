@@ -57,7 +57,7 @@
 {%- endmacro %}
 
 {% macro verdict(v) -%}
-<span class="verdict v-{{ v }}">{{ {"vuln": "취약", "potential": "잠재", "safe": "안전"}[v] }}</span>
+<span class="verdict v-{{ v }}">{{ {"vuln": "취약", "potential": "잠재", "safe": "안전", "unknown": "확인 못 함"}[v] }}</span>
 {%- endmacro %}
 
 {% macro empty(title, body, href=none, cta=none) -%}

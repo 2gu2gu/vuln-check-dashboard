@@ -62,7 +62,9 @@
       {% if targets is defined and targets %}
       <form method="get" class="target-pick">
         <label for="target">대상</label>
-        <select id="target" name="target" data-autosubmit>
+        {# autocomplete=off — 뒤로 가기·새로 고침 때 브라우저가 '마지막에 고른 값' 을 되살려
+           놓으면, 화면은 옛 대상인데 칸만 새 대상으로 보인다(11-21 사용자 지적) #}
+        <select id="target" name="target" data-autosubmit autocomplete="off">
           {# 연습용은 따로 뒤 묶음으로 — 점검 대상 두 개와 같은 이름 아래 있으면 안 된다 #}
           {% for g in targets | grouped %}
           <optgroup label="{{ g.label }}">

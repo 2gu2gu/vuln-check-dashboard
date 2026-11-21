@@ -173,7 +173,7 @@ def test_upload_warns_that_files_stay_even_without_a_confirm_box(monkeypatch):
     _ctx(monkeypatch)
     _server(monkeypatch, lambda url, m, h, b: (400, ""))
     c = upload_probe.run(T, [_end()], {})[0]          # 글자를 적지 않아도 돈다
-    assert c.verdict == "safe"
+    assert c.verdict == "unknown"                     # 때려 보지 못한 자리는 안전이 아니다
 
 
 def test_upload_builds_multipart_that_keeps_the_raw_filename():
@@ -230,7 +230,49 @@ def test_upload_says_what_to_fix_when_even_a_txt_fails(monkeypatch):
     _ctx(monkeypatch)
     _server(monkeypatch, lambda url, m, h, b: (400, "lectureId 가 없습니다"))
     c = upload_probe.run(T, [_end()], {})[0]
-    assert c.verdict == "safe" and "HAR" in c.evidence and "칸 이름" in c.evidence
+    assert c.verdict == "unknown" and "HAR" in c.evidence and "칸 이름" in c.evidence
+
+
+def test_upload_never_calls_a_place_it_could_not_touch_safe(monkeypatch):
+    """11-21 사용자 지적: 145곳이 전부 '안전' 으로 나왔는데 사람은 같은 서비스에 쉘 파일을 올렸다.
+
+    ① 에서 못 넘어간 자리는 **점검한 것이 아니다.** 안전으로 적으면 판 전체가 거짓말이 된다.
+    """
+    _ctx(monkeypatch)
+    _server(monkeypatch, lambda url, m, h, b: (401, "로그인이 필요합니다"))
+    c = upload_probe.run(T, [_end()], {})[0]
+    assert c.verdict == "unknown"
+    assert "2. 인증" in c.evidence and "토큰" in c.evidence       # 무엇을 고쳐야 하는지 적는다
+
+    # 화면(HTML)을 돌려주는 주소도 마찬가지 — 받는 자리가 아니라는 뜻이지 안전하다는 뜻이 아니다
+    _server(monkeypatch, lambda url, m, h, b: (200, "<!doctype html><html>강의</html>"))
+    assert upload_probe.run(T, [_end()], {})[0].verdict == "unknown"
+
+
+def test_upload_fills_a_path_template_before_it_posts(monkeypatch):
+    """과제 제출 업로드는 `/lectures/{lid}/assignments/file` 로 모인다 — 틀 그대로 보내면 404 다.
+
+    11-21 실측에서 이것 때문에 진짜 업로드 자리가 ① 에서 떨어졌다.
+    """
+    _ctx(monkeypatch)
+
+    def h(url, m, hd, body):
+        if "{" in url:
+            return 404, "없는 주소"                    # 틀 그대로면 서버가 모른다
+        if m == "GET":
+            return 200, '[{"lectureId": 103}]'        # 목록에서 진짜 번호를 거둔다
+        if b'name="file"' not in body:
+            return 400, "파일이 없습니다"
+        name = body.split(b'filename="')[1].split(b'"')[0].decode()
+        return (200, "올렸습니다") if name.endswith((".txt", ".jsp")) else (400, "안 됩니다")
+    sent = _server(monkeypatch, h)
+    c = upload_probe.run(T, [_end("https://sesacedu.store/backend/lectures/{lid}/assignments/file")], {})[0]
+
+    posts = [s["url"] for s in sent if s["method"] == "POST"]
+    assert posts and all("{" not in u for u in posts), "경로 틀을 채우지 않고 보내면 안 된다"
+    assert "/lectures/103/assignments/file" in posts[0]
+    assert c.verdict == "vuln" and ".jsp" in c.evidence            # 채워 보냈더니 진짜로 받아 준다
+    assert "경로 틀을 실제 번호로 채움" in c.evidence
 
 
 def test_upload_sends_the_extra_fields(monkeypatch):
@@ -684,7 +726,9 @@ def test_filter_links_and_rows_carry_what_the_page_needs_to_filter_in_place(app,
     assert 'data-filter-sev=' in h and 'data-filter-target=' in h
     js = client.get("/static/app.js").get_data(as_text=True)
     assert "data-filter-sev" in js and "preventDefault" in js
-    assert "el.form.submit()" not in js          # 더는 쪽을 새로 열지 않는다
+    # 결과 탭 거르개는 쪽을 새로 열지 않는다. 머리의 대상 고르기는 **열어야** 하므로(11-21 사용자
+    # 지적: 대상을 바꿨는데 화면이 그대로였다) 보내는 손이 그 둘을 가르는지 본다
+    assert 'classList.contains("filters") && document.getElementById("findings")' in js
 
 
 def test_no_approval_gate_is_left_anywhere(app, client):
@@ -717,7 +761,8 @@ def test_upload_does_not_call_a_page_an_upload_endpoint(monkeypatch):
     _ctx(monkeypatch)
     _server(monkeypatch, lambda url, m, h, b: (200, "<!doctype html><html>관리자 화면</html>"))
     c = upload_probe.run(T, [_end("https://admin.sesacedu.store/users")], {})[0]
-    assert c.verdict == "safe" and "화면(HTML)" in c.evidence
+    # 취약이 아닌 것은 그때 고쳤고(11-21), 안전도 아니다 — 올려 본 적이 없는 자리다
+    assert c.verdict == "unknown" and "화면(HTML)" in c.evidence
 
 
 def test_upload_skips_a_place_that_ignores_the_file(monkeypatch):
@@ -726,7 +771,7 @@ def test_upload_skips_a_place_that_ignores_the_file(monkeypatch):
     _ctx(monkeypatch)
     _server(monkeypatch, lambda url, m, h, b: (200, '{"ok":true}'))     # 무엇을 보내든 같다
     c = upload_probe.run(T, [_end()], {})[0]
-    assert c.verdict == "safe" and "파일을 보내나 안 보내나" in c.evidence
+    assert c.verdict == "unknown" and "파일을 보내나 안 보내나" in c.evidence
 
 
 def test_upload_still_catches_a_real_endpoint(monkeypatch):

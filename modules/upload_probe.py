@@ -5,6 +5,9 @@
 드러나고, 그건 올려 보면 알 수 있다.
 
   ① 받는 구간  무해한 .txt 를 올린다. 2xx 가 아니면 업로드 자리가 아니거나 다른 칸이 더 필요하다.
+               **여기서 걸리면 판정은 '확인 못 함' 이다 — 안전이 아니다**(11-21 사용자 지적: 145곳이
+               전부 '안전' 으로 나왔는데 사람은 같은 서비스에서 쉘 파일을 올렸다. 때려 보지도 못한
+               자리를 안전이라고 적으면 판 전체가 거짓말이 된다)
                **2xx 라고 다 받는 자리는 아니다** — Next.js 같은 앱은 POST 에도 화면(HTML)을 그대로
                돌려준다. 화면이 오거나, 파일을 빼고 보내도 같은 것이 오면 받는 자리가 아니다
                (11-21 실측: 관리자 웹 화면 라우트 11곳이 이것 때문에 전부 '확장자 검증 없음' 으로 잘못 잡혔다)
@@ -14,11 +17,16 @@
                Content-Type 만 바꾸기
 
 판정: 쉘로 돌 수 있는 확장자나 경로 섞은 이름을 받아 주면 취약, 2xx 지만 돌려준 이름·경로를 알 수 없으면
-잠재(올라간 파일을 직접 찾아봐야 한다).
+잠재(올라간 파일을 직접 찾아봐야 한다), .txt 는 받는데 나머지를 다 막으면 안전,
+**① 에서 못 넘어가면 확인 못 함**(설정을 고쳐 다시 돌릴 곳이다).
+
+경로 틀(`/backend/lectures/{lid}/assignments/file`)은 `{lid}` 를 **실제로 응답하는 번호**로 채워 보낸다.
+그대로 보내면 404 라서 진짜 업로드 자리가 ① 에서 떨어진다 — 11-21 에 그래서 과제 제출 업로드를 놓쳤다.
 
 **파일이 올라가 남는다.** 올리는 내용은 표식 한 줄뿐이고 명령을 돌리는 코드가 아니다 — 받아 주는지만
 보는 점검이다. 끝난 뒤 남은 파일은 직접 지운다(근거에 적힌 표식으로 찾는다).
 """
+import re
 import uuid
 
 from dashboard import core, probe
@@ -99,6 +107,20 @@ def multipart(field: str, filename: str, content_type: str, body: bytes, extra=(
     return b"".join(parts), f"multipart/form-data; boundary={sep}"
 
 
+def real_url(url: str) -> str:
+    """경로 틀의 `{변수}` 를 실제로 응답하는 번호로 채운다 — 못 찾으면 1.
+
+    과제 제출 업로드(`/backend/lectures/{lid}/assignments/file`)처럼 업로드 자리는 대개 경로 틀로
+    모인다. 틀 그대로 POST 하면 404 라 ① 에서 떨어진다. 번호 찾기는 probe.path_ids 가 한다
+    (한 단계 위 목록을 읽어 진짜 번호를 거두고, 실행 안에서 한 번만 찾아 재사용한다).
+    """
+    if "{" not in url:
+        return url
+    for name, got in probe.path_ids(url).items():
+        url = url.replace("{" + name + "}", got or "1")
+    return re.sub(r"\{[^}/]+\}", "1", url)
+
+
 def run(target, points, params):
     field = (params.get("field") or "file").strip()
     extra = _extra(params.get("extra"))
@@ -107,13 +129,17 @@ def run(target, points, params):
         lines, verdict, keep, title = [], "safe", None, ""
         mark = MARK + "-" + uuid.uuid4().hex[:6]
         content = f"{mark}\n점검용 파일입니다. 지워도 됩니다.\n".encode()
+        url = real_url(p.url)
 
         def note(stage, text):
             lines.append(f"{STAGE[stage]} {text}")
 
+        if url != p.url:
+            note("screen", f"경로 틀을 실제 번호로 채움: {p.url} → {url}")
+
         def send(filename, ctype):
             body, head = multipart(field, filename, ctype, content, extra)
-            return core.fetch(p.url, method="POST", raw_body=body, content_type=head)
+            return core.fetch(url, method="POST", raw_body=body, content_type=head)
 
         def send_without_file():
             """파일 칸만 빼고 같은 요청을 보낸다 — 응답이 같으면 파일을 보고 있지 않다는 뜻이다."""
@@ -121,28 +147,37 @@ def run(target, points, params):
             parts = [f'--{sep}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
                      for k, v in extra]
             parts.append(f"--{sep}--\r\n".encode())
-            return core.fetch(p.url, method="POST", raw_body=b"".join(parts),
+            return core.fetch(url, method="POST", raw_body=b"".join(parts),
                               content_type=f"multipart/form-data; boundary={sep}")
+
+        def gave_up(text, resp):
+            """때려 보지 못하고 끝났다 — **안전이 아니라 '확인 못 함'** 이다."""
+            note("screen", text)
+            out.append(Check(point=p, verdict="unknown", evidence="\n".join(lines), response=resp,
+                             recommendation=_REC))
 
         # ① 받는 구간 — 무해한 .txt
         r0 = send(f"{mark}.txt", "text/plain")
-        note("screen", f"POST {p.url}  [{field}={mark}.txt] → {r0.status} · {len(r0.body)}B")
+        note("screen", f"POST {url}  [{field}={mark}.txt] → {r0.status} · {len(r0.body)}B")
+        if r0.status in (401, 403):
+            gave_up(f"{r0.status} — 로그인이 필요한 자리다. 대상 탭의 **2. 인증** 에 테스트 계정 토큰을 "
+                    "넣고 다시 돌리세요(토큰이 만료됐을 수도 있습니다)", r0)
+            continue
         if r0.status not in OK:
-            note("screen", f"무해한 .txt 도 {r0.status} — 업로드 자리가 아니거나 다른 칸이 더 필요함(후보 제외). "
-                           "HAR 에서 본 칸 이름과 같이 보낼 값을 설정에 적어 보세요")
-            out.append(Check(point=p, verdict="safe", evidence="\n".join(lines), response=r0))
+            gave_up(f"무해한 .txt 도 {r0.status} — 업로드 자리가 아니거나 다른 칸이 더 필요합니다. "
+                    f"칸 이름을 '{field}' 로 보냈습니다 — HAR 에서 본 multipart 의 파일 칸 이름과 "
+                    "같이 보낼 값(lectureId 등)을 설정에 적고 다시 돌리세요", r0)
             continue
         # 2xx 라고 다 받는 자리는 아니다 — 받는 자리인지 두 가지로 가린다
         if "html" in r0.header("Content-Type").lower() or r0.body.lstrip()[:9].lower().startswith("<!doctype"):
-            note("screen", "올렸는데 **화면(HTML)** 이 돌아옴 — 업로드를 처리한 자리가 아니다(후보 제외). "
-                           "앱이 POST 에도 그 주소의 화면을 그려 주는 것뿐이다")
-            out.append(Check(point=p, verdict="safe", evidence="\n".join(lines), response=r0))
+            gave_up("올렸는데 **화면(HTML)** 이 돌아옴 — 업로드를 처리한 자리가 아니다. "
+                    "앱이 POST 에도 그 주소의 화면을 그려 주는 것뿐이다", r0)
             continue
         bare = send_without_file()
         note("screen", f"파일 칸을 빼고 같은 요청: → {bare.status} · {len(bare.body)}B")
         if bare.status == r0.status and bare.body == r0.body:
-            note("screen", "파일을 보내나 안 보내나 **같은 응답** — 이 주소는 파일을 보고 있지 않다(후보 제외)")
-            out.append(Check(point=p, verdict="safe", evidence="\n".join(lines), response=r0))
+            gave_up(f"파일을 보내나 안 보내나 **같은 응답** — 이 주소는 '{field}' 칸을 보고 있지 않다. "
+                    "칸 이름이 맞는지 보세요", r0)
             continue
         keep = r0
         # ② 기본 — 그냥 돌 수 있는 확장자

@@ -249,6 +249,8 @@ table.grid { width: 100%; border-collapse: collapse; }
 .v-vuln { color: var(--sev-high); background: var(--hit-soft); }
 .v-potential { color: var(--sev-medium); background: var(--potential-soft); }
 .v-safe { color: var(--sub); background: var(--safe-soft); }
+/* 확인 못 함 — 안전과 **같은 색이면 안 된다**. 테두리만 두고 바탕을 비워 '아직 아무것도 모른다' 로 보이게 한다 */
+.v-unknown { color: var(--sub); background: transparent; border-style: dashed; }
 .vchip { display: inline-flex; align-items: center; gap: 4px; margin: 0 8px 2px 0; }
 .vchip small { color: var(--sub); font-size: 11px; }
 
