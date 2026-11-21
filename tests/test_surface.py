@@ -140,16 +140,15 @@ def test_probe_flow_and_dedupe(app, client, seeded, monkeypatch):
     assert "입력값이 그대로 반사됨" in client.get(f"/?target={tid}").get_data(as_text=True)
 
 
-def test_probe_requires_confirm_and_points(client, seeded, monkeypatch):
+def test_probe_needs_points_but_no_confirm_box(client, seeded, monkeypatch):
+    """확인 칸은 뺐다(11-21) — 그래도 고른 지점이 없으면 돌지 않는다."""
     tid, ids = seeded
     calls = []
     monkeypatch.setattr(core, "fetch", lambda url, **kw: calls.append(url))
-    page = client.post("/surface/probe", data={"target_id": tid, "module_id": "reflection_check",
-                                               "point": [ids["category"]]}, follow_redirects=True).get_data(as_text=True)
-    assert "체크해야" in page
-    page = client.post("/surface/probe", data={"target_id": tid, "module_id": "reflection_check", "confirm": "yes"},
+    page = client.post("/surface/probe", data={"target_id": tid, "module_id": "reflection_check"},
                        follow_redirects=True).get_data(as_text=True)
     assert "지점을 고르세요" in page and calls == []
+    assert 'name="confirm"' not in page
 
 
 def test_probe_module_not_runnable_from_modules_tab(client, seeded):
@@ -307,7 +306,7 @@ def test_run_button_sits_outside_the_folded_body(client, seeded):
     assert 'form="run-surface_collect"' in quick and ">수집</button>" in quick
     assert 'id="run-surface_collect"' in body and "<button" not in body
     # 능동 모듈의 '자체 환경 확인' 도 접힌 쪽에 있고 같은 폼으로 간다
-    assert 'name="confirm" value="yes" form="run-surface_collect"' in quick
+    assert 'form="run-surface_collect"' in quick      # 확인 칸은 뺐다(11-21) — 실행 단추는 접힌 몸통 밖
     probe = re.search(r'data-mod="xss_probe".*?</article>', page, re.S).group(0)
     assert "지점 골라 점검" in probe.split('class="mod-body"', 1)[0]
 

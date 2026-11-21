@@ -659,3 +659,24 @@ def test_filter_links_and_rows_carry_what_the_page_needs_to_filter_in_place(app,
     js = client.get("/static/app.js").get_data(as_text=True)
     assert "data-filter-sev" in js and "preventDefault" in js
     assert "el.form.submit()" not in js          # 더는 쪽을 새로 열지 않는다
+
+
+def test_no_approval_gate_is_left_anywhere(app, client):
+    """실행 전에 사람이 글자를 적거나 칸을 누르게 하는 문턱은 하나도 없다(11-20·21 사용자 지시).
+
+    경고는 설명에 남고, 범위는 core.fetch 의 scope 검사가 지킨다 — 문턱이 지키던 게 아니다.
+    """
+    from dashboard import routes
+    from tests.test_app import add_target
+    add_target(client, "https://sesacedu.store", name="t")
+    with app.test_request_context():
+        mods = routes._modules()
+    for m in mods.values():
+        names = {p["name"] for p in (m.params or [])}
+        assert not {n for n in names if n.endswith("_ack")}, m.id
+    for url in ("/modules?target=1", "/tools?target=1", "/targets?target=1"):
+        page = client.get(url).get_data(as_text=True)
+        assert 'name="confirm"' not in page, url
+    src = (routes.__file__,)
+    import io as _io
+    assert "자체 환경 확인'에 체크해야" not in _io.open(src[0], encoding="utf-8").read()
