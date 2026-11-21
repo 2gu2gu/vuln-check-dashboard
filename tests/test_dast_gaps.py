@@ -249,6 +249,36 @@ def test_upload_never_calls_a_place_it_could_not_touch_safe(monkeypatch):
     assert upload_probe.run(T, [_end()], {})[0].verdict == "unknown"
 
 
+def test_upload_finds_the_shell_the_team_uploaded_by_hand(monkeypatch):
+    """팀 라이트업(2026-11-15)의 과제 제출 업로드를 그대로 흉내 낸 서버.
+
+    확장자 검사가 '이름 안에 허용 확장자가 들어 있나(contains)' 라서 `shell.pdf.jsp` 가 통과하고,
+    저장 코드는 이름의 역슬래시를 폴더로 써 버린다. 전까지 모듈은 `x.jsp.txt`(뒤에 붙이는 모양)만
+    보고 있어서 이 서버에서 아무것도 못 찾았다 — 사람이 손으로 찾은 것을 모듈이 못 봤다.
+    """
+    _ctx(monkeypatch)
+    ALLOW = (".pdf", ".zip", ".docx", ".hwp", ".pptx", ".png", ".jpg", ".jpeg", ".txt")
+
+    def h(url, m, hd, body):
+        if b'name="file"' not in body:
+            return 400, "파일이 없습니다"
+        name = body.split(b'filename="')[1].split(b'"')[0].decode("utf-8", "replace")
+        if not any(a in name.lower() for a in ALLOW):      # 이름 '안에' 들어 있기만 하면 통과한다
+            return 400, "허용하지 않는 확장자입니다"
+        saved = "assignment/123/" + name.replace("\\", "/")
+        return 201, '{"work":"' + saved + '","size":64}'   # 저장 자리를 응답에 그대로 돌려준다
+    _server(monkeypatch, h)
+    c = upload_probe.run(T, [_end()], {})[0]
+
+    assert c.verdict == "vuln" and c.severity == "critical"
+    assert c.title == "업로드 이름의 경로 조작 통과"              # 둘 다 통하면 더 나쁜 쪽으로 적는다
+    assert ".pdf.jsp" in c.evidence and "허용 확장자를 앞에 끼운" in c.evidence
+    assert "응답에 저장 자리가 보인다" in c.evidence              # work 경로를 근거에 남긴다
+    assert "../" in c.evidence                                 # 경로를 섞은 이름이 통한 줄이 남는다
+    # 리터럴 역슬래시(팀이 쓴 모양)도 보낼 수 있어야 한다 — 앞 모양이 먼저 통하면 거기서 멈춘다
+    assert any("\\" in s for s in upload_probe.PATHS)
+
+
 def test_upload_fills_a_path_template_before_it_posts(monkeypatch):
     """과제 제출 업로드는 `/lectures/{lid}/assignments/file` 로 모인다 — 틀 그대로 보내면 404 다.
 
