@@ -207,15 +207,22 @@ TOOLS = [
          ["target_id"])},
 
     {"name": "make_campaign", "write": True,
-     "description": "점검 결과와 CVE 후보로 **침투 시나리오(캠페인) 초안**을 한 벌 짠다. 관찰한 버전과 "
-                    "CVE 를 앞단에, 결과를 모듈이 적어 둔 ATT&CK 전술 열에 놓고 전술 순서로 잇는다. "
-                    "보고서에 그대로 옮길 줄거리도 같이 돌려준다. 단계 사이에 무엇을 넘겼는지는 사람이 적는다.",
+     "description": "점검 결과에서 나온 **CVE 를 뼈대로** 침투 시나리오(캠페인) 초안을 한 벌 짠다. "
+                    "뼈대는 `관찰한 제품·버전(점검이 본 것) → 그 버전에 걸리는 CVE → 그 전술의 결과` 다. "
+                    "팀이 적어 둔 CVE 는 전술·상태·근거 문서를 그대로 쓰고, 결과는 그 결과가 쓴 기법이 "
+                    "가리키는 전술에 놓는다. 보고서에 옮길 줄거리도 같이 돌려준다. "
+                    "단계 사이에 무엇을 넘겼는지(토큰·셸)는 사람이 보드에서 적는다.",
      "inputSchema": _obj({
          "target_id": {"type": "integer", "description": "대상 id"},
          "name": {"type": "string", "description": "캠페인 이름(비우면 '<대상> 침투 시나리오')"},
          "goal": {"type": "string", "description": "이 시나리오의 목표 한 줄"},
          "statuses": {"type": "array", "items": {"type": "string"},
-                      "description": "어떤 처리 상태의 결과를 넣을지(기본 confirmed 만). open 을 넣으면 미확인도"}},
+                      "description": "어떤 처리 상태의 결과를 넣을지(기본 confirmed 만). open 을 넣으면 미확인도"},
+         "severity": {"type": "array", "items": {"type": "string"},
+                      "description": "넣을 심각도(critical·high·medium·low). 비우면 info 만 뺀다. "
+                                     "확인됨이 많은 대상은 critical·high 로 좁히는 게 읽기 좋다"},
+         "top": {"type": "integer",
+                 "description": "보드에 올릴 가짓수 상한(기본 20). 같은 제목은 한 노드로 묶고 심한 것부터 올린다"}},
          ["target_id"])},
 
     {"name": "set_status", "write": True,

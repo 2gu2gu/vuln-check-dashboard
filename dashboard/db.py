@@ -102,6 +102,9 @@ CREATE TABLE IF NOT EXISTS campaign_nodes (
     sub TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT '',
     note TEXT NOT NULL DEFAULT '',
+    -- 보드에 놓인 자리(자유 배치). -1 은 아직 안 정함 — '정렬' 이 놓아 준다
+    x REAL NOT NULL DEFAULT -1,
+    y REAL NOT NULL DEFAULT -1,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS campaign_edges (
@@ -178,6 +181,10 @@ MIGRATIONS = [
     ("points", "status", "INTEGER NOT NULL DEFAULT 0"),
     ("points", "evidence", "TEXT NOT NULL DEFAULT ''"),
     ("points", "risk", "INTEGER NOT NULL DEFAULT 0"),
+    # 수사보드를 칸에서 **자유 배치**로 바꿨다(11-22 사용자 지시: 칸에 고정돼 자유도가 없다).
+    # 카드마다 놓인 자리를 들고 있는다. -1 은 아직 자리를 안 정했다는 뜻 — 그때는 '정렬' 이 놓는다
+    ("campaign_nodes", "x", "REAL NOT NULL DEFAULT -1"),
+    ("campaign_nodes", "y", "REAL NOT NULL DEFAULT -1"),
 ]
 
 

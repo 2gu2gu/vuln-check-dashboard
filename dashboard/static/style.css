@@ -758,6 +758,23 @@ html { scroll-behavior: smooth; }
 .cp-main { min-width: 0; }
 .cp-scroll { overflow-x: auto; padding-bottom: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
 .cp-canvas { position: relative; display: flex; gap: 10px; padding: 10px; min-height: 420px; width: max-content; min-width: 100%; }
+/* ── 자유 배치 보드(11-22) ─────────────────────────────
+   카드는 칸에 갇히지 않고 자기 자리(x·y)에 놓인다. 전술은 배경 띠로 남아 어디가 어느
+   전술인지 보이게 한다 — 띠 위에 놓으면 그 전술이 된다. */
+.cp-canvas.cp-free { display: block; padding: 0; }
+.cp-canvas.cp-free.over { background: var(--surface-2); }
+.cp-canvas.cp-free .cp-node { position: absolute; width: 220px; cursor: grab; }
+.cp-canvas.cp-free .cp-node.moving { cursor: grabbing; box-shadow: 0 6px 18px rgba(0,0,0,.18); z-index: 5; }
+.cp-bands { position: absolute; inset: 0; display: flex; pointer-events: none; }
+.cp-band { flex: 0 0 260px; border-right: 1px dashed var(--line); padding: 8px 10px;
+           display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--sub); }
+.cp-band.used { background: color-mix(in srgb, var(--surface-2) 55%, transparent); color: var(--text); }
+.cp-band.home { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+body.cp-moving, body.cp-moving * { user-select: none; }   /* 끄는 동안 글자가 선택되면 보기 흉하다 */
+.cp-zoomer { position: relative; }
+.cp-tools { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; flex-wrap: wrap; }
+.cp-zoom { display: inline-flex; align-items: center; gap: 4px; }
+.cp-zoom #cp-zoom-at { min-width: 44px; text-align: center; font-size: 12px; color: var(--sub); }
 /* 모든 열을 같은 모양(가로 글자, 150px)으로 둔다. 빈 열을 세로 글자로 접어 두었더니 찌그러져 보였다(사용자 피드백).
    빈 열은 흐리게만, 올린 열은 넓고 진하게. 길어진 보드는 끄는 동안 가장자리에서 밀린다. */
 .cp-col { flex: 0 0 150px; display: flex; flex-direction: column; border: 1px dashed var(--line); border-radius: var(--radius);
@@ -771,7 +788,7 @@ html { scroll-behavior: smooth; }
 .cp-col.home { border-color: var(--accent); }
 .cp-col.over { border-color: var(--accent); background: var(--accent-soft); }
 .cp-drop { flex: 1 1 auto; display: flex; flex-direction: column; gap: 14px; padding: 4px 8px 12px; min-height: 60px; }
-.cp-node { position: relative; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 7px 9px;
+.cp-node { position: relative; z-index: 2; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 7px 9px;
            font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,.06); cursor: grab; z-index: 2; }
 .cp-node.k-cve { border-left: 3px solid var(--hit); }
 .cp-node.k-finding { border-left: 3px solid var(--sev-low); }
@@ -789,8 +806,11 @@ html { scroll-behavior: smooth; }
 .cp-handle:hover { transform: scale(1.25); }
 body.cp-linking, body.cp-linking * { cursor: crosshair !important; user-select: none; }
 body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
-.cp-lines { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 1; }
-.cp-lines path.cp-edge, .cp-lines path.cp-temp { fill: none; stroke: var(--accent); stroke-width: 2; }
+/* 선은 카드 **뒤**로 간다 — 앞에 두면 제목 위를 지나간다(11-22 사용자 지적) */
+.cp-lines { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 0; }
+/* 선은 가늘고 옅게 — 아르텍스 보드처럼 여러 개가 겹쳐도 소란스럽지 않게(11-22 참고 화면) */
+.cp-lines path.cp-edge, .cp-lines path.cp-temp { fill: none; stroke: var(--accent); stroke-width: 1.5; opacity: .5; }
+.cp-lines path.cp-edge:hover { opacity: 1; }
 .cp-lines path.cp-temp { stroke-dasharray: 5 4; }
 .cp-lines marker path { fill: var(--accent); }
 .cp-labels { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
@@ -799,7 +819,10 @@ body.cp-linking .cp-node:hover { outline: 2px solid var(--accent); }
             background: var(--surface); border: 1px solid var(--accent); border-radius: 8px; padding: 2px 2px 2px 6px;
             font-size: 11px; line-height: 1.25; color: var(--accent); width: max-content; max-width: 96px; text-align: center; }
 .cp-label span { cursor: text; overflow-wrap: anywhere; }
-.cp-label.empty { border-style: dashed; color: var(--sub); }
+/* 아직 안 적은 '넘긴 것?' 은 **숨겨 둔다** — 선마다 떠 있으면 보드가 글자로 덮인다(11-22).
+   자리는 그대로라 그 위에 마우스를 올리면 떠오르고, 적어 둔 글은 늘 보인다 */
+.cp-label.empty { border-style: dashed; color: var(--sub); opacity: 0; transition: opacity .12s; }
+.cp-label.empty:hover { opacity: 1; }
 @media (max-width: 1100px) {
   .cp-shell { grid-template-columns: 1fr; }
   .cp-cands { position: static; max-height: 420px; }

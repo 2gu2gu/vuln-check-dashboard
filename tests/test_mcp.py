@@ -177,12 +177,76 @@ def test_make_campaign_lays_the_findings_out_in_tactic_columns(client, app):
     assert "observed" in kinds                         # 근거에 보인 Tomcat 10.1.1 도 올라간다
 
 
-def test_make_campaign_says_what_to_do_when_nothing_is_confirmed(client, app):
+def test_make_campaign_groups_the_same_title_and_takes_the_worst_first(client, app):
+    """확인됨으로 만들면 사용자 웹만 156건이었다 — 보드가 못 쓰게 된다(11-22 사용자 지적).
+
+    같은 제목은 한 노드로 묶고(후보 패널이 하는 것과 같다), 심각도로 고르고, 가짓수에 상한을 둔다.
+    """
     add_target(client)
-    seed_finding(app, 1, status="open")
+    for i in range(7):
+        seed_finding(app, 1, title="요청 수 제한 없음", module_id="rate_limit_probe", severity="medium",
+                     location=f"https://sesacedu.store/backend/a{i}")
+    seed_finding(app, 1, title="민감 파일 읽기", module_id="traversal_probe", severity="critical")
     client.post("/connect/write", data={"on": "1"}, follow_redirects=True)
-    out = call(client, app, "make_campaign", {"target_id": 1})
-    assert out["isError"] is True and "open" in text_of(out)
+
+    out = text_of(call(client, app, "make_campaign", {"target_id": 1, "name": "묶기"}))
+    assert "외 6곳" in out                                  # 일곱 건이 한 줄로
+    with app.app_context():
+        n = get_db().execute("SELECT COUNT(*) FROM campaign_nodes WHERE campaign_id = 1 AND kind = 'finding'"
+                             ).fetchone()[0]
+    assert n == 2                                           # 제목 두 가지 = 노드 두 개
+
+    # 심각도로 좁히면 그것만, 상한을 걸면 심한 것부터
+    out = text_of(call(client, app, "make_campaign",
+                       {"target_id": 1, "name": "크리티컬만", "severity": ["critical"]}))
+    assert "민감 파일 읽기" in out and "요청 수 제한 없음" not in out
+    out = text_of(call(client, app, "make_campaign", {"target_id": 1, "name": "한 가지만", "top": 1}))
+    assert "민감 파일 읽기" in out and "1가지는 뺐습니다" in out
+
+
+def test_make_campaign_can_stand_on_the_team_cves_alone(client, app):
+    """확인된 결과가 없어도 **팀이 적어 둔 CVE** 가 있으면 그것으로 뼈대를 세운다(11-22: CVE 중심)."""
+    add_target(client)
+    seed_finding(app, 1, status="open")                 # 미확인뿐 — 결과는 안 올라간다
+    client.post("/connect/write", data={"on": "1"}, follow_redirects=True)
+    out = text_of(call(client, app, "make_campaign", {"target_id": 1}))
+    assert "CVE" in out and "CVE-2021-44228" in out      # 팀 목록(Log4Shell)이 뼈대가 된다
+    with app.app_context():
+        kinds = [r[0] for r in get_db().execute(
+            "SELECT kind FROM campaign_nodes WHERE campaign_id = 1")]
+    assert "cve" in kinds and "finding" not in kinds
+
+
+def test_make_campaign_hangs_the_cves_under_the_version_it_saw(client, app):
+    """뼈대는 **관찰한 버전 → 그 버전의 CVE → 그 전술의 결과** 다(11-22 사용자 지시).
+
+    전에는 결과를 전술 열에 흩어 놓기만 해 '맞는 게 없는' 판이 됐다.
+    """
+    add_target(client)
+    seed_finding(app, 1, title="서버 정보 노출", module_id="header_probe",
+                 evidence="Server: Apache Tomcat/10.1.1 이 그대로 나옵니다")
+    seed_finding(app, 1, title="강의 목록 검색어에 SQL 주입", module_id="sqli_probe", severity="critical")
+    client.post("/connect/write", data={"on": "1"}, follow_redirects=True)
+    out = text_of(call(client, app, "make_campaign", {"target_id": 1, "name": "CVE 중심"}))
+    assert "정찰 — 점검이 본 제품·버전" in out and "Apache Tomcat 10.1.1" in out
+
+    with app.app_context():
+        db = get_db()
+        nodes = {r["id"]: dict(r) for r in db.execute("SELECT * FROM campaign_nodes WHERE campaign_id = 1")}
+        edges = [dict(r) for r in db.execute("SELECT * FROM campaign_edges WHERE campaign_id = 1")]
+    ver = [n for n in nodes.values() if n["kind"] == "observed"]
+    cves = [n for n in nodes.values() if n["kind"] == "cve"]
+    assert ver and cves
+    # 관찰한 버전에서 그 버전의 CVE 로 선이 간다
+    linked = [e for e in edges if e["src"] in {v["id"] for v in ver}
+              and e["dst"] in {c["id"] for c in cves}]
+    assert linked and linked[0]["label"] == "버전이 맞음"
+    # 팀이 적어 둔 전술·상태를 그대로 쓴다 — 딸깍이가 지어내지 않는다
+    tomcat = [c for c in cves if c["ref"] == "CVE-2025-24813"][0]
+    assert tomcat["tactic"] == "TA0001" and tomcat["status"] == "확인" and "readonly" in tomcat["note"]
+    # SQL 주입 결과는 그 기법(T1190)이 가리키는 초기 접근으로 간다 — 모듈 첫 전술이 아니라
+    sqli = [n for n in nodes.values() if "SQL 주입" in n["title"]][0]
+    assert sqli["tactic"] == "TA0001"
 
 
 def test_cve_candidates_reads_versions_out_of_the_evidence(client, app):
