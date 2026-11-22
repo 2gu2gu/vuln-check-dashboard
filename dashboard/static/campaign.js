@@ -164,6 +164,40 @@
     return lanes[i];
   }
 
+  // ── 빈 띠 접기(11-22 사용자: 안 쓰는 칸 때문에 공간이 너무 뜬다) ─────────
+  // 자리(x)는 **원래 띠 번호 그대로** 저장해 두고, 화면에만 쓰는 띠를 당겨 붙여 그린다.
+  // 펴면 그대로 돌아온다 — 저장된 값을 건드리지 않는다.
+  var FOLD = true;
+  try { FOLD = localStorage.getItem("cpFold") !== "0"; } catch (e) {}
+  var slot = {};                       // 원래 띠 번호 → 화면에서 몇 번째
+
+  function reslot() {
+    var used = {};
+    state.nodes.forEach(function (n) { used[n.tactic] = true; });
+    slot = {};
+    var at = 0;
+    lanes.forEach(function (t, i) {
+      if (!FOLD || used[t]) slot[i] = at++;
+    });
+    return at || 1;
+  }
+
+  function seat(x) {                   // 저장된 x → 화면 x
+    var i = Math.max(0, Math.min(lanes.length - 1, Math.floor(x / LANE_W)));
+    var s = slot[i];
+    if (s === undefined) s = 0;        // 접힌 띠에 있던 카드는 첫 칸에 보인다
+    return s * LANE_W + (x - i * LANE_W);
+  }
+
+  function unseat(dx) {                // 화면 x → 저장할 x
+    var s = Math.max(0, Math.floor(dx / LANE_W));
+    var i = 0;
+    for (var k in slot) {
+      if (slot[k] === s) { i = +k; break; }
+    }
+    return i * LANE_W + (dx - s * LANE_W);
+  }
+
   function zoom(to) {
     Z = Math.max(0.4, Math.min(1.6, Math.round(to * 20) / 20));
     canvas.style.transform = "scale(" + Z + ")";
@@ -182,19 +216,21 @@
   function render() {
     var used = {};
     state.nodes.forEach(function (n) { used[n.tactic] = true; });
-    if (bands) [].forEach.call(bands.children, function (b) {
+    var wide = reslot();                       // 접기까지 셈한 띠 수
+    if (bands) [].forEach.call(bands.children, function (b, i) {
       b.classList.toggle("used", !!used[b.dataset.tactic]);
+      b.style.display = (slot[i] === undefined) ? "none" : "";
     });
     canvas.querySelectorAll(".cp-node").forEach(function (d) { d.remove(); });
     var far = 0;
     state.nodes.forEach(function (n) {
       var d = nodeEl(n);
-      d.style.left = n.x + "px";
+      d.style.left = seat(n.x) + "px";
       d.style.top = n.y + "px";
       canvas.appendChild(d);
       far = Math.max(far, n.y + 150);
     });
-    canvas.style.width = (lanes.length * LANE_W) + "px";
+    canvas.style.width = (wide * LANE_W) + "px";
     canvas.style.height = Math.max(420, far + PAD) + "px";
     zoom(Z);
     drawMap();
@@ -250,7 +286,8 @@
     e.preventDefault();
     // 보드 왼쪽 위를 기준으로 센다 — 화면 좌표 그대로 쓰면 보드가 스크롤된 만큼 어긋난다
     var c = canvas.getBoundingClientRect();
-    moving = { d: d, n: n, dx: (e.clientX - c.left) / Z - n.x, dy: (e.clientY - c.top) / Z - n.y, dirty: false };
+    moving = { d: d, n: n, dx: (e.clientX - c.left) / Z - seat(n.x), dy: (e.clientY - c.top) / Z - n.y,
+               dirty: false, seen: seat(n.x) };
     d.classList.add("moving");
     document.body.classList.add("cp-moving");
     try { d.setPointerCapture(e.pointerId); } catch (err) {}
@@ -260,9 +297,11 @@
   function onMove(e) {
     if (!moving) return;
     var c = canvas.getBoundingClientRect();
-    var x = Math.max(0, (e.clientX - c.left) / Z - moving.dx);
+    var x = Math.max(0, (e.clientX - c.left) / Z - moving.dx);   // 화면 자리
     var y = Math.max(0, (e.clientY - c.top) / Z - moving.dy);
-    moving.n.x = x; moving.n.y = y; moving.dirty = true;
+    moving.seen = x;
+    moving.n.x = unseat(x);                                      // 저장은 원래 띠 자리로
+    moving.n.y = y; moving.dirty = true;
     moving.d.style.left = x + "px";
     moving.d.style.top = y + "px";
     drawLines();
@@ -421,7 +460,7 @@
     var data;
     try { data = JSON.parse(e.dataTransfer.getData("text/plain")); } catch (err) { return; }
     var c = canvas.getBoundingClientRect();
-    var x = Math.max(0, Math.round((e.clientX - c.left) / Z - CARD_W / 2));
+    var x = unseat(Math.max(0, Math.round((e.clientX - c.left) / Z - CARD_W / 2)));
     var y = Math.max(TOP, Math.round((e.clientY - c.top) / Z - 20));
     data.tactic = laneAt(x);          // 놓은 자리가 우선 — 후보의 전술은 기본값일 뿐이다
     data.x = x; data.y = y;
@@ -431,6 +470,17 @@
   // ── 정렬 · 확대 축소 ──────────────────────────────────
   var arrangeBtn = document.getElementById("cp-arrange");
   if (arrangeBtn) arrangeBtn.addEventListener("click", function () { post("/arrange"); });
+  var foldBtn = document.getElementById("cp-fold");
+  function foldLabel() {
+    if (foldBtn) foldBtn.textContent = FOLD ? "빈 띠 펴기" : "빈 띠 접기";
+  }
+  if (foldBtn) foldBtn.addEventListener("click", function () {
+    FOLD = !FOLD;
+    try { localStorage.setItem("cpFold", FOLD ? "1" : "0"); } catch (e) {}
+    foldLabel();
+    render();
+  });
+  foldLabel();
   document.querySelectorAll("[data-zoom]").forEach(function (b) {
     b.addEventListener("click", function () {
       var how = b.dataset.zoom;

@@ -108,9 +108,21 @@ def create_app(test_config=None):
     def csrf_field():
         return Markup('<input type="hidden" name="_csrf" value="%s">' % escape(csrf_token()))
 
+    # 정적 파일 주소에 붙일 값 — **파일이 바뀌면 주소도 바뀌게** 한다. 안 그러면 브라우저가
+    # 옛 style.css·app.js 를 계속 써서, 고쳐 올려도 사람 화면만 그대로다
+    # (11-22 사용자: "확대 축소는 아직도 안 되네" — 서버는 새 파일인데 브라우저가 옛것을 쓰고 있었다)
+    def _asset_v():
+        newest = 0.0
+        static = Path(app.static_folder or "")
+        for name in ("style.css", "app.js", "campaign.js"):
+            f = static / name
+            if f.exists():
+                newest = max(newest, f.stat().st_mtime)
+        return str(int(newest)) or __version__
+
     app.jinja_env.globals.update(SEVERITY_LABEL=SEVERITY_LABEL, RUN_VERB=RUN_VERB, STATUSES=db.STATUSES, PROJECTS=app.config["PROJECTS"],
                                  csrf_token=csrf_token, csrf_field=csrf_field, VERSION=__version__,
-                                 wordlist_options=wordlists.available)
+                                 ASSET=_asset_v(), wordlist_options=wordlists.available)
 
     from .routes import bp, module_needs
     app.jinja_env.globals["module_needs"] = module_needs

@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
@@ -9,7 +9,7 @@
   <title>{% block title %}결과{% endblock %} · 딸깍이</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=ASSET) }}">
   {# 메뉴가 열렸는지 닫혔는지를 그리기 전에 정한다 — 늦게 정하면 한 번 번쩍인다.
      좁은 화면은 저장된 값과 상관없이 닫고 시작한다(열린 채로 본문을 덮으면 못 읽는다). #}
   <script>(function(){var r=document.documentElement;r.dataset.side="open";
@@ -148,6 +148,6 @@
     </div>
   </div>
 </aside>
-<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script src="{{ url_for('static', filename='app.js', v=ASSET) }}"></script>
 </body>
 </html>
