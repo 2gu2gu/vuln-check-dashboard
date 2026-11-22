@@ -191,6 +191,19 @@ def test_campaign_rejects_bad_values(app, client):
     assert client.post("/campaigns/9999/nodes", data={}).status_code == 404
 
 
+def test_a_campaign_number_that_is_gone_does_not_quietly_show_another(app, client):
+    """없는 번호인데 화면만 다른 캠페인을 보이면, 그 화면의 단추가 엉뚱한 캠페인에 걸린다.
+
+    실제로 그렇게 남의 캠페인 이름을 바꿨다(11-22).
+    """
+    tid = _target(app)
+    cid = _make_campaign(client, tid)
+    r = client.get(f"/scenario?target={tid}&campaign={cid + 999}")
+    assert r.status_code == 302
+    assert f"campaign={cid}" in r.headers["Location"]      # 주소가 지금 보는 캠페인으로 맞춰진다
+    assert "#board" in r.headers["Location"]
+
+
 def test_campaign_name_and_goal_can_be_fixed_later(app, client):
     """처음에 급히 지은 이름이 보드에 계속 남는다 — 고칠 수 있어야 한다(11-22 사용자)."""
     tid = _target(app)
