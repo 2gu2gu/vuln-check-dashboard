@@ -1482,6 +1482,43 @@ def _owasp_key(mod):
     return standards.EXTRA[code][1] if code in standards.EXTRA else ""
 
 
+def _report_scenarios(targets):
+    """보고서에 실을 시나리오 — 그 대상들의 캠페인(수사보드) 그대로.
+
+    양식의 Part B 가 시나리오 한 건을 한 절로 쓴다. 딸깍이의 캠페인이 곧 그 시나리오다.
+    번호는 캠페인 이름이 'S1 …' 처럼 시작하면 그것을, 아니면 놓인 차례대로 S1·S2… 로 준다.
+    단계(STEP)는 목표가 아닌 카드이고, 전술 순서 → 보드의 왼쪽→오른쪽 차례로 센다.
+    카드가 둘도 안 되는 캠페인은 싣지 않는다 — 그림도 이야기도 안 된다.
+    """
+    db = get_db()
+    ids = [t["id"] for t in targets]
+    marks = ",".join("?" * len(ids)) or "NULL"
+    out = []
+    for n, c in enumerate(db.execute(f"SELECT * FROM campaigns WHERE target_id IN ({marks}) "
+                                     f"ORDER BY id", ids).fetchall(), 1):
+        nodes = [dict(r) for r in db.execute(
+            "SELECT * FROM campaign_nodes WHERE campaign_id = ? ORDER BY id", [c["id"]])]
+        edges = [dict(r) for r in db.execute(
+            "SELECT * FROM campaign_edges WHERE campaign_id = ? ORDER BY id", [c["id"]])]
+        if len(nodes) < 2:
+            continue
+        head = re.match(r"^(S\d+)\b", c["name"] or "")
+        sid = head.group(1) if head else f"S{n}"
+        steps = sorted((x for x in nodes if x["kind"] != "goal"),
+                       key=lambda x: (TACTIC_ORDER.get(x["tactic"], 99), x["x"], x["y"]))
+        for k, node in enumerate(steps, 1):
+            node["step_id"] = f"{sid}-STEP{k}"
+        goals = [x for x in nodes if x["kind"] == "goal"]
+        for k, node in enumerate(goals, 1):
+            node["goal_id"] = f"O-{k}"
+        out.append({
+            "sid": sid, "name": re.sub(r"^S\d+\s*", "", c["name"] or "").strip() or c["name"],
+            "goal": c["goal"] or "", "target_id": c["target_id"],
+            "nodes": nodes, "edges": edges, "steps": steps, "goals": goals,
+        })
+    return out
+
+
 def _owasp_rows(items):
     """유형별 건수 — 화면 '점검 현황' 과 같은 셈법으로, 보고서에 실린 건만 센다.
 
@@ -1532,6 +1569,8 @@ def report_docx(tid):
         one = owner[r["id"]]
         asset, zone = ASSETS.get(one["role"], ("[ ]", "[ ]"))
         items.append({
+            # 결과 줄 번호 — 캠페인 노드가 이 번호로 결과를 가리킨다(시나리오 사용 칸)
+            "finding_id": r["id"],
             "target_id": one["id"], "target_name": one["name"], "url": one["url"],
             "asset_id": asset, "zone": zone,
             "module_id": r["module_id"], "module_name": mod.name if mod else r["module_id"],
@@ -1559,7 +1598,8 @@ def report_docx(tid):
         "tool": f"딸깍이 {__version__}",
     }
     buf = BytesIO()
-    maker.build(doc_meta, items, buf, owasp=_owasp_rows(items))
+    maker.build(doc_meta, items, buf, owasp=_owasp_rows(items),
+                scenarios=_report_scenarios(targets))
     buf.seek(0)
     whose = t["name"] if len(targets) == 1 else _project_of(t).name
     name = f"점검결과_{_slug_name(whose)}_{now_iso()[:10]}.docx"
