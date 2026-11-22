@@ -177,6 +177,27 @@ def test_charts_leave_out_rows_and_grades_that_have_nothing(client, two_webs):
     assert "High" not in kinds                       # High 0건 — 계열 자체를 안 만든다
 
 
+def test_a_number_that_cannot_fit_its_segment_is_left_out():
+    """1~2건짜리 구간에 숫자를 두면 옆 숫자와 겹치거나 잘린다(11-22 사용자 지적).
+
+    서버 숫자(사용자 웹 174건)로 재 본다 — 전체가 작을 때는 1건도 넓어서 그대로 적는다.
+    """
+    big = report_chart.stacked(
+        "대상별", ["A-01", "A-02"],
+        [{"name": "Critical", "values": [6, 0], "color": "9C3E39"},
+         {"name": "Medium", "values": [140, 46], "color": "A88B35"},
+         {"name": "Info", "values": [4, 1], "color": "7B7F86"}])
+    hid = {s["name"]: s["hide"] for s in big["series"]}
+    assert hid["Medium"] == []                       # 140·46 은 넉넉하다
+    assert hid["Info"] == [0, 1]                     # 4·1 은 숫자가 안 들어간다
+
+    small = report_chart.stacked(
+        "작은 것", ["A-01"],
+        [{"name": "Critical", "values": [1], "color": "9C3E39"},
+         {"name": "Low", "values": [3], "color": "5E7C5A"}])
+    assert all(s["hide"] == [] for s in small["series"]), "전체가 작으면 1건도 넓다"
+
+
 def test_a_horizontal_chart_puts_the_first_row_on_top(client, two_webs):
     """줄을 뒤집어 그리면 값축도 같이 뒤집혀 위로 간다 — 아래로 내려놔야 읽힌다."""
     charts = _charts(_docx(client, two_webs[0]))

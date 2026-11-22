@@ -10,10 +10,11 @@
 결과보고서 4-1 의 두 그림(위험도별 건수 · 대상별 위험도 분포)이 그렇게 그려져 있어서,
 딸깍이가 내는 그림도 그 자리에 그대로 들어갈 수 있게 맞췄다.
 """
+import math
+
 from docx.opc.packuri import PackURI
 from docx.opc.part import Part
 from docx.oxml import parse_xml
-from docx.shared import Emu
 
 CT = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml"
 RT = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart"
@@ -50,16 +51,18 @@ def _title(text):
             f'<c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>')
 
 
-def _labels(inside, color):
+def _labels(inside, color, hide=()):
     """막대 값 라벨. 0 은 적지 않는다(서식 '0;-0;;') — 0 을 적으면 축이 지저분해진다."""
     pos = '<c:dLblPos val="ctr"/>' if inside else '<c:dLblPos val="outEnd"/>'
-    return ('<c:dLbls><c:numFmt formatCode="0;-0;;" sourceLinked="0"/><c:spPr><a:noFill/></c:spPr>'
+    # 구간이 숫자보다 좁으면 그 자리만 숫자를 지운다 — 두면 옆 숫자와 겹치거나 잘린다
+    drop = "".join(f'<c:dLbl><c:idx val="{i}"/><c:delete val="1"/></c:dLbl>' for i in sorted(hide))
+    return ('<c:dLbls>' + drop + '<c:numFmt formatCode="0;-0;;" sourceLinked="0"/><c:spPr><a:noFill/></c:spPr>'
             + _text(750, color, bold=True) + pos
             + '<c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/>'
               '<c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls>')
 
 
-def _series(idx, name, values, color, colors=None, inside=False, label_color="FFFFFF"):
+def _series(idx, name, values, color, colors=None, inside=False, label_color="FFFFFF", hide=()):
     out = [f'<c:ser><c:idx val="{idx}"/><c:order val="{idx}"/>']
     if name:
         out.append(f'<c:tx><c:strRef><c:f>s{idx}</c:f><c:strCache><c:ptCount val="1"/>'
@@ -70,7 +73,7 @@ def _series(idx, name, values, color, colors=None, inside=False, label_color="FF
         out.append(f'<c:dPt><c:idx val="{i}"/><c:invertIfNegative val="0"/><c:bubble3D val="0"/>'
                    f'<c:spPr><a:solidFill><a:srgbClr val="{one}"/></a:solidFill>'
                    f'<a:ln><a:noFill/></a:ln></c:spPr></c:dPt>')
-    out.append(_labels(inside, label_color))
+    out.append(_labels(inside, label_color, hide))
     return out
 
 
@@ -119,7 +122,7 @@ def chart_xml(spec):
     for i, s in enumerate(spec["series"]):
         sers += _series(i, s.get("name", ""), s["values"], s.get("color", "2F5B63"),
                         s.get("colors"), inside=spec.get("inside", False),
-                        label_color=s.get("label_color", "FFFFFF"))
+                        label_color=s.get("label_color", "FFFFFF"), hide=s.get("hide", ()))
         sers.append(_cat_val(spec["categories"], s["values"]))
     stacked = spec.get("grouping") == "stacked"
     legend = ('<c:legend><c:legendPos val="b"/><c:overlay val="0"/>' + _text(750) + "</c:legend>"
@@ -164,19 +167,6 @@ def place(doc, spec, width_cm, height_cm, par=None):
 
 # ── 보고서가 쓰는 두 가지 ───────────────────────────────
 
-def row(doc, specs, width_cm=15.4, height_cm=5.6):
-    """그림 둘을 한 줄에 나란히 — 최종 결과보고서 4-1 의 배치."""
-    from docx.enum.table import WD_TABLE_ALIGNMENT
-
-    t = doc.add_table(rows=1, cols=len(specs))
-    t.alignment = WD_TABLE_ALIGNMENT.LEFT
-    each = width_cm / len(specs)
-    for cell, spec in zip(t.rows[0].cells, specs):
-        cell.width = Emu(int(each * EMU_CM))
-        place(doc, spec, each - 0.2, height_cm, par=cell.paragraphs[0])
-    return t
-
-
 def column(title, pairs, colors, major=None):
     """세로 막대 하나 — 막대마다 색이 다르다(위험도별 건수)."""
     return {"title": title, "categories": [k for k, _n in pairs], "dir": "col", "legend": False,
@@ -184,7 +174,39 @@ def column(title, pairs, colors, major=None):
                                         "colors": colors, "label_color": LABEL}]}
 
 
-def stacked(title, categories, series, legend=True):
-    """가로 누적 막대 — 줄 하나가 대상(또는 유형), 구간이 위험도."""
+# 라벨 한 글자가 차지하는 폭(cm). 7.5pt 숫자 기준으로 재어 둔 값이다
+DIGIT_CM = 0.17
+
+
+def axis_top(top):
+    """Word 가 잡을 축 끝을 미리 센다 — 1·2·2.5·5 꼴로 올려 잡는다.
+
+    줄 합이 174 면 축은 200 까지 간다. 174 로 재면 구간이 실제보다 넓게 잡혀,
+    숫자가 안 들어가는 자리를 들어간다고 잘못 본다.
+    """
+    if top <= 0:
+        return 1
+    step = 10 ** math.floor(math.log10(top))
+    for m in (1, 2, 2.5, 5):
+        if top <= step * m:
+            return step * m
+    return step * 10
+
+
+def stacked(title, categories, series, legend=True, width_cm=15.4):
+    """가로 누적 막대 — 줄 하나가 대상(또는 유형), 구간이 위험도.
+
+    구간 안에 숫자를 적는데, 1~2건짜리 구간은 숫자보다 좁아 옆 숫자와 겹치거나 잘린다
+    (11-22 사용자 지적). 그래서 **그 구간에 숫자가 들어가는지 먼저 재고** 안 들어가면
+    그 자리만 숫자를 뺀다. 그림을 키우면 들어가는 자리가 늘어난다.
+    """
+    rows = [sum(s["values"][i] for s in series) for i in range(len(categories))]
+    top = axis_top(max(rows + [1]))
+    plot = max(2.0, width_cm * 0.72)                       # 줄 이름·여백을 뺀 실제 막대 자리
+    out = []
+    for s in series:
+        hide = [i for i, v in enumerate(s["values"])
+                if v and v / top * plot < DIGIT_CM * len(str(v)) + 0.1]
+        out.append({**s, "hide": hide})
     return {"title": title, "categories": categories, "dir": "bar", "grouping": "stacked",
-            "legend": legend, "inside": True, "gap": 70, "series": series}
+            "legend": legend, "inside": True, "gap": 70, "series": out}
