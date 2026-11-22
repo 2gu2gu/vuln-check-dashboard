@@ -810,7 +810,7 @@ def _goals_table(doc, scenarios, vid_of):
                          ", ".join(sorted(set(vids))[:4]) + (" 외" if len(set(vids)) > 4 else "") or "-",
                          sc["sid"]])
     _table(doc, ["목표 ID", "목표", "구분", "결과", "걸린 시간", "사용 취약점", "시나리오"], rows,
-           widths=[1.3, 4.3, 1.2, 1.6, 1.6, 3.9, 1.5])
+           widths=[1.5, 4.0, 1.1, 1.3, 1.8, 3.9, 1.8], head_size=8)
     _say(doc, "※ '결과' 칸은 보드에 적힌 상태입니다. 달성 / 부분 달성 / 미달성 판정과 "
               "걸린 시간은 사람이 적습니다.", size=8.5, color=FAINT, ratio=1.25, space=10)
 
