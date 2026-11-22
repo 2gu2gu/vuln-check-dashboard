@@ -191,6 +191,30 @@ def test_campaign_rejects_bad_values(app, client):
     assert client.post("/campaigns/9999/nodes", data={}).status_code == 404
 
 
+def test_campaign_name_and_goal_can_be_fixed_later(app, client):
+    """처음에 급히 지은 이름이 보드에 계속 남는다 — 고칠 수 있어야 한다(11-22 사용자)."""
+    tid = _target(app)
+    cid = _make_campaign(client, tid)
+    r = client.post(f"/campaigns/{cid}/rename", data={"name": "  S1 다시 지은 이름  ", "goal": "DB 까지"})
+    assert r.status_code == 302
+    with app.app_context():
+        c = get_db().execute("SELECT * FROM campaigns WHERE id = ?", [cid]).fetchone()
+    assert c["name"] == "S1 다시 지은 이름"            # 앞뒤 공백은 떼고 넣는다
+    assert c["goal"] == "DB 까지"
+    html = client.get(f"/scenario?target={tid}&campaign={cid}").get_data(as_text=True)
+    assert "S1 다시 지은 이름" in html
+
+
+def test_campaign_rename_keeps_the_old_name_when_it_is_blank(app, client):
+    tid = _target(app)
+    cid = _make_campaign(client, tid)
+    with app.app_context():
+        was = get_db().execute("SELECT name FROM campaigns WHERE id = ?", [cid]).fetchone()["name"]
+    client.post(f"/campaigns/{cid}/rename", data={"name": "   "})
+    with app.app_context():
+        assert get_db().execute("SELECT name FROM campaigns WHERE id = ?", [cid]).fetchone()["name"] == was
+
+
 def test_campaign_delete_and_empty_name(app, client):
     tid = _target(app)
     r = client.post("/campaigns", data={"target_id": tid, "name": "  "})
