@@ -758,7 +758,7 @@ html { scroll-behavior: smooth; }
 .cp-main { min-width: 0; }
 /* 보드는 창 하나만큼만 도려내고 새로 밀어 본다. 크기를 못 박아 놓으면 보드가 쪽 전심이 되고,
    그 위에 뜨운 크게·작게와 미니맵이 아래 국석으로 내려가 화면 밖에 서 버린다(11-22 사용자 지적) */
-.cp-scroll { overflow: auto; max-height: 72vh; padding-bottom: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
+.cp-scroll { overflow: auto; height: clamp(360px, 62vh, 680px); padding-bottom: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
 .cp-canvas { position: relative; display: flex; gap: 10px; padding: 10px; min-height: 420px; width: max-content; min-width: 100%; }
 /* ── 자유 배치 보드(11-22) ─────────────────────────────
    카드는 칸에 갇히지 않고 자기 자리(x·y)에 놓인다. 전술은 배경 띠로 남아 어디가 어느
@@ -774,13 +774,11 @@ html { scroll-behavior: smooth; }
 .cp-band.home { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 body.cp-moving, body.cp-moving * { user-select: none; }   /* 끄는 동안 글자가 선택되면 보기 흉하다 */
 .cp-zoomer { position: relative; }
-/* 크게·작게는 보드 위에 떠 있다(11-22). 미니맵은 반대쪽 구석 — 어디를 보고 있는지 네모로 보여 준다.
-   **미는 상자(.cp-scroll) 밖**에 둔다 — 안에 두면 보드와 같이 밀려 엉뚱한 자리로 간다 */
+/* 미니맵은 보드 오른쪽 아래 구석에 떠 있다 — 어디를 보고 있는지 네모로 보여 준다.
+   **미는 상자(.cp-scroll) 밖**에 둔다 — 안에 두면 보드와 같이 밀려 엉뚱한 자리로 간다.
+   크게·작게 단추는 보드 위가 아니라 위쪽 도구 줄(.cp-tools)에 있다 — 떠 있게 두면
+   길어진 보드 맨 아래로 내려가 화면 밖에 섰다(11-22 사용자 지적) */
 .cp-board { position: relative; }
-.cp-zoombar { position: absolute; left: 10px; bottom: 12px; z-index: 6; display: flex; flex-direction: column;
-              align-items: center; gap: 2px; padding: 4px; border-radius: 8px;
-              background: var(--surface); border: 1px solid var(--line); box-shadow: 0 2px 8px rgba(0,0,0,.08); }
-.cp-zoombar #cp-zoom-at { font-size: 11px; color: var(--sub); }
 .cp-map { position: absolute; right: 10px; bottom: 12px; z-index: 6; width: 190px; height: 104px;
           background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
           box-shadow: 0 2px 8px rgba(0,0,0,.08); cursor: pointer; }
