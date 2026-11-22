@@ -1736,6 +1736,27 @@ def _mcp_cve_candidates(a):
 # 결과를 어느 전술 열에 놓을지 — 모듈이 적어 둔 첫 전술을 쓴다. 없으면 '발견'(TA0043)
 FALLBACK_TACTIC = "TA0043"
 
+# 결과가 모이면 **무엇을 할 수 있게 되는가** — 캠페인의 목표 칸(11-22 사용자 지시: 캠페인스럽게,
+# 정보 탈취·하이재킹·IDOR·XSS 같은 것이 보여야 한다). 글자가 걸리면 그 목표가 선다.
+# 지어내지 않는다 — 목표마다 **그걸 가능하게 한 결과**가 선으로 달려 있어야만 올라간다.
+GOALS = [
+    {"title": "서버 장악 (원격 코드 실행)", "tactic": "TA0002",
+     "words": ["jndi", "log4shell", "업로드", "경로 조작 통과", "역직렬화", "웹셸", "web shell", "rce"],
+     "why": "셸이 열리면 그 뒤는 전부 가능합니다"},
+    {"title": "서버 비밀값 탈취 (설정·키)", "tactic": "TA0009",
+     "words": ["api.env", "민감 파일", "tomcat-users", "ssl-dhparams", "secret", "password", "비밀"],
+     "why": "DB 비밀번호·토큰 서명 키가 그대로 읽힙니다"},
+    {"title": "남의 데이터 열람 (정보 탈취)", "tactic": "TA0009",
+     "words": ["인증 없이", "idor", "남의", "구매", "주문", "개인정보", "정산", "settlement"],
+     "why": "번호만 바꾸면 다른 사람 것이 열립니다"},
+    {"title": "관리자 세션 탈취 (하이재킹)", "tactic": "TA0006",
+     "words": ["xss", "httponly", "쿠키", "세션"],
+     "why": "스크립트가 관리자 화면에서 돌면 그 세션이 넘어갑니다"},
+    {"title": "계정 탈취 (대입·서명 우회)", "tactic": "TA0006",
+     "words": ["요청 수 제한", "jwt", "서명", "비밀번호"],
+     "why": "막는 장치가 없으면 맞을 때까지 보냅니다"},
+]
+
 
 def _tactic_of(row):
     """결과 한 줄 → 놓일 전술 열.
@@ -1845,6 +1866,23 @@ def _mcp_make_campaign(a):
                 campaign.add_edge(db, cid, nid, fid, "같은 제품")
                 drawn += 1
 
+    # ⑤ 목표 — 이 결과들로 **무엇을 할 수 있게 되는가**. 목표마다 그걸 가능하게 한 결과를 달아 둔다.
+    #    하나도 안 달리면 그 목표는 올리지 않는다 — 지어내지 않는다(11-22 사용자: 캠페인스럽게).
+    goals = []
+    for g in GOALS:
+        mine = [(fid, row) for fid, row, _n in finding_nodes
+                if any(w in " ".join([row["title"], row["location"]]).lower() for w in g["words"])]
+        mine += [(nid, None) for nid, _tac, label, _p, _t in cve_nodes
+                 if any(w in label.lower() for w in g["words"])]
+        if not mine:
+            continue
+        gid = campaign.add_node(db, cid, "goal", g["tactic"], g["title"], ref=g["title"],
+                                sub=f"가능하게 한 것 {len(mine)}가지", status="추정", note=g["why"])
+        for src, _row in mine:
+            campaign.add_edge(db, cid, src, gid, "이걸로 가능")
+            drawn += 1
+        goals.append((g["title"], [r["title"] for _i, r in mine if r is not None]))
+
     # ⑤ 보고서에 그대로 옮길 줄거리
     lines = [f'캠페인 #{cid} 「{name}」 을 {t["name"]} 에 만들었습니다.',
              f'보드: /scenario?target={t["id"]}&campaign={cid}', ""]
@@ -1866,8 +1904,15 @@ def _mcp_make_campaign(a):
             lines.append(f'   · 그 밖 {len(got_rows) - 4}가지')
     if left:
         lines.append(f'(결과는 심한 것부터 {top}가지만 올렸습니다 — {left}가지는 뺐습니다)')
+    if goals:
+        lines.append("")
+        lines.append("목표 — 이 결과들로 할 수 있게 되는 것")
+        for title, froms in goals:
+            lines.append(f'   · {title}'
+                         + (f'  ← {", ".join(froms[:3])}' + (" 외" if len(froms) > 3 else "") if froms else ""))
     lines += ["", f'선은 **까닭이 있는 것만** {drawn}개 그었습니다 — 관찰한 버전 → 그 버전의 CVE'
-                  "('버전이 맞음'), CVE → 그 제품 이야기를 하는 결과('같은 제품').",
+                  "('버전이 맞음'), CVE → 그 제품 이야기를 하는 결과('같은 제품'), "
+                  "결과·CVE → 그것으로 할 수 있게 되는 목표('이걸로 가능').",
               "단계 사이(무엇을 얻어 다음에 넘겼는지 — 토큰·비밀값·셸)는 **긋지 않았습니다.** "
               "전술이 이어진다는 것이 공격이 이어졌다는 뜻은 아니라서, 그건 보드에서 사람이 긋습니다.",
               "CVE 는 버전 범위가 맞는다는 뜻일 뿐입니다. 팀이 확인한 것만 '확인' 으로 올라가 있습니다."]

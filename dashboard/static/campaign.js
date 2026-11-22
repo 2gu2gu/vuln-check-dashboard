@@ -117,6 +117,48 @@
   var Z = 1;
   try { Z = parseFloat(localStorage.getItem("cpZoom")) || 1; } catch (e) { Z = 1; }
 
+  // ── 미니맵 ────────────────────────────────────────────
+  // 보드가 가로로 길어 지금 어디를 보고 있는지 모르겠다(11-22 참고 화면). 카드를 작은 네모로
+  // 다시 그리고, 지금 보이는 자리를 테두리로 얹는다. 누르면 그 자리로 간다.
+  var map = document.getElementById("cp-map");
+  var mapView = document.getElementById("cp-map-view");
+  var COLOR = { goal: "--sev-critical", cve: "--hit", finding: "--sev-low", observed: "--accent" };
+
+  function drawMap() {
+    if (!map) return;
+    map.querySelectorAll("i").forEach(function (e) { e.remove(); });
+    var w = canvas.offsetWidth || 1, h = canvas.offsetHeight || 1;
+    var sx = map.clientWidth / w, sy = map.clientHeight / h;
+    state.nodes.forEach(function (n) {
+      var b = document.createElement("i");
+      b.style.left = (n.x * sx) + "px";
+      b.style.top = (n.y * sy) + "px";
+      b.style.width = Math.max(3, 220 * sx) + "px";
+      b.style.height = Math.max(3, 110 * sy) + "px";
+      b.style.background = "var(" + (COLOR[n.kind] || "--line") + ")";
+      b.style.opacity = ".75";
+      map.appendChild(b);
+    });
+    mapWhere();
+  }
+
+  function mapWhere() {
+    if (!mapView || !map) return;
+    var box = canvas.parentElement.parentElement;          // 가로로 미는 상자
+    var w = canvas.offsetWidth || 1, h = canvas.offsetHeight || 1;
+    var sx = map.clientWidth / w, sy = map.clientHeight / h;
+    mapView.style.left = (box.scrollLeft / Z * sx) + "px";
+    mapView.style.top = "0px";
+    mapView.style.width = Math.min(map.clientWidth, box.clientWidth / Z * sx) + "px";
+    mapView.style.height = Math.min(map.clientHeight, box.clientHeight / Z * sy) + "px";
+  }
+
+  if (map) map.addEventListener("click", function (e) {
+    var r = map.getBoundingClientRect();
+    var box = canvas.parentElement.parentElement;
+    box.scrollLeft = ((e.clientX - r.left) / map.clientWidth) * canvas.offsetWidth * Z - box.clientWidth / 2;
+  });
+
   function laneAt(x) {
     var i = Math.max(0, Math.min(lanes.length - 1, Math.floor((x + CARD_W / 2) / LANE_W)));
     return lanes[i];
@@ -133,6 +175,7 @@
     var at = document.getElementById("cp-zoom-at");
     if (at) at.textContent = Math.round(Z * 100) + "%";
     try { localStorage.setItem("cpZoom", Z); } catch (e) {}
+    mapWhere();
   }
 
   // ── 그리기 ────────────────────────────────────────────
@@ -154,6 +197,7 @@
     canvas.style.width = (lanes.length * LANE_W) + "px";
     canvas.style.height = Math.max(420, far + PAD) + "px";
     zoom(Z);
+    drawMap();
     // 이미 올린 후보는 흐리게 — 같은 것을 또 찾지 않게
     var on = {};
     state.nodes.forEach(function (n) { on[n.kind + "|" + n.ref] = true; });
@@ -339,7 +383,7 @@
     if (y < 60) window.scrollBy(0, -STEP);
     else if (y > window.innerHeight - 60) window.scrollBy(0, STEP);
   });
-  scroller.addEventListener("scroll", drawLines);
+  scroller.addEventListener("scroll", function () { drawLines(); mapWhere(); });
 
   // ── 끌어다 놓기: 후보 → 열, 노드 → 다른 열 ─────────────────
   function endDrag() {
