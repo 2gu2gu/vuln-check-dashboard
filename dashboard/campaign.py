@@ -18,7 +18,10 @@ from datetime import datetime, timezone
 
 from .attack import TACTIC_NAME, TACTIC_ORDER
 
-KINDS = {"finding": "결과", "observed": "관찰한 버전", "cve": "CVE", "module": "모듈", "manual": "수동"}
+KINDS = {"finding": "결과", "observed": "관찰한 버전", "cve": "CVE", "module": "모듈", "manual": "수동",
+         # 공격이 **무엇을 얻는 일인가** — 정보 탈취·세션 탈취·서버 장악 같은 것(11-22 사용자 지시:
+         # 캠페인스럽게). 결과에서 '이걸로 가능' 선이 들어온다. 사람이 손으로도 놓는다
+         "goal": "목표"}
 STATUSES = ("확인", "코드 확인", "추정", "미확인")
 
 

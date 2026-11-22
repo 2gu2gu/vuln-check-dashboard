@@ -772,6 +772,18 @@ html { scroll-behavior: smooth; }
 .cp-band.home { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 body.cp-moving, body.cp-moving * { user-select: none; }   /* 끄는 동안 글자가 선택되면 보기 흉하다 */
 .cp-zoomer { position: relative; }
+/* 크게·작게는 보드 위에 떠 있다(11-22). 미니맵은 반대쪽 구석 — 어디를 보고 있는지 네모로 보여 준다 */
+.cp-scroll { position: relative; }
+.cp-zoombar { position: absolute; left: 10px; bottom: 12px; z-index: 6; display: flex; flex-direction: column;
+              align-items: center; gap: 2px; padding: 4px; border-radius: 8px;
+              background: var(--surface); border: 1px solid var(--line); box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.cp-zoombar #cp-zoom-at { font-size: 11px; color: var(--sub); }
+.cp-map { position: absolute; right: 10px; bottom: 12px; z-index: 6; width: 190px; height: 104px;
+          background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+          box-shadow: 0 2px 8px rgba(0,0,0,.08); cursor: pointer; }
+.cp-map i { position: absolute; border-radius: 1px; }        /* 카드 한 장 = 작은 네모 */
+.cp-map-view { position: absolute; border: 1.5px solid var(--accent); border-radius: 2px;
+               background: color-mix(in srgb, var(--accent) 8%, transparent); pointer-events: none; }
 .cp-tools { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; flex-wrap: wrap; }
 .cp-zoom { display: inline-flex; align-items: center; gap: 4px; }
 .cp-zoom #cp-zoom-at { min-width: 44px; text-align: center; font-size: 12px; color: var(--sub); }
@@ -793,6 +805,9 @@ body.cp-moving, body.cp-moving * { user-select: none; }   /* 끄는 동안 글�
 .cp-node.k-cve { border-left: 3px solid var(--hit); }
 .cp-node.k-finding { border-left: 3px solid var(--sev-low); }
 .cp-node.k-manual { border-style: dashed; border-width: 1.5px; }
+/* 목표 — 공격이 무엇을 얻는 일인가. 눈에 먼저 들어와야 한다(11-22) */
+.cp-node.k-goal { border-left: 3px solid var(--sev-critical); background: var(--hit-soft); }
+.cp-node.k-goal .cp-node-title { color: var(--sev-critical); }
 .cp-node.k-module { color: var(--sub); border-style: dashed; }
 .cp-node-top { display: flex; align-items: center; gap: 6px; }
 .cp-node-top .cp-x { margin-left: auto; }

@@ -235,15 +235,17 @@
        전술은 배경 **띠**로 남아 어디가 어느 전술인지 보이고, 놓은 자리로 전술이 정해진다 #}
   <div class="cp-tools">
     <button class="btn ghost" type="button" id="cp-arrange" title="카드를 전술 띠 안에 가지런히 다시 놓습니다">정렬</button>
-    <span class="cp-zoom">
-      <button class="btn ghost icon" type="button" data-zoom="out" aria-label="축소">−</button>
-      <span id="cp-zoom-at">100%</span>
-      <button class="btn ghost icon" type="button" data-zoom="in" aria-label="확대">+</button>
-      <button class="btn ghost" type="button" data-zoom="fit">전체 보기</button>
-    </span>
-    <span class="sub small">카드를 끌어 옮기고, 오른쪽 점을 끌어 다음 카드로 잇습니다</span>
+    <span class="sub small">카드를 끌어 옮기고, 오른쪽 점을 끌어 다음 카드로 잇습니다. 크게·작게는 보드 왼쪽 아래에 있습니다</span>
   </div>
   <div class="cp-scroll">
+    {# 크게·작게·전체 보기는 보드 위에 떠 있다(11-22 사용자 요청) — 보드를 보면서 바로 누른다 #}
+    <div class="cp-zoombar">
+      <button class="btn ghost icon" type="button" data-zoom="in" aria-label="크게 보기" title="크게 보기">+</button>
+      <span id="cp-zoom-at">100%</span>
+      <button class="btn ghost icon" type="button" data-zoom="out" aria-label="작게 보기" title="작게 보기">−</button>
+      <button class="btn ghost icon" type="button" data-zoom="fit" aria-label="전체 보기" title="전체 보기">⤢</button>
+    </div>
+    <div class="cp-map" id="cp-map" title="보드 전체 — 눌러서 그 자리로 갑니다"><div class="cp-map-view" id="cp-map-view"></div></div>
     <div class="cp-zoomer" id="cp-zoomer">
       <div class="cp-canvas cp-free" id="cp-canvas">
         <div class="cp-bands" id="cp-bands" aria-hidden="true">
