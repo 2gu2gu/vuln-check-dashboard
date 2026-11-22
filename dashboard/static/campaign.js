@@ -148,7 +148,7 @@
     var w = canvas.offsetWidth || 1, h = canvas.offsetHeight || 1;
     var sx = map.clientWidth / w, sy = map.clientHeight / h;
     mapView.style.left = (box.scrollLeft / Z * sx) + "px";
-    mapView.style.top = "0px";
+    mapView.style.top = (box.scrollTop / Z * sy) + "px";
     mapView.style.width = Math.min(map.clientWidth, box.clientWidth / Z * sx) + "px";
     mapView.style.height = Math.min(map.clientHeight, box.clientHeight / Z * sy) + "px";
   }
@@ -157,6 +157,7 @@
     var r = map.getBoundingClientRect();
     var box = canvas.parentElement.parentElement;
     box.scrollLeft = ((e.clientX - r.left) / map.clientWidth) * canvas.offsetWidth * Z - box.clientWidth / 2;
+    box.scrollTop = ((e.clientY - r.top) / map.clientHeight) * canvas.offsetHeight * Z - box.clientHeight / 2;
   });
 
   function laneAt(x) {
