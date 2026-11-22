@@ -565,17 +565,23 @@ def build(doc_meta, items, path, owasp=()):
                  (f'{counts["High"]}건', "High"),
                  (f"{hit} / {len(assets)}곳", "취약점이 나온 대상")])
     _callout(doc, _overall(items, assets, groups))
-    pair = [c for c in (_sev_chart(counts), _asset_chart(assets)) if c]
-    report_chart.row(doc, pair, width_cm=15.4, height_cm=5.6)
+    # 그림은 쪽 너비를 다 쓴다. 둘을 나란히 두면 구간이 반으로 좁아져 숫자가 겹치거나
+    # 잘린다(11-22 사용자 지적) — 세로로 쌓고 각자 넓게 그린다
+    report_chart.place(doc, _sev_chart(counts), 15.4, 5.6)
+    chart = _asset_chart(assets)
+    if chart:
+        report_chart.place(doc, chart, 15.4, max(4.4, 2.2 + 1.1 * hit))
     _say(doc, "● 건수는 건 단위(V-xx-n) 기준입니다. 오탐으로 내린 것은 빠져 있고, "
-              "일부러 심어 둔 취약점이 몇 건인지는 사람이 가려 적습니다.",
+              "일부러 심어 둔 취약점이 몇 건인지는 사람이 가려 적습니다. "
+              "구간이 좁아 숫자가 안 들어가는 자리는 비워 두었습니다 — 그 숫자는 아래 4-2 표에 있습니다.",
          size=8.5, color=FAINT, ratio=1.25, space=10)
     chart = _owasp_chart(owasp)
     if chart:
         tall = max(4.6, 2.2 + 1.0 * len([r for r in owasp if r["total"]]))
         report_chart.place(doc, chart, 15.4, tall)
         _say(doc, "● 결과 하나는 그 결과를 낸 모듈의 첫 점검 항목 코드로 한 번만 셉니다 — "
-                  "합이 위 건수와 맞습니다.", size=8.5, color=FAINT, ratio=1.25, space=10)
+                  "합이 위 건수와 맞습니다. 좁은 구간은 숫자를 비워 두었습니다.",
+             size=8.5, color=FAINT, ratio=1.25, space=10)
 
     _head(doc, "4-2. 대상별 취약점 요약", 3)
     _say(doc, "구역 · 대상별 위험도 건수와 전체 취약점 목록입니다.", size=10, space=6)
