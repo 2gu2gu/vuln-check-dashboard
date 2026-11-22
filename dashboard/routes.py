@@ -1291,6 +1291,18 @@ def campaign_create():
     return redirect(_board_url(tid, cid))
 
 
+@bp.post("/campaigns/<int:cid>/rename")
+def campaign_rename(cid):
+    c = _campaign_or_404(cid)
+    try:
+        name = campaign.rename(get_db(), cid, request.form.get("name", ""), request.form.get("goal", ""))
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(_board_url(c["target_id"], cid))
+    flash(f"캠페인 이름을 '{name}' 으로 바꿨습니다", "ok")
+    return redirect(_board_url(c["target_id"], cid))
+
+
 @bp.post("/campaigns/<int:cid>/delete")
 def campaign_delete(cid):
     c = _campaign_or_404(cid)

@@ -44,6 +44,17 @@
     </form>
   </details>
   {% if current %}
+  {# 이름·목표 고치기(11-22 사용자). 만들 때와 같은 칸을 그대로 쓴다 — 처음에 급히 지은 이름이
+     보드에 계속 남는다. 접어 두고, 펴면 지금 값이 들어 있다 #}
+  <details class="cp-new cp-rename">
+    <summary class="btn ghost">이름 바꾸기</summary>
+    <form method="post" action="{{ url_for('dash.campaign_rename', cid=current.id) }}" class="cp-new-form">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <input name="name" value="{{ current.name }}" required maxlength="80" aria-label="캠페인 이름">
+      <input name="goal" value="{{ current.goal }}" placeholder="목표" maxlength="200" aria-label="목표">
+      <button class="btn">바꾸기</button>
+    </form>
+  </details>
   <form method="post" action="{{ url_for('dash.campaign_delete', cid=current.id) }}" class="cp-del"
         data-confirm="캠페인 '{{ current.name }}' 과 그 노드·선을 모두 지울까요? 결과는 남습니다.">
     <input type="hidden" name="_csrf" value="{{ csrf_token() }}">

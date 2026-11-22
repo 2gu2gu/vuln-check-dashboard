@@ -701,7 +701,10 @@ html { scroll-behavior: smooth; }
 .cp-new > summary { list-style: none; cursor: pointer; }
 .cp-new > summary::-webkit-details-marker { display: none; }
 .cp-new-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.cp-new-form input { min-width: 220px; }
+.cp-new-form input { min-width: 220px; flex: 1 1 260px; }
+/* 이름 고치는 칸은 넓게 — 지금 이름이 들어 있어 짧으면 끝이 안 보인다(11-22) */
+.cp-rename { flex-basis: 100%; }
+.cp-rename .cp-new-form input[name="name"] { flex: 2 1 360px; }
 .cp-del { margin-left: auto; }
 .cp-shell { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 14px; align-items: start; }
 .cp-cands { position: sticky; top: calc(var(--sticky-h, 64px) + 8px); max-height: calc(100vh - var(--sticky-h, 64px) - 24px);

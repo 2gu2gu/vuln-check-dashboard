@@ -40,6 +40,17 @@ def create(db, tid, name, goal=""):
     return cur.lastrowid
 
 
+def rename(db, cid, name, goal=""):
+    """캠페인 이름과 목표 한 줄을 고친다. 길이는 create 와 같은 자를 쓴다 — 어긋나면
+    만들 때는 들어가고 고칠 때는 잘리는 일이 생긴다."""
+    name = name.strip()[:80]
+    if not name:
+        raise ValueError("캠페인 이름을 적으세요")
+    db.execute("UPDATE campaigns SET name = ?, goal = ? WHERE id = ?", [name, goal.strip()[:200], cid])
+    db.commit()
+    return name
+
+
 def state(db, cid):
     """화면이 그리는 전부: 캠페인, 노드, 선, 쓰인 전술 열."""
     c = db.execute("SELECT * FROM campaigns WHERE id = ?", [cid]).fetchone()
