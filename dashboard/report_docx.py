@@ -371,14 +371,15 @@ def _turn(doc, landscape):
     wide, tall = Cm(29.7), Cm(21.0)
     sec.orientation = WD_ORIENT.LANDSCAPE if landscape else WD_ORIENT.PORTRAIT
     sec.page_width, sec.page_height = (wide, tall) if landscape else (tall, wide)
-    sec.top_margin, sec.bottom_margin = Cm(2.0), Cm(1.8)
-    sec.left_margin = sec.right_margin = Cm(2.3)
+    # 가로 쪽은 그림 한 장만 싣는다 — 여백을 줄여 카드를 넓게 쓴다
+    sec.top_margin, sec.bottom_margin = (Cm(1.8), Cm(1.6)) if landscape else (Cm(2.6), Cm(2.4))
+    sec.left_margin = sec.right_margin = Cm(1.5) if landscape else Cm(2.3)
     p = sec.header.paragraphs[0]
     p.text = ""
     r = _font(p.add_run("취약점 진단 및 모의해킹 결과 보고서    대외비 · 팀 내부용"))
     r.font.size = Pt(8)
     r.font.color.rgb = FAINT
-    return Cm(29.7).cm - 4.6 if landscape else 15.4
+    return 29.7 - 3.0 if landscape else 15.4
 
 
 def _method_of(request: str) -> str:

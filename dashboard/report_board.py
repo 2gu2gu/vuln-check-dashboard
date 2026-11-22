@@ -114,27 +114,42 @@ def _name(i, x, w, text):
             f'<a:noAutofit/></wps:bodyPr></wps:wsp>')
 
 
-def _wire(i, x1, y1, x2, y2, color=WIRE):
+def _wire(i, x1, y1, x2, y2, color=WIRE, sideways=True):
     """선 하나 — **한 번만 휘는 곡선**. 가로로 나가 가로로 들어온다.
 
     Word 가 주는 곡선 커넥터(curvedConnector3)는 높이 차가 작으면 S 자로 꿈틀거려
     지렁이처럼 보인다(11-22 사용자 지적). 그래서 길을 직접 그린다 — 양 끝의 손잡이를
-    **가로로만** 내밀어(dx 의 절반) 베지에 하나로 잇는다. 그러면 나가는 쪽도 들어오는 쪽도
-    카드 옆구리와 수평이고, 가운데만 부드럽게 넘어간다.
+    한 방향으로만 내밀어 베지에 하나로 잇는다. 그러면 나가는 쪽도 들어오는 쪽도 카드
+    옆구리와 수평(또는 수직)이고, 가운데만 부드럽게 넘어간다.
+
+    sideways 가 거짓이면 세로로 잇는다 — 같은 열 안의 두 카드다. 옆구리끼리 이으면 선이
+    뒤로 돌아 나가면서 카드를 가로지른다(11-22 사용자 지적).
 
     굵기와 색은 표의 가로줄과 같은 말을 쓴다 — 가늘게(0.75pt), 한 가지 색. 색은 점에만.
     """
+    # 뒤집기(flipH/flipV)를 쓰지 않는다 — 길까지 같이 뒤집혀 화살촉이 반대쪽에 붙는다.
+    # 자리를 길 안에 그대로 적고, 손잡이만 방향에 맞춰 내민다.
+    ox, oy = min(x1, x2), min(y1, y2)
     w = max(1, int(abs(x2 - x1) * EMU))
     h = max(1, int(abs(y2 - y1) * EMU))
-    bend = int(w * 0.52)                       # 손잡이 길이 — 반쯤이 가장 눕는다
-    flip = ' flipH="1"' if x2 < x1 else ""
-    flipv = ' flipV="1"' if y2 < y1 else ""
+    p1 = (int((x1 - ox) * EMU), int((y1 - oy) * EMU))
+    p2 = (int((x2 - ox) * EMU), int((y2 - oy) * EMU))
+    if sideways:                               # 가로로 나가 가로로 들어온다(열이 다를 때)
+        bend = max(int(w * 0.52), 160000)   # 적어도 0.44cm 는 가로로 나가게
+        way = 1 if x2 >= x1 else -1
+        c1 = (p1[0] + way * bend, p1[1])
+        c2 = (p2[0] - way * bend, p2[1])
+    else:                                      # 같은 열이면 세로로 — 아래로 나가 위로 들어온다
+        bend = max(int(h * 0.5), 120000)
+        way = 1 if y2 >= y1 else -1
+        c1 = (p1[0], p1[1] + way * bend)
+        c2 = (p2[0], p2[1] - way * bend)
     path = (f'<a:path w="{w}" h="{h}">'
-            f'<a:moveTo><a:pt x="0" y="0"/></a:moveTo>'
-            f'<a:cubicBezTo><a:pt x="{bend}" y="0"/><a:pt x="{w - bend}" y="{h}"/>'
-            f'<a:pt x="{w}" y="{h}"/></a:cubicBezTo></a:path>')
+            f'<a:moveTo><a:pt x="{p1[0]}" y="{p1[1]}"/></a:moveTo>'
+            f'<a:cubicBezTo><a:pt x="{c1[0]}" y="{c1[1]}"/><a:pt x="{c2[0]}" y="{c2[1]}"/>'
+            f'<a:pt x="{p2[0]}" y="{p2[1]}"/></a:cubicBezTo></a:path>')
     return (f'<wps:wsp><wps:cNvPr id="{800 + i}" name="선 {i}"/><wps:cNvSpPr/><wps:spPr>'
-            f'<a:xfrm{flip}{flipv}><a:off x="{int(min(x1, x2) * EMU)}" y="{int(min(y1, y2) * EMU)}"/>'
+            f'<a:xfrm><a:off x="{int(ox * EMU)}" y="{int(oy * EMU)}"/>'
             f'<a:ext cx="{w}" cy="{h}"/></a:xfrm>'
             f'<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/>'
             f'<a:rect l="0" t="0" r="r" b="b"/><a:pathLst>{path}</a:pathLst></a:custGeom>'
@@ -209,7 +224,7 @@ def lay_out(nodes, edges, vid_of, width_cm=25.0):
             for i, c in enumerate(line):
                 rank[id(c)] = i
 
-    gut = 0.55
+    gut = 0.7                                   # 열 사이 틈 — 선이 지나갈 길
     card_w = max(2.3, (width_cm - gut * (len(cols) - 1)) / max(1, len(cols)))
     deep = max((len(line) for _t, line in cols), default=1)
     for j, (_t, line) in enumerate(cols):
@@ -241,9 +256,15 @@ def draw(doc, nodes, edges, vid_of, width_cm=25.0):
     shapes = []
     for i, (a, b) in enumerate(links):            # 선을 먼저 — 카드 뒤로 간다
         p, q = cards[a], cards[b]
-        # 오른쪽 옆구리에서 나가 다음 카드 왼쪽 옆구리로 — 늘 가로로 드나든다
-        shapes.append(_wire(i, p["x"] + p["w"], p["y"] + CARD_H / 2,
-                            q["x"], q["y"] + CARD_H / 2))
+        if q["x"] > p["x"] + 0.1:            # 오른쪽 옆구리 → 다음 카드 왼쪽 옆구리
+            shapes.append(_wire(i, p["x"] + p["w"], p["y"] + CARD_H / 2,
+                                q["x"], q["y"] + CARD_H / 2))
+        elif q["y"] > p["y"]:                 # 같은 열(또는 되돌아가는 선)이면 아래로
+            shapes.append(_wire(i, p["x"] + p["w"] / 2, p["y"] + CARD_H,
+                                q["x"] + q["w"] / 2, q["y"], sideways=False))
+        else:
+            shapes.append(_wire(i, p["x"] + p["w"] / 2, p["y"],
+                                q["x"] + q["w"] / 2, q["y"] + CARD_H, sideways=False))
     for j, (tac, line) in enumerate(cols):
         shapes.append(_name(j, line[0]["x"], line[0]["w"], TACTIC_NAME.get(tac, tac)))
         for c in line:
