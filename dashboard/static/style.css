@@ -768,7 +768,7 @@ html { scroll-behavior: smooth; }
 .cp-canvas.cp-free .cp-node { position: absolute; width: 220px; cursor: grab; }
 .cp-canvas.cp-free .cp-node.moving { cursor: grabbing; box-shadow: 0 6px 18px rgba(0,0,0,.18); z-index: 5; }
 .cp-bands { position: absolute; inset: 0; display: flex; pointer-events: none; }
-.cp-band { flex: 0 0 260px; border-right: 1px dashed var(--line); padding: 8px 10px;
+.cp-band { flex: 0 0 360px; border-right: 1px dashed var(--line); padding: 8px 10px;
            display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--sub); }
 .cp-band.used { background: color-mix(in srgb, var(--surface-2) 55%, transparent); color: var(--text); }
 .cp-band.home { background: color-mix(in srgb, var(--accent) 10%, transparent); }

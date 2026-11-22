@@ -188,10 +188,25 @@ MIGRATIONS = [
 ]
 
 
+# 한 번만 하는 데이터 손질. 칸을 더하는 것(MIGRATIONS)과 달리 값 자체를 옮긴다.
+# 한 번 했는지는 app_settings 에 적어 두고 다시 하지 않는다 — 두 번 돌면 자리가 또 밀린다.
+ONCE = [
+    # 전술 띠를 260 에서 360 으로 넓혔다(11-22: 틈이 좁아 선이 카드에 가렸다). 이미 놓인
+    # 카드는 자리가 픽셀로 저장돼 있어, 같은 비율로 밀어 줘야 전과 같은 띠에 남는다.
+    ("lane_w_260_to_360",
+     "UPDATE campaign_nodes SET x = x * 360.0 / 260.0 WHERE x >= 0"),
+]
+
+
 def init_db():
     db = get_db()
     db.executescript(SCHEMA)
     for table, col, ddl in MIGRATIONS:
         if col not in {r["name"] for r in db.execute(f"PRAGMA table_info({table})")}:
             db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+    done = {r["key"] for r in db.execute("SELECT key FROM app_settings")}
+    for key, sql in ONCE:
+        if key not in done:
+            db.execute(sql)
+            db.execute("INSERT INTO app_settings (key, value) VALUES (?, 'done')", [key])
     db.commit()
