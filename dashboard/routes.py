@@ -6,7 +6,7 @@ from urllib.parse import quote, urlsplit
 from flask import (Blueprint, Response, abort, current_app, flash, g, get_flashed_messages, jsonify, redirect,
                    render_template, request, url_for)
 
-from . import board, campaign, cve, cvss, discovery as dv, grouping, jobs, login as login_mod, mcp as mcp_mod, needs, runfiles, scope, stats, wordlists
+from . import board, campaign, cve, cvss, discovery as dv, grouping, jobs, login as login_mod, mcp as mcp_mod, needs, runfiles, scope, standards, stats, wordlists
 from .attack import TACTIC_NAME, TACTIC_ORDER, TACTICS, technique_url
 from .core import (SEVERITIES, SEVERITY_LABEL, VERDICTS, Check, Finding, Point, RunContext, Target,
                    ToolResult, fmt_kst, now_iso)
@@ -1428,40 +1428,123 @@ def report_json(tid):
                     headers={"Content-Disposition": f"attachment; filename=report_{tid}.json"})
 
 
+# 팀 결과보고서 양식의 자산 ID·구역. 역할 하나가 자산 하나다
+# (`01_제출물/결과보고서_양식/1_결과보고서_양식.md` 의 공통 ID 체계).
+ASSETS = {"user_web": ("A-01", "외부(DMZ)"), "admin_web": ("A-02", "관리·내부"),
+          "admin_api": ("A-03", "관리·내부")}
+
+
+def _report_targets(t):
+    """보고서 한 파일이 담을 대상들 — 같은 프로젝트의 실제 대상 전부.
+
+    4장의 그림이 대상 하나짜리 막대면 그림일 까닭이 없다(11-22). 최종 결과보고서처럼
+    요약은 대상을 모아 보이고 5장만 대상마다 절을 나눈다. 연습용 대상을 고른 경우는
+    그것만 싣는다 — 연습 기록이 점검 결과에 섞이면 안 된다.
+    """
+    if _is_practice(t):
+        return [t]
+    rows = get_db().execute("SELECT * FROM targets WHERE project = ? ORDER BY id", [t["project"]])
+    return [x for x in rows if not _is_practice(x)] or [t]
+
+
+def _owasp_key(mod):
+    """모듈의 OWASP 유형 — 점검 항목 코드에서 되찾는다.
+
+    포트 확인처럼 KISA 21항목 밖의 모듈은 META 에 owasp 를 안 달고 자체 항목 코드(X-xx)만
+    단다. 그 코드에도 유형이 붙어 있으니(standards.EXTRA) 그걸 쓴다 — 안 그러면 그림에는
+    A02 로 세어 놓고 표에는 유형이 비어 보인다.
+    """
+    if not mod:
+        return ""
+    if mod.owasp:
+        return mod.owasp[0]
+    code = (mod.kisa[0] if mod.kisa else "") or (mod.item or "")
+    if code in standards.KISA:
+        return standards.KISA[code][1]
+    return standards.EXTRA[code][1] if code in standards.EXTRA else ""
+
+
+def _owasp_rows(items):
+    """유형별 건수 — 화면 '점검 현황' 과 같은 셈법으로, 보고서에 실린 건만 센다.
+
+    결과 하나는 그 모듈의 첫 점검 항목 코드로 한 번만 센다. 코드가 둘인 모듈이 두 번
+    세어지면 그림의 합이 4-2 표와 어긋난다.
+    """
+    mods = _modules()
+    labels = ("Critical", "High", "Medium", "Low", "Info")
+    by = {k: {s: 0 for s in labels} for k, _n in standards.OWASP_2025}
+    by[""] = {s: 0 for s in labels}
+    for it in items:
+        by[_owasp_key(mods.get(it["module_id"]))][it["severity_label"]] += 1
+    out = [{"key": k, "name": f"{k} {n}", "counts": by[k], "total": sum(by[k].values())}
+           for k, n in standards.OWASP_2025]
+    out.append({"key": "", "name": "분류 없음", "counts": by[""], "total": sum(by[""].values())})
+    return out
+
+
 @bp.get("/report/<int:tid>.docx")
 def report_docx(tid):
-    """내려받기 단추가 주는 것 — Word(11-21 사용자 지시: 보고서는 md 말고 워드로)."""
+    """내려받기 단추가 주는 것 — 팀 결과보고서 양식에 맞춘 Word(11-21 사용자 지시)."""
     from io import BytesIO
 
+    from . import __version__
     from . import report_docx as maker
 
-    t, rows, exchanges = _report_rows(tid)
+    t = get_db().execute("SELECT * FROM targets WHERE id = ?", [tid]).fetchone() or abort(404)
+    targets = _report_targets(t)
     mods = _modules()
-    meta = {
-        "practice": _is_practice(t), "project": _project_of(t).name, "role": _role_label(t),
-        "written": fmt_kst(now_iso()),
-        "summary": [{"severity": SEVERITY_LABEL[r["severity"]], "title": r["title"], "location": r["location"],
-                     "technique": r["technique"] or "", "status": STATUSES.get(r["status"], r["status"])}
-                    for r in rows],
-        "items": [],
-    }
+    rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+    rows, exchanges, owner = [], {}, {}
+    for one in targets:
+        _t, part, got = _report_rows(one["id"])
+        rows += list(part)
+        exchanges.update(got)
+        for r in part:
+            owner[r["id"]] = one
+    top = {}
+    for r in rows:
+        key = r["module_id"]
+        if key not in top or rank.get(r["severity"], 9) < rank.get(top[key], 9):
+            top[key] = r["severity"]
+    items = []
     for r in rows:
         mod = mods.get(r["module_id"])
         rated = _rate(r["cvss_vector"] if "cvss_vector" in r.keys() else "", mod)
-        saved = rated and rated["saved"]
-        meta["items"].append({
-            "description": f'{r["title"]} — {mod.description if mod else ""}',
-            "impact": rated["impact_text"] if saved else
-                      ((rated["impact_text"] + " — 미확정(모듈 제안값)") if rated else "미평가"),
-            "vector": rated["vector"] if rated else "—",
-            "module": mod.name if mod else r["module_id"],
-            "attack": f'{r["technique"]} ({technique_url(r["technique"])})' if r["technique"] else "—",
-            "status": STATUSES.get(r["status"], r["status"]),
+        x = exchanges.get(r["id"]) or {}
+        one = owner[r["id"]]
+        asset, zone = ASSETS.get(one["role"], ("[ ]", "[ ]"))
+        items.append({
+            "target_id": one["id"], "target_name": one["name"], "url": one["url"],
+            "asset_id": asset, "zone": zone,
+            "module_id": r["module_id"], "module_name": mod.name if mod else r["module_id"],
+            "module_desc": (mod.description if mod else "").replace("**", ""),
+            # 항목 코드 — KISA 21항목이 있으면 그것, 없으면 자체 항목(X-xx). 비워 두지 않는다
+            "kisa": (" · ".join(standards.item_label(c) for c in (mod.kisa if mod else []))
+                     or (standards.item_label(mod.item) if mod and mod.item else "")),
+            "owasp": (" · ".join(f"{k} {standards.OWASP_NAME[k]}" for k in (mod.owasp if mod else []))
+                      or (lambda k: f"{k} {standards.OWASP_NAME[k]}" if k else "")(_owasp_key(mod))),
+            "title": r["title"], "location": r["location"], "severity": r["severity"],
+            "severity_label": SEVERITY_LABEL[r["severity"]],
+            "top_severity": SEVERITY_LABEL[top.get(r["module_id"], r["severity"])],
+            # 사람이 화면에서 벡터를 확정했으면 그 점수, 아직이면 모듈 제안값에 '(제안)' 을 붙인다.
+            # 비워 두면 보고서에서 '점수 없음' 으로 읽힌다(11-22 사용자 지적)
+            "cvss_score": ("" if not rated else
+                           (f'{rated["score"]}' if rated["saved"] else f'{rated["score"]} (제안)')),
+            "cvss_vector": (rated or {}).get("vector", ""),
+            "status_label": STATUSES.get(r["status"], r["status"]),
+            "recommendation": r["recommendation"] or "",
+            "evidence": r["evidence"] or "", "request": x.get("request", ""), "response": x.get("response", ""),
+            "method": maker._method_of(x.get("request", "")),
         })
+    doc_meta = {
+        "practice": _is_practice(t), "project": _project_of(t).name, "written": fmt_kst(now_iso()),
+        "tool": f"딸깍이 {__version__}",
+    }
     buf = BytesIO()
-    maker.build(t, rows, exchanges, meta, buf)
+    maker.build(doc_meta, items, buf, owasp=_owasp_rows(items))
     buf.seek(0)
-    name = f"점검결과_{_slug_name(t['name'])}_{now_iso()[:10]}.docx"
+    whose = t["name"] if len(targets) == 1 else _project_of(t).name
+    name = f"점검결과_{_slug_name(whose)}_{now_iso()[:10]}.docx"
     return Response(buf.read(), mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
 

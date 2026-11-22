@@ -8,6 +8,7 @@ META = {
     "name": "관리·개발 경로 노출",
     "category": "설정 점검",
     "kisa": ["AE", "IL"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
+    "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",  # 제안값 — 사람이 고쳐 쓴다
     # 노션 '웹 서비스 취약점 목록' 의 취약점 유형 — actuator·.git·.env 처럼 밖에 열려 있으면 안 되는 것이 열려 있는지
     "vuln": "정보노출",
     "kind": "active",

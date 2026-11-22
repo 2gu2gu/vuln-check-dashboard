@@ -150,8 +150,24 @@ def test_from_registering_a_target_to_the_report(app, client, monkeypatch):
     assert "wordprocessingml" in doc.headers["Content-Type"]
     assert ".docx" in doc.headers["Content-Disposition"]
     text = _docx_text(doc.get_data())
-    assert found[0]["title"] in text and "1. 취약점 개요" in text and "4. 조치방안" in text
-    assert "눌러 보는 링크가 아닙니다" in text
+    # 팀 결과보고서 양식의 절 이름·표가 그대로 나온다(01_제출물/결과보고서_양식)
+    assert "3-2. 위험도 적용 결과" in text and "4-2. 대상별 취약점 요약" in text
+    assert "5  Part A. 진단 상세 결과" in text and "5-1. 진단 방법" in text
+    assert "RESULT REPORT" in text and "표지 정보" in text          # 템플릿 통합본의 표지
+    assert "■ Critical" in text                                   # 등급 머리 칸(색은 서식에)
+    # 4-1 총평 — 지표 칸 넷과 집계로 적은 한 문단, 그리고 그림(11-22 사용자 요청)
+    assert "4-1. 총평" in text and "취약점이 나온 대상" in text
+    assert "자동 점검에서 취약점 1개 · 1건이 나왔음." in text
+    assert "1건은 사람이 확인했고 0건은 아직 미확인임" in text
+    assert "합계" in text                                          # 4-2 의 소계·합계 줄
+    import io as _io
+    import zipfile as _zip
+    with _zip.ZipFile(_io.BytesIO(doc.get_data())) as z:
+        charts = [n for n in z.namelist() if n.startswith("word/charts/chart")]
+    assert charts, "그림은 Word 차트로 들어간다 — 서버에 한글 글꼴이 없어 그림 파일은 깨진다"
+    assert "V-01" in text and "V-01-1" in text and "A-01" in text and "외부(DMZ)" in text
+    assert found[0]["title"] in text and "대표 PoC" in text
+    assert "[ ]" in text                       # 사람이 채울 자리는 비워 두고 보여 준다
 
     # 오탐으로 내리면 보고서에서 빠진다 — 지워서가 아니라 상태로 가린다
     client.post(f'/findings/{found[0]["id"]}/status', data={"status": "false_positive"})

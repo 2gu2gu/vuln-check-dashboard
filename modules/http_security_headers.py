@@ -7,6 +7,7 @@ META = {
     "name": "HTTP 보안 헤더",
     "category": "설정 점검",
     "kisa": ["SN", "CC"],  # 주요정보통신기반시설 웹 항목(dashboard/standards.py)
+    "cvss": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:L/I:L/A:N",  # 제안값 — 사람이 고쳐 쓴다
     "kind": "passive",
     "attack": [
         {"tactic": "TA0043", "technique": "T1595.002", "name": "Vulnerability Scanning"},
