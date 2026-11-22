@@ -161,10 +161,12 @@ def _table(doc, head, rows, head_colors=None, strong=(), widths=None, head_size=
         if head_colors and head_colors.get(name):
             color = RGBColor.from_string(head_colors[name])
         if name.startswith("■ "):
-            # ■ 는 한글 글꼴에서 한 글자 폭을 다 쓴다. 그대로 두면 '■ Critical' 이 두 줄로 접힌다
+            # ■ 는 한글 글꼴에서 한 글자 폭을 다 쓴다. 그대로 두면 '■ Critical' 이 두 줄로 접힌다.
+            # 네모만 한 단계 줄이고, 그 칸은 아예 줄바꿈을 막는다 — 등급 이름은 한 줄이어야 읽힌다
             box = _cell(c, "■", size=head_size - 1, color=color, bold=True)
             tail = _font(box._parent.add_run(" " + name[2:]))
             tail.font.size, tail.font.bold, tail.font.color.rgb = Pt(head_size), True, color
+            c._tc.get_or_add_tcPr().append(OxmlElement("w:noWrap"))
         else:
             _cell(c, name, size=head_size, color=color, bold=True)
     for n, row in enumerate(rows):
@@ -203,7 +205,18 @@ def _bar(doc, counts):
     t = doc.add_table(rows=1, cols=len(live))
     t.alignment = WD_TABLE_ALIGNMENT.LEFT
     total = sum(n for _k, n in live)
-    widths = [max(0.6, round(BAR_CM * n / total, 2)) for _k, n in live]
+    # 아주 작은 칸(1~2건)도 숫자가 접히지 않게 자릿수만큼 바닥을 깔되, 그만큼 전체를 다시 줄인다.
+    # 안 그러면 합이 쪽 너비를 넘어 막대가 위 표보다 오른쪽으로 삐져나온다.
+    raw = [max(0.5 + 0.25 * len(str(n)), BAR_CM * n / total) for _k, n in live]
+    widths = [round(w * BAR_CM / sum(raw), 2) for w in raw]
+    pr = t._tbl.tblPr                                      # 칸 안쪽 여백을 줄여 숫자 자리를 번다
+    mar = OxmlElement("w:tblCellMar")
+    for side, v in (("left", "28"), ("right", "28"), ("top", "0"), ("bottom", "0")):
+        e = OxmlElement(f"w:{side}")
+        e.set(qn("w:w"), v)
+        e.set(qn("w:type"), "dxa")
+        mar.append(e)
+    pr.append(mar)
     for c, (k, n), cm in zip(t.rows[0].cells, live, widths):
         _shade(c, SEV_COLOR[k])
         _cell(c, (f"{k} {n}" if cm >= 2.0 else str(n)), size=8, color=PAPER, bold=True)
@@ -237,16 +250,22 @@ def _cards(doc, cards):
     """지표 띠 — 큰 값 아래 이름. 최종 결과보고서 4-1 맨 위의 그 네 칸이다.
 
     cards 는 (값, 이름) 목록. 값에 단위를 같이 적는다('7건', '4 / 4곳').
+
+    값 길이는 칸마다 다르다('16개 · 238건' 과 '6건'). 칸을 똑같이 나누면 긴 값이 두 줄로
+    접히면서 그 칸만 이름이 아래로 밀린다 — 값 길이에 맞춰 칸을 나누고, 그래도 긴 값은
+    글자를 한 단계 줄인다.
     """
     t = doc.add_table(rows=1, cols=len(cards))
     t.alignment = WD_TABLE_ALIGNMENT.LEFT
-    _fixed(t, [16.0 / len(cards)] * len(cards))
+    want = [max(2.4, 0.42 * len(str(big)) + 0.9, 0.22 * len(name) + 0.6) for big, name in cards]
+    _fixed(t, [round(w * 16.0 / sum(want), 2) for w in want])
     for c, (big, name) in zip(t.rows[0].cells, cards):
         p = c.paragraphs[0]
         p.paragraph_format.space_before = Pt(4)
         p.paragraph_format.space_after = Pt(1)
         r = _font(p.add_run(str(big)))
-        r.font.size, r.font.bold, r.font.color.rgb = Pt(17), True, ACCENT
+        r.font.size = Pt(17 if len(str(big)) <= 8 else 14)
+        r.font.bold, r.font.color.rgb = True, ACCENT
         p2 = _line(c.add_paragraph(), 1.3)
         p2.paragraph_format.space_after = Pt(4)
         r = _font(p2.add_run(name))
@@ -580,7 +599,7 @@ def build(doc_meta, items, path, owasp=()):
     strong.append(len(rows) - 1)
     _table(doc, ["구역", "자산 ID", "대상", "■ Critical", "■ High", "■ Medium", "■ Low", "■ Info", "합계"],
            rows, head_colors={f"■ {k}": v for k, v in SEV_COLOR.items()}, strong=strong,
-           widths=[2.2, 1.3, 2.4, 1.8, 1.6, 2.0, 1.4, 1.4, 1.3], head_size=8)
+           widths=[2.0, 1.3, 3.0, 1.8, 1.6, 2.0, 1.3, 1.3, 1.1], head_size=7.5)
     _bar(doc, counts)
     _say(doc, "※ 건수는 건 단위(V-xx-n) 기준입니다.", size=8.5, color=FAINT, ratio=1.25, space=10)
 
