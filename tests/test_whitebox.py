@@ -312,3 +312,31 @@ def test_the_light_goes_quiet_after_a_while_instead_of_lying(client, app):
     said = client.get("/connect/state").get_json()
     assert said["state"] == "idle"
     assert "아직" not in said["when"]                 # 붙은 적은 있다 — waiting 으로 돌아가지 않는다
+
+
+def test_widening_the_lane_moves_cards_once_and_only_once(tmp_path):
+    """띠를 넓히면 이미 놓인 카드도 같은 비율로 밀어야 전과 같은 띠에 남는다.
+
+    두 번 밀면 또 어긋나므로, 한 번 했다는 표를 보고 다시 하지 않아야 한다.
+    """
+    from dashboard import create_app, db as db_mod
+    cfg = {"TESTING": True, "SECRET_KEY": "t", "DATABASE": str(tmp_path / "m.sqlite3"),
+           "RUNS_DIR": str(tmp_path / "runs"), "CSRF": False}
+    app = create_app(cfg)
+    with app.app_context():
+        d = db_mod.get_db()
+        d.execute("INSERT INTO targets (id, name, url, created_at) VALUES (1, 'T', 'http://127.0.0.1', '')")
+        d.execute("INSERT INTO campaigns (id, target_id, name, created_at) VALUES (1, 1, ?, '')", ["c"])
+        node = ("INSERT INTO campaign_nodes (campaign_id, kind, tactic, title, x, y, created_at) "
+                "VALUES (1, 'finding', 'TA0007', ?, ?, 54, '')")
+        d.execute(node, ["a", 260])
+        d.execute(node, ["아직 안 놓음", -1])
+        d.execute("DELETE FROM app_settings WHERE key = ?", ["lane_w_260_to_360"])
+        d.commit()
+        db_mod.init_db()
+        moved = d.execute("SELECT x FROM campaign_nodes ORDER BY id").fetchall()
+        assert moved[0]["x"] == 360                   # 띠 하나만큼이 그대로 띠 하나만큼으로
+        assert moved[1]["x"] == -1                    # 자리를 안 정한 카드는 건드리지 않는다
+        db_mod.init_db()
+        again = d.execute("SELECT x FROM campaign_nodes ORDER BY id").fetchall()
+        assert again[0]["x"] == 360                   # 두 번째에는 다시 밀지 않는다

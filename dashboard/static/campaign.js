@@ -110,7 +110,7 @@
   // ── 자유 배치(11-22) ──────────────────────────────────
   // 카드는 칸에 갇히지 않는다. 자기 자리(x·y)를 들고 보드 위 아무 데나 놓인다.
   // 전술은 배경 띠로 남는다 — 어느 띠 위에 놓였는지로 전술이 정해진다(서버 campaign.tactic_at 와 같은 셈).
-  var LANE_W = 260, CARD_W = 220, TOP = 54, PAD = 90;
+  var LANE_W = 360, CARD_W = 220, TOP = 54, PAD = 90;   // 띠 폭은 campaign.py 의 LANE_W 와 같아야 한다
   var bands = document.getElementById("cp-bands");
   var zoomer = document.getElementById("cp-zoomer");
   var lanes = [].map.call(bands ? bands.children : [], function (b) { return b.dataset.tactic; });
