@@ -1261,6 +1261,12 @@ def scenario():
         camps = campaign.for_target(db, target["id"])
         want = request.args.get("campaign", type=int)
         pick = next((c for c in camps if c["id"] == want), camps[-1] if camps else None)
+        # 없는 번호로 들어오면 주소는 그 번호인데 화면은 다른 캠페인이었다 — 그 화면의 단추
+        # (이름 바꾸기·지우기)가 엉뚱한 캠페인에 걸린다. 실제로 그렇게 남의 이름을 바꿨다
+        # (11-22). 주소를 지금 보는 캠페인으로 맞춰 다시 보낸다.
+        if want and (not pick or pick["id"] != want):
+            flash("그 캠페인은 없습니다 — 지워졌을 수 있습니다", "error")
+            return redirect(_board_url(target["id"], pick["id"] if pick else None))
         current = campaign.state(db, pick["id"]) if pick else None
     return render_template("scenario.html", rows=rows, head=head, columns=_attack_columns(target),
                            cands=cands, campaigns=camps, current=current, tactics=TACTICS,
