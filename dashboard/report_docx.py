@@ -24,13 +24,15 @@ CLI 다. 대시보드는 EC2-4 에서 돌고 거기에는 Node 도 그 스킬도
 가 쓰는 방식과 같다.
 """
 from docx import Document
+from docx.enum.section import WD_ORIENT, WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
-from . import report_chart
+from . import report_board, report_chart
+from .attack import TACTIC_NAME as TACTIC_KO
 
 # ── 템플릿에서 읽어 온 서식 ────────────────────────────────
 FONT = "Noto Sans KR"
@@ -347,6 +349,9 @@ def _dress(doc):
     st.font.name = FONT
     st.element.rPr.rFonts.set(qn("w:eastAsia"), FONT)
     for sec in doc.sections:
+        # python-docx 의 기본 쪽은 레터(216×279mm)다. 그대로 두면 가로 그림 쪽만 A4 가 되어
+        # 한 문서에 쪽 크기가 둘 섞인다
+        sec.page_width, sec.page_height = Cm(21.0), Cm(29.7)
         sec.top_margin, sec.bottom_margin = Cm(2.6), Cm(2.4)
         sec.left_margin = sec.right_margin = Cm(2.3)
         p = sec.header.paragraphs[0]
@@ -354,6 +359,27 @@ def _dress(doc):
         r = _font(p.add_run("취약점 진단 및 모의해킹 결과 보고서    대외비 · 팀 내부용"))
         r.font.size = Pt(8)
         r.font.color.rgb = FAINT
+
+
+def _turn(doc, landscape):
+    """쪽 하나를 가로로 눕히거나 되돌린다.
+
+    공격 체인 그림은 세로 쪽(글 너비 15.4cm)에서는 카드가 2.4cm 밖에 안 돼 제목이 잘리고
+    선이 눌린다(11-22 사용자 지적: 볼품없다). 그림 쪽만 눕히면 24cm 가 되어 카드가 넓어진다.
+    """
+    sec = doc.add_section(WD_SECTION.NEW_PAGE)
+    wide, tall = Cm(29.7), Cm(21.0)
+    sec.orientation = WD_ORIENT.LANDSCAPE if landscape else WD_ORIENT.PORTRAIT
+    sec.page_width, sec.page_height = (wide, tall) if landscape else (tall, wide)
+    # 가로 쪽은 그림 한 장만 싣는다 — 여백을 줄여 카드를 넓게 쓴다
+    sec.top_margin, sec.bottom_margin = (Cm(1.8), Cm(1.6)) if landscape else (Cm(2.6), Cm(2.4))
+    sec.left_margin = sec.right_margin = Cm(1.5) if landscape else Cm(2.3)
+    p = sec.header.paragraphs[0]
+    p.text = ""
+    r = _font(p.add_run("취약점 진단 및 모의해킹 결과 보고서    대외비 · 팀 내부용"))
+    r.font.size = Pt(8)
+    r.font.color.rgb = FAINT
+    return 29.7 - 3.0 if landscape else 15.4
 
 
 def _method_of(request: str) -> str:
@@ -440,6 +466,51 @@ def _ranked(groups):
     return sorted(groups, key=lambda g: (RANK.get(g[1][0]["top_severity"], 9), -_score(g[1]), g[0]))
 
 
+def _vid_map(groups):
+    """결과 줄 번호(findings.id) → 건 ID 'V-xx-n'. 캠페인 카드가 결과를 그 번호로 가리킨다."""
+    out = {}
+    for vid, g in groups:
+        for k, it in enumerate(g, 1):
+            if it.get("finding_id") is not None:
+                out[str(it["finding_id"])] = f"{vid}-{k}"
+    return out
+
+
+def _scenario_use(scenarios):
+    """결과 줄 번호 → {'steps': ['S1-STEP2', …], 'ids': ['S1']}.
+
+    양식의 '시나리오 사용' 칸은 자리마다 모양이 다르다 — 4-2(취약점 줄)는 시나리오 번호,
+    5장(건 줄)은 단계 번호다. 둘 다 만들어 둔다.
+    """
+    out = {}
+    for sc in scenarios:
+        for node in sc["steps"]:
+            if node["kind"] != "finding" or not node["ref"]:
+                continue
+            got = out.setdefault(str(node["ref"]), {"steps": [], "ids": []})
+            got["steps"].append(node["step_id"])
+            if sc["sid"] not in got["ids"]:
+                got["ids"].append(sc["sid"])
+    return out
+
+
+def _used_ids(group, used):
+    """4-2 의 '시나리오 사용' — 그 취약점의 건이 쓰인 시나리오 번호(S1)."""
+    out = []
+    for it in group:
+        for sid in used.get(str(it.get("finding_id")), {}).get("ids", []):
+            if sid not in out:
+                out.append(sid)
+    return ", ".join(out) or "-"
+
+
+def _used_steps(it, used):
+    """5장 건별 목록의 '시나리오 사용' — 그 건이 쓰인 단계 번호(S1-STEP2)."""
+    if not used:
+        return "[ ]"
+    return ", ".join(used.get(str(it.get("finding_id")), {}).get("steps", [])) or "-"
+
+
 def _overall(items, assets, groups):
     """총평 문단 — 집계만으로 적는다.
 
@@ -497,7 +568,7 @@ def _owasp_chart(owasp):
                                 [r["name"] for r in rows], series)
 
 
-def _cover(doc, doc_meta, items, assets, groups):
+def _cover(doc, doc_meta, items, assets, groups, scenarios=()):
     _say(doc, "RESULT REPORT  ·  딸깍이 자동 생성", size=10, color=ACCENT, bold=True, ratio=1.2, space=10)
     title = _line(doc.add_paragraph(style="Heading 1"), 1.1)
     r = _font(title.add_run("취약점 진단 및\n모의해킹 결과 보고서"))
@@ -509,8 +580,13 @@ def _cover(doc, doc_meta, items, assets, groups):
     if doc_meta["practice"]:
         _say(doc, "점검 결과가 아닙니다. 연습용 가짜 서버에서 나온 기록입니다. 보고서에 넣지 마세요.",
              size=10, color=HOLE, bold=True)
-    _bullet(doc, "채운 절: 3-2 위험도 적용 결과 · 4-1 총평 · 4-2 대상별 취약점 요약 · 5 Part A 진단 상세 결과")
-    _bullet(doc, "나머지 장(1 개요, 2 진단 항목, 6 Part B, 7 보안 대책)은 사람이 씁니다")
+    filled = "3-2 위험도 적용 결과 · 4-1 총평 · 4-2 대상별 취약점 요약 · 5 Part A 진단 상세 결과"
+    rest = "1 개요, 2 진단 항목, 6 Part B, 7 보안 대책"
+    if scenarios:
+        filled += " · 4-3 목표 달성 여부 · 6 Part B 시나리오 모의해킹"
+        rest = "1 개요, 2 진단 항목, 7 보안 대책"
+    _bullet(doc, "채운 절: " + filled)
+    _bullet(doc, f"나머지 장({rest})은 사람이 씁니다")
     _bullet(doc, "기준: KISA 기술적 취약점 상세가이드 2026, OWASP Top 10:2025, CVSS 3.1")
     _hole(doc, "대괄호 [ ] 는 딸깍이가 알 수 없는 칸입니다 — 사람이 채웁니다")
 
@@ -527,8 +603,12 @@ def _cover(doc, doc_meta, items, assets, groups):
     ], widths=[3.4, 12.0])
 
 
-def build(doc_meta, items, path, owasp=()):
-    """owasp 는 유형별 건수(화면 '점검 현황' 과 같은 집계). 없으면 그 그림만 빠진다."""
+def build(doc_meta, items, path, owasp=(), scenarios=()):
+    """owasp 는 유형별 건수(화면 '점검 현황' 과 같은 집계). 없으면 그 그림만 빠진다.
+
+    scenarios 는 수사보드 캠페인이다. 있으면 6장 Part B 와 4-3 목표 표가 서고,
+    4-2·5장의 '시나리오 사용' 칸이 찬다. 없으면 그 자리는 전처럼 `[ ]` 로 남는다.
+    """
     doc = Document()
     _dress(doc)
     groups = _groups(items)                      # V-ID 는 문서 전체에서 한 번만 매긴다
@@ -536,8 +616,10 @@ def build(doc_meta, items, path, owasp=()):
     assets = _assets(items)
     counts = _counts(items)
     mine = {vid: [it for it in g] for vid, g in groups}
+    vid_of = _vid_map(groups)                    # 결과 줄 번호 → 'V-03-2'
+    used = _scenario_use(scenarios)              # 결과 줄 번호 → 쓰인 단계·시나리오
 
-    _cover(doc, doc_meta, items, assets, groups)
+    _cover(doc, doc_meta, items, assets, groups, scenarios)
 
     # ── 3 위험도 ──────────────────────────────────────
     doc.add_page_break()
@@ -610,14 +692,19 @@ def build(doc_meta, items, path, owasp=()):
     _say(doc, "※ 건수는 건 단위(V-xx-n) 기준입니다.", size=8.5, color=FAINT, ratio=1.25, space=10)
 
     _say(doc, "취약점 목록:", size=10, space=4)
-    _table(doc, ["V-ID", "취약점명", "취약점 유형(OWASP)", "대상", "건수", "위험도", "조치 구분"],
+    _table(doc, ["V-ID", "취약점명", "취약점 유형(OWASP)", "대상", "건수", "위험도",
+                 "시나리오 사용", "조치 구분"],
            [[vid, g[0]["module_name"], (g[0]["owasp"].split(" ")[0] if g[0]["owasp"] else "[ ]"),
-             ", ".join(sorted({i["asset_id"] for i in g})), f"{len(g)}건", g[0]["top_severity"], "[ ]"]
-            for vid, g in ranked], widths=[1.4, 4.4, 2.6, 2.0, 1.3, 1.8, 1.9])
+             ", ".join(sorted({i["asset_id"] for i in g})), f"{len(g)}건", g[0]["top_severity"],
+             _used_ids(g, used), "[ ]"]
+            for vid, g in ranked], widths=[1.3, 3.8, 2.3, 1.8, 1.2, 1.7, 1.7, 1.6])
     _say(doc, "※ 정렬: 위험도 높은 순(Critical → Info), 같은 위험도 안에서는 CVSS 점수가 높은 순",
          size=8.5, color=FAINT, ratio=1.25, space=2)
     _say(doc, "※ 취약점별 상세는 5장에 있습니다. 조치 구분(즉시/단기/중기)은 사람이 적습니다.",
          size=8.5, color=FAINT, ratio=1.25, space=10)
+
+    if scenarios:
+        _goals_table(doc, scenarios, vid_of)
 
     # ── 5 Part A ─────────────────────────────────────
     doc.add_page_break()
@@ -643,13 +730,16 @@ def build(doc_meta, items, path, owasp=()):
         for n, (vid, g) in enumerate(here, 1):
             if n > 1:
                 doc.add_page_break()
-            _detail(doc, vid, g)
+            _detail(doc, vid, g, used)
+
+    if scenarios:
+        _part_b(doc, scenarios, vid_of)
 
     doc.save(path)
     return doc
 
 
-def _detail(doc, vid, g):
+def _detail(doc, vid, g, used=None):
     """취약점 유형 하나 — 개요 표, 건별 목록, 대표 PoC."""
     _head(doc, f'{vid}. {g[0]["module_name"]}', 4)
     _table(doc, ["항목", "내용"], [
@@ -669,7 +759,8 @@ def _detail(doc, vid, g):
     _table(doc, ["건 ID", "위치 (URL · 파라미터)", "메서드", "위험도", "의도적", "시나리오 사용",
                  "탐지 검증", "증거", "상태"],
            [[f"{vid}-{k}", "`" + it["location"] + "`", it["method"], it["severity_label"],
-             "[ ]", "[ ]", "[ ]", ("요청·응답 수록" if it["request"] else "근거만"), it["status_label"]]
+             "[ ]", _used_steps(it, used), "[ ]",
+             ("요청·응답 수록" if it["request"] else "근거만"), it["status_label"]]
             for k, it in enumerate(g, 1)],
            widths=[1.4, 4.2, 1.3, 1.5, 1.1, 1.5, 1.3, 1.8, 1.3], head_size=8)
 
@@ -681,3 +772,123 @@ def _detail(doc, vid, g):
         _code(doc, rep["request"], "요청 발췌")
         _code(doc, rep["response"], "응답 발췌")
     _say(doc, "조치방안: " + (rep["recommendation"] or "[ ]"), size=10, space=10)
+
+# ── 6 Part B. 시나리오 모의해킹 ───────────────────────────
+#
+# 양식(`01_제출물/결과보고서_양식/1_결과보고서_양식.md` 6장)의 자리에 수사보드 캠페인을 앉힌다.
+# 캠페인 하나가 시나리오 하나(S1)이고, 목표가 아닌 카드 하나가 단계 하나(S1-STEP1)다.
+# 딸깍이가 아는 칸만 채운다 — 시각·출발지 IP·수행 내용·남긴 흔적·탐지는 사람이 적는다.
+
+ARROW = " → "
+
+
+def _goal_ins(sc):
+    """목표마다 '그 목표로 들어오는 단계' — 보드의 선을 거꾸로 따라간다."""
+    step_of = {n["id"]: n for n in sc["steps"]}
+    ins = {g["id"]: [] for g in sc["goals"]}
+    for e in sc["edges"]:
+        if e["dst"] in ins and e["src"] in step_of:
+            ins[e["dst"]].append(step_of[e["src"]])
+    return ins
+
+
+def _node_vids(node, vid_of):
+    """카드가 가리키는 건 ID. 결과 카드가 아니면 빈 값."""
+    if node["kind"] != "finding" or not node["ref"]:
+        return ""
+    return vid_of.get(str(node["ref"]), "")
+
+
+def _goals_table(doc, scenarios, vid_of):
+    _head(doc, "4-3. 목표 달성 여부", 3)
+    rows = []
+    for sc in scenarios:
+        ins = _goal_ins(sc)
+        for g in sc["goals"]:
+            vids = [v for v in (_node_vids(n, vid_of) for n in ins.get(g["id"], [])) if v]
+            rows.append([g["goal_id"], g["title"], "[ ]", g["status"] or "[ ]", "[ ]",
+                         ", ".join(sorted(set(vids))[:4]) + (" 외" if len(set(vids)) > 4 else "") or "-",
+                         sc["sid"]])
+    _table(doc, ["목표 ID", "목표", "구분", "결과", "걸린 시간", "사용 취약점", "시나리오"], rows,
+           widths=[1.3, 4.3, 1.2, 1.6, 1.6, 3.9, 1.5])
+    _say(doc, "※ '결과' 칸은 보드에 적힌 상태입니다. 달성 / 부분 달성 / 미달성 판정과 "
+              "걸린 시간은 사람이 적습니다.", size=8.5, color=FAINT, ratio=1.25, space=10)
+
+
+def _tactic_chart(scenarios):
+    """전술별 단계 수 — 양식의 그림 G-6. 15개 전술을 다 적고 0 인 줄도 남긴다."""
+    from .attack import TACTICS
+    count = {tid: 0 for tid, _en, _ko in TACTICS}
+    for sc in scenarios:
+        for n in sc["steps"]:
+            if n["tactic"] in count:
+                count[n["tactic"]] += 1
+    rows = [(f"{ko}", count[tid]) for tid, _en, ko in TACTICS]
+    return report_chart.stacked(
+        "전술별 단계 수 (ATT&CK)", [k for k, _n in rows],
+        [{"name": "단계", "values": [n for _k, n in rows], "color": "2F5B63"}], legend=False)
+
+
+KIND_KO = {"observed": "읽어 낸 것", "cve": "CVE", "finding": "점검 결과", "goal": "목표"}
+
+
+def _vid_of_node(sc, nid, vid_of):
+    """그림이 카드 밑줄에 적을 건 ID — 카드 id 로 찾는다."""
+    for n in sc["nodes"]:
+        if n["id"] == nid:
+            return _node_vids(n, vid_of)
+    return ""
+
+
+def _part_b(doc, scenarios, vid_of):
+    doc.add_page_break()
+    _head(doc, "6  Part B. 시나리오 모의해킹 결과", 2)
+    _bullet(doc, "취약점 설명은 다시 쓰지 않고 건 ID(V-xx-n)로만 가리킵니다 — 5장을 보세요")
+    _bullet(doc, "시나리오는 수사보드 캠페인 그대로입니다. 카드 하나가 단계 하나입니다")
+    _hole(doc, "단계마다 쓸 것: 시각 · 출발지 IP · 수행 내용 · 결과 · 남긴 흔적 · 탐지 기회 · 실제 탐지")
+
+    for sc in scenarios:
+        _head(doc, f'6-1. 시나리오 요약 — {sc["sid"]}. {sc["name"]}', 3)
+        tactics = []
+        for n in sc["steps"]:
+            ko = TACTIC_KO.get(n["tactic"], n["tactic"])
+            if ko not in tactics:
+                tactics.append(ko)
+        sure = sum(1 for n in sc["steps"] if n["status"] == "확인")
+        _table(doc, ["항목", "내용"], [
+            ["목표", sc["goal"] or "[ ]"],
+            ["시작 조건", "[ ]"],
+            ["공격 경로 한 줄", ARROW.join(tactics) or "[ ]"],
+            ["단계", f'{len(sc["steps"])}개 (확인 {sure} · 그 밖 {len(sc["steps"]) - sure})'],
+            ["세운 목표", f'{len(sc["goals"])}개 — ' + ", ".join(g["title"] for g in sc["goals"])],
+            ["결과", "[ ]"],
+        ], widths=[3.0, 12.4])
+
+        # 그림만 가로 쪽에 — 세로 쪽에서는 카드가 2.4cm 라 제목이 잘린다
+        wide = _turn(doc, True)
+        _say(doc, f'그림 6-1. {sc["sid"]} 공격 체인 — 읽어 낸 것에서 CVE 와 확인된 건을 지나 목표까지',
+             size=9.5, color=SUB, bold=True, ratio=1.2, space=6)
+        report_board.draw(doc, sc["nodes"], sc["edges"],
+                          lambda nid: _vid_of_node(sc, nid, vid_of), width_cm=wide)
+        _say(doc, "● 열 하나가 전술 하나입니다(보드와 같은 짜임). 선은 카드 오른쪽에서 나가 "
+                  "다음 카드 왼쪽으로 들어갑니다. 같은 제목의 결과 여럿은 한 장으로 접고 "
+                  "건 ID 를 밑에 적었습니다.", size=8.5, color=FAINT, ratio=1.25, space=10)
+        _turn(doc, False)
+
+        report_chart.place(doc, _tactic_chart([sc]), 15.4, 7.6)
+        _say(doc, "● 그림 G-6. 전술별 단계 수. 0 인 전술도 줄을 남겨 어디를 안 밟았는지 보입니다.",
+             size=8.5, color=FAINT, ratio=1.25, space=10)
+
+        _say(doc, "단계별 상태:", size=10, space=4)
+        _table(doc, ["단계 ID", "단계명", "전술", "종류", "사용 취약점", "상태"],
+               [[n["step_id"], n["title"][:46], TACTIC_KO.get(n["tactic"], n["tactic"]),
+                 KIND_KO.get(n["kind"], n["kind"]), _node_vids(n, vid_of) or "-",
+                 n["status"] or "[ ]"] for n in sc["steps"]],
+               widths=[2.0, 5.2, 1.9, 1.8, 2.5, 1.7], head_size=8)
+        _say(doc, "※ 상태는 보드에 적힌 그대로입니다 — '추정' 과 '코드 확인' 은 아직 재현으로 "
+                  "확인하지 않은 단계입니다.", size=8.5, color=FAINT, ratio=1.25, space=10)
+
+        _head(doc, f'6-2. 공격 내러티브 — {sc["sid"]}', 3)
+        _bullet(doc, "단계마다 「목적 → 수행 → 탐지 → 결과」 순으로 사람이 씁니다")
+        _hole(doc, "위 단계별 상태 표의 줄마다 양식 6-2 의 13칸 표를 채웁니다 — "
+                   "딸깍이가 채운 칸(전술 · 사용 취약점 · 상태)은 그대로 옮기면 됩니다")

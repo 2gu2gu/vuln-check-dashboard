@@ -12,7 +12,7 @@ import zipfile
 import pytest
 from docx import Document
 
-from dashboard import report_chart
+from dashboard import report_board, report_chart
 from dashboard.db import get_db
 from tests.test_app import add_target, target_id
 
@@ -207,6 +207,111 @@ def test_a_horizontal_chart_puts_the_first_row_on_top(client, two_webs):
 
 
 # ── 차트 XML 자체 ─────────────────────────────────────────────
+
+# ── 시나리오(수사보드 캠페인) ─────────────────────────────────
+
+def _campaign(app, tid, name="S1 버전에서 CVE 까지"):
+    """보드 한 판 — 읽어 낸 것 → CVE → 결과 → 목표."""
+    with app.app_context():
+        db = get_db()
+        found = db.execute("SELECT id FROM findings WHERE target_id = ? ORDER BY id", [tid]).fetchall()
+        cid = db.execute("INSERT INTO campaigns (target_id, name, goal, created_at) "
+                         "VALUES (?, ?, '읽어 낸 버전에서 어디까지 가는지', '2026-11-22')",
+                         [tid, name]).lastrowid
+
+        def node(kind, tactic, title, ref="", status="확인", x=0, y=0):
+            return db.execute(
+                "INSERT INTO campaign_nodes (campaign_id, kind, ref, tactic, title, sub, status, "
+                "note, x, y, created_at) VALUES (?, ?, ?, ?, ?, '', ?, '', ?, ?, '2026-11-22')",
+                [cid, kind, ref, tactic, title, status, x, y]).lastrowid
+
+        seen = node("observed", "TA0043", "Apache Tomcat 10.1.1", x=20)
+        cve = node("cve", "TA0001", "CVE-2021-44228", ref="CVE-2021-44228", x=700)
+        hit = node("finding", "TA0001", "검색어에 SQL 주입", ref=str(found[0]["id"]), x=1400)
+        more = node("finding", "TA0007", "CSP 헤더 없음", ref=str(found[1]["id"]),
+                    status="추정", x=2100)
+        goal = node("goal", "TA0040", "서버 장악", x=2800)
+        for a, b, label in ((seen, cve, "버전이 맞음"), (cve, hit, "같은 제품"),
+                            (hit, goal, "이걸로 가능"), (more, goal, "이걸로 가능")):
+            db.execute("INSERT INTO campaign_edges (campaign_id, src, dst, label) VALUES (?, ?, ?, ?)",
+                       [cid, a, b, label])
+        db.commit()
+    return cid
+
+
+def test_a_campaign_becomes_part_b_of_the_report(client, app, two_webs):
+    """수사보드 캠페인 하나가 시나리오 한 절이 된다(양식 6장)."""
+    _campaign(app, two_webs[0])
+    text = _text(_docx(client, two_webs[0]))
+    assert "6  Part B. 시나리오 모의해킹 결과" in text
+    assert "6-1. 시나리오 요약 — S1. 버전에서 CVE 까지" in text
+    assert "공격 경로 한 줄" in text and "정찰 → 초기 접근 → 탐색" in text
+    assert "S1-STEP1" in text and "S1-STEP4" in text
+    assert "4-3. 목표 달성 여부" in text and "O-1" in text and "서버 장악" in text
+
+
+def test_the_scenario_column_is_filled_from_the_board(client, app, two_webs):
+    """양식의 '시나리오 사용' 칸 — 4-2 는 시나리오 번호, 5장 건별은 단계 번호다."""
+    _campaign(app, two_webs[0])
+    doc = Document(io.BytesIO(_docx(client, two_webs[0])))
+    kinds = next(t for t in doc.tables if t.rows[0].cells[0].text == "V-ID"
+                 and "시나리오 사용" in [c.text for c in t.rows[0].cells])
+    used = {r.cells[1].text: r.cells[6].text for r in kinds.rows[1:]}
+    assert used["강의 목록 SQL 주입 (심화)"] == "S1"
+    assert used["열린 포트 확인"] == "-"            # 보드에 안 올라간 취약점
+    cases = next(t for t in doc.tables if t.rows[0].cells[0].text == "건 ID")
+    steps = {r.cells[0].text: r.cells[5].text for r in cases.rows[1:]}
+    assert any(v.startswith("S1-STEP") for v in steps.values())
+
+
+def test_without_a_campaign_the_report_stays_as_it_was(client, two_webs):
+    """캠페인이 없으면 6장도 4-3 도 서지 않는다 — 빈 장을 만들지 않는다."""
+    text = _text(_docx(client, two_webs[0]))
+    assert "6  Part B. 시나리오 모의해킹 결과" not in text
+    assert "4-3. 목표 달성" not in text
+
+
+def test_the_chain_picture_is_drawn_as_word_shapes(client, app, two_webs):
+    """그림 6-1 은 그림 파일이 아니라 도형 묶음이다 — Word 에서 카드를 끌어 옮길 수 있다.
+
+    선은 직각으로 꺾는 가는 줄이어야 한다(미감 명세) — 곡선은 지렁이처럼 보인다.
+    """
+    _campaign(app, two_webs[0])
+    blob = _docx(client, two_webs[0])
+    with zipfile.ZipFile(io.BytesIO(blob)) as z:
+        body = z.read("word/document.xml").decode("utf-8")
+        assert not [n for n in z.namelist() if n.startswith("word/media/")]
+    assert "wordprocessingGroup" in body and "roundRect" in body
+    # 선은 손으로 그린 베지에 하나 — Word 커넥터는 높이 차가 작으면 S 자로 꿈틀거린다
+    assert "cubicBezTo" in body and "curvedConnector" not in body
+
+
+def test_the_columns_run_left_to_right_in_attack_order(client, app, two_webs):
+    """열 하나가 전술 하나이고 왼쪽에서 오른쪽으로 흐른다 — 보드와 같은 짜임."""
+    _campaign(app, two_webs[0])
+    with app.app_context():
+        db = get_db()
+        nodes = [dict(r) for r in db.execute("SELECT * FROM campaign_nodes ORDER BY id")]
+        edges = [dict(r) for r in db.execute("SELECT * FROM campaign_edges ORDER BY id")]
+    cols, cards, links, _h = report_board.lay_out(nodes, edges, lambda i: "")
+    assert [t for t, _line in cols] == ["TA0043", "TA0001", "TA0007", "TA0040"]
+    xs = [c["x"] for _t, line in cols for c in line]
+    assert xs == sorted(xs), "왼쪽 열이 먼저 온다"
+    assert links, "선이 그려진다"
+
+
+def test_findings_with_the_same_title_are_folded_into_one_card():
+    """민감 파일 노출 7건을 카드 7장으로 그리면 그림이 못 읽게 된다."""
+    nodes = [{"id": i, "kind": "finding", "ref": str(i), "tactic": "TA0007", "x": i * 10, "y": 0,
+              "title": f"민감 파일 노출: /etc/{i}.conf", "sub": "", "status": "확인"}
+             for i in range(1, 8)]
+    nodes.append({"id": 9, "kind": "goal", "ref": "", "tactic": "TA0040", "x": 0, "y": 0,
+                  "title": "서버 장악", "sub": "", "status": "추정"})
+    _rows, cards, _links, _h = report_board.lay_out(nodes, [], lambda i: f"V-01-{i}")
+    folded = [c for c in cards if c["kind"] == "finding"]
+    assert len(folded) == 1 and len(folded[0]["ids"]) == 7
+    assert "7건" in folded[0]["title"] and folded[0]["sub"].startswith("V-01-1")
+
 
 def test_chart_xml_is_well_formed_and_keeps_the_values():
     from xml.etree import ElementTree
