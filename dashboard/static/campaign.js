@@ -124,17 +124,27 @@
   var mapView = document.getElementById("cp-map-view");
   var COLOR = { goal: "--sev-critical", cve: "--hit", finding: "--sev-low", observed: "--accent" };
 
+  // 미니맵은 **보드에 그려진 그대로** 를 줄인 그림이어야 한다. 두 가지가 어긋나 있었다
+  // (11-22 사용자): ① 접은 띠를 셈하지 않아 원래 자리에 점을 찍었고 ② 가로·세로를 따로
+  // 늘려 비율이 깨졌다. 이제 자리는 seat() 를 지나고, 배율은 가로·세로 중 작은 쪽 하나를
+  // 둘 다에 쓴다. 남는 쪽은 가운데로 민다.
+  function mapFit() {
+    var w = canvas.offsetWidth || 1, h = canvas.offsetHeight || 1;
+    var s = Math.min(map.clientWidth / w, map.clientHeight / h);
+    return {s: s, w: w, h: h,
+            ox: (map.clientWidth - w * s) / 2, oy: (map.clientHeight - h * s) / 2};
+  }
+
   function drawMap() {
     if (!map) return;
     map.querySelectorAll("i").forEach(function (e) { e.remove(); });
-    var w = canvas.offsetWidth || 1, h = canvas.offsetHeight || 1;
-    var sx = map.clientWidth / w, sy = map.clientHeight / h;
+    var f = mapFit();
     state.nodes.forEach(function (n) {
       var b = document.createElement("i");
-      b.style.left = (n.x * sx) + "px";
-      b.style.top = (n.y * sy) + "px";
-      b.style.width = Math.max(3, 220 * sx) + "px";
-      b.style.height = Math.max(3, 110 * sy) + "px";
+      b.style.left = (f.ox + seat(n.x) * f.s) + "px";
+      b.style.top = (f.oy + n.y * f.s) + "px";
+      b.style.width = Math.max(2, CARD_W * f.s) + "px";
+      b.style.height = Math.max(2, 110 * f.s) + "px";
       b.style.background = "var(" + (COLOR[n.kind] || "--line") + ")";
       b.style.opacity = ".75";
       map.appendChild(b);
@@ -144,20 +154,19 @@
 
   function mapWhere() {
     if (!mapView || !map) return;
-    var box = canvas.parentElement.parentElement;          // 가로로 미는 상자
-    var w = canvas.offsetWidth || 1, h = canvas.offsetHeight || 1;
-    var sx = map.clientWidth / w, sy = map.clientHeight / h;
-    mapView.style.left = (box.scrollLeft / Z * sx) + "px";
-    mapView.style.top = (box.scrollTop / Z * sy) + "px";
-    mapView.style.width = Math.min(map.clientWidth, box.clientWidth / Z * sx) + "px";
-    mapView.style.height = Math.min(map.clientHeight, box.clientHeight / Z * sy) + "px";
+    var box = canvas.parentElement.parentElement;          // 보드를 미는 상자
+    var f = mapFit();
+    mapView.style.left = (f.ox + box.scrollLeft / Z * f.s) + "px";
+    mapView.style.top = (f.oy + box.scrollTop / Z * f.s) + "px";
+    mapView.style.width = Math.min(f.w, box.clientWidth / Z) * f.s + "px";
+    mapView.style.height = Math.min(f.h, box.clientHeight / Z) * f.s + "px";
   }
 
   if (map) map.addEventListener("click", function (e) {
-    var r = map.getBoundingClientRect();
+    var r = map.getBoundingClientRect(), f = mapFit();
     var box = canvas.parentElement.parentElement;
-    box.scrollLeft = ((e.clientX - r.left) / map.clientWidth) * canvas.offsetWidth * Z - box.clientWidth / 2;
-    box.scrollTop = ((e.clientY - r.top) / map.clientHeight) * canvas.offsetHeight * Z - box.clientHeight / 2;
+    box.scrollLeft = (e.clientX - r.left - f.ox) / f.s * Z - box.clientWidth / 2;
+    box.scrollTop = (e.clientY - r.top - f.oy) / f.s * Z - box.clientHeight / 2;
   });
 
   function laneAt(x) {
@@ -200,7 +209,9 @@
   }
 
   function zoom(to) {
-    Z = Math.max(0.4, Math.min(1.6, Math.round(to * 20) / 20));
+    // 아래 끝은 0.1 — 카드가 많으면 40% 로는 한 화면에 안 들어온다(11-22 사용자).
+    // 글자는 안 읽히지만 그때는 지도처럼 쓰는 것이다.
+    Z = Math.max(0.1, Math.min(1.6, Math.round(to * 100) / 100));
     canvas.style.transform = "scale(" + Z + ")";
     canvas.style.transformOrigin = "0 0";
     if (zoomer) {
@@ -485,11 +496,15 @@
   document.querySelectorAll("[data-zoom]").forEach(function (b) {
     b.addEventListener("click", function () {
       var how = b.dataset.zoom;
-      if (how === "in") zoom(Z + 0.1);
-      else if (how === "out") zoom(Z - 0.1);
-      else {                                   // 전체 보기 — 보드 너비를 창에 맞춘다
-        var room = canvas.parentElement.parentElement.clientWidth - 8;
-        zoom(room / canvas.offsetWidth);
+      // 작을 때는 0.1 씩 깎으면 한 번에 반이 준다 — 지금 배율에 비례해 움직인다
+      var step = Z <= 0.4 ? 0.05 : 0.1;
+      if (how === "in") zoom(Z + step);
+      else if (how === "out") zoom(Z - step);
+      else {                                   // 전체 보기 — 가로·세로 **둘 다** 창에 넣는다
+        var box = canvas.parentElement.parentElement;
+        zoom(Math.min((box.clientWidth - 8) / canvas.offsetWidth,
+                      (box.clientHeight - 8) / canvas.offsetHeight));
+        box.scrollTop = 0; box.scrollLeft = 0;
       }
       drawLines();
     });
