@@ -143,95 +143,93 @@ def _obj(props, required=()):
 
 TOOLS = [
     {"name": "targets", "write": False,
-     "description": "점검 대상 목록. 대상마다 id·이름·주소·역할과 모아 둔 지점 수를 준다. "
-                    "다른 도구의 target_id 는 여기서 얻는다.",
+     "description": "스캔 대상(타깃) 목록을 조회합니다. 각 항목은 id, 이름, URL, 역할, 수집된 엔드포인트 수를 포함합니다. 다른 도구의 `target_id` "
+                    "입력값은 이 도구에서 얻습니다.",
      "inputSchema": _obj({})},
 
     {"name": "points", "write": False,
-     "description": "한 대상이 모아 둔 지점(요청 자리) 목록. 주소·메서드·파라미터·출처를 준다. "
-                    "`run_module` 로 지점 점검 모듈을 돌릴 때 고를 id 가 여기 있다.",
+     "description": "한 타깃에서 수집된 엔드포인트 목록을 조회합니다. 각 항목은 URL, 메서드, 파라미터와 파라미터 위치(query·json·form·path), 수집 "
+                    "출처를 포함합니다. `run_module` 로 엔드포인트 단위 모듈(stage=probe)을 실행할 때 지정할 id 가 여기에 있습니다.",
      "inputSchema": _obj({
-         "target_id": {"type": "integer", "description": "대상 id"},
-         "contains": {"type": "string", "description": "주소에 이 글자가 든 것만"},
-         "params_only": {"type": "boolean", "description": "파라미터가 있는 지점만(기본 false)"},
-         "limit": {"type": "integer", "description": "최대 몇 줄(기본 100)"}}, ["target_id"])},
+         "target_id": {"type": "integer", "description": "타깃 id"},
+         "contains": {"type": "string", "description": "URL 부분 일치 필터"},
+         "params_only": {"type": "boolean", "description": "파라미터가 있는 엔드포인트만 반환(기본 false)"},
+         "limit": {"type": "integer", "description": "최대 반환 건수(기본 100)"}}, ["target_id"])},
 
     {"name": "modules", "write": False,
-     "description": "이 대상에서 쓸 수 있는 점검 모듈 목록. 모듈마다 무엇을 보는지(단계·취약점 종류·"
-                    "설정 칸)를 준다. 단계가 probe 면 지점을 골라야 돌고, check/collect/tool 은 대상만으로 돈다.",
-     "inputSchema": _obj({"target_id": {"type": "integer", "description": "대상 id"}}, ["target_id"])},
+     "description": "해당 타깃에서 실행 가능한 진단 모듈 목록을 조회합니다. 각 모듈의 실행 단위(stage), 취약점 분류, 심각도, 설정 가능한 파라미터를 반환합니다. "
+                    "stage=probe 는 엔드포인트 지정이 필요하고, check·collect·tool 은 타깃만으로 실행됩니다.",
+     "inputSchema": _obj({"target_id": {"type": "integer", "description": "타깃 id"}}, ["target_id"])},
 
     {"name": "findings", "write": False,
-     "description": "점검 결과 목록. 제목·자리·심각도·처리 상태를 준다. 근거와 다시 보낼 요청은 "
-                    "`finding` 으로 한 건씩 본다.",
+     "description": "진단 결과(취약점) 목록을 조회합니다. 제목, 위치, 심각도, 처리 상태를 반환하며 타깃·상태·심각도·키워드로 필터링합니다. 상세 증적과 재현 요청은 "
+                    "`finding` 으로 건별 조회합니다.",
      "inputSchema": _obj({
-         "target_id": {"type": "integer", "description": "대상 id(비우면 전부)"},
+         "target_id": {"type": "integer", "description": "타깃 id(생략 시 전체)"},
          "status": {"type": "string", "description": "open 미확인 · confirmed 확인됨 · fixed 조치됨 · false_positive 오탐"},
          "severity": {"type": "string", "description": "critical · high · medium · low · info"},
-         "contains": {"type": "string", "description": "제목이나 자리에 이 글자가 든 것만"},
-         "limit": {"type": "integer", "description": "최대 몇 줄(기본 50)"}})},
+         "contains": {"type": "string", "description": "제목·위치 부분 일치 필터"},
+         "limit": {"type": "integer", "description": "최대 반환 건수(기본 50)"}})},
 
     {"name": "finding", "write": False,
-     "description": "결과 한 건의 전부 — 근거, 권고, **그대로 다시 보낼 수 있는 요청 한 줄**. "
-                    "판정이 맞는지 다시 보려면 이걸 읽고 그 요청을 직접 보내 확인한다.",
-     "inputSchema": _obj({"id": {"type": "integer", "description": "결과 id"}}, ["id"])},
+     "description": "진단 결과 한 건의 상세를 조회합니다. 판정 근거(요청·응답 요약), 조치 권고, 그대로 재전송 가능한 **재현 요청 원문**을 반환합니다. 판정을 검증할 "
+                    "때는 이 요청을 직접 보내 응답을 확인하십시오.",
+     "inputSchema": _obj({"id": {"type": "integer", "description": "진단 결과 id"}}, ["id"])},
 
     {"name": "coverage", "write": False,
-     "description": "점검 범위 — OWASP 2025 와 KISA 21항목이 각각 어떤 상태인지. "
-                    "발견(건수 있음) · 점검·없음(모듈이 돌았고 안 나옴) · 모듈 있음·미실행 · 모듈 없음.",
+     "description": "진단 커버리지를 조회합니다. OWASP Top 10 2025 와 KISA 주요정보통신기반시설 웹 21항목 각각에 대해 발견(건수 있음), 점검·없음(모듈 "
+                    "실행 후 미검출), 모듈 있음·미실행, 모듈 없음 중 하나로 상태를 반환합니다.",
      "inputSchema": _obj({})},
 
     {"name": "run_status", "write": False,
-     "description": "실행 중이거나 막 끝난 모듈의 진행 상태. `run_module` 이 돌려준 run_id 로 본다.",
-     "inputSchema": _obj({"run_id": {"type": "integer", "description": "실행 id(비우면 도는 것 전부)"}})},
+     "description": "모듈 실행의 진행 상태를 조회합니다. `run_module` 이 반환한 run_id 로 지정하며, 상태·전송 요청 수·소요 시간·종료 메시지를 반환합니다.",
+     "inputSchema": _obj({"run_id": {"type": "integer", "description": "실행 id(생략 시 진행 중인 실행 전체)"}})},
 
     {"name": "run_module", "write": True,
-     "description": "모듈을 돌린다. 바로 돌아오고 뒤에서 돈다 — 진행은 `run_status` 로 본다. "
-                    "단계가 probe 인 모듈은 `points` 에 지점 id 를 적어야 한다. "
-                    "보내는 요청은 모두 범위 검사를 지난다(범위 밖 주소로는 나가지 않는다).",
+     "description": "진단 모듈을 실행합니다. **비동기**로 동작하여 run_id 를 즉시 반환하고, 진행은 `run_status` 로 조회합니다. stage=probe "
+                    "모듈은 `points` 에 엔드포인트 id 를 지정해야 합니다. 전송되는 모든 요청은 스코프 검증을 거치며, 허용 범위 밖 호스트로는 나가지 않습니다.",
      "inputSchema": _obj({
-         "target_id": {"type": "integer", "description": "대상 id"},
-         "module_id": {"type": "string", "description": "모듈 id(`modules` 가 준 것)"},
-         "points": {"type": "array", "items": {"type": "integer"}, "description": "지점 점검 모듈이면 고를 지점 id 들"},
-         "params": {"type": "object", "description": "모듈 설정 칸(`modules` 가 알려 준 이름). 비우면 기본값"}},
+         "target_id": {"type": "integer", "description": "타깃 id"},
+         "module_id": {"type": "string", "description": "모듈 id(`modules` 응답의 값)"},
+         "points": {"type": "array", "items": {"type": "integer"}, "description": "stage=probe 모듈에 지정할 엔드포인트 id 배열"},
+         "params": {"type": "object", "description": "모듈 파라미터(`modules` 가 제시한 이름). 생략 시 기본값"}},
          ["target_id", "module_id"])},
 
     {"name": "cve_candidates", "write": False,
-     "description": "점검 결과에 **보인 제품/버전** 과 그에 걸리는 CVE 후보 목록. 기술 지문·서버 정보 "
-                    "노출 결과의 근거에서 버전을 뽑고, 팀 CVE 목록과 NVD 에 받아 둔 것을 함께 준다. "
-                    "NVD 후보는 버전 범위가 맞는다는 뜻일 뿐이라 늘 '추정' 이다.",
+     "description": "진단 결과에서 **식별된 제품·버전**과 해당 버전에 영향을 주는 CVE 후보를 조회합니다. 버전은 배너·기술 지문·정보 노출 결과의 증적과 노출된 파일 "
+                    "경로에서 추출하며, 팀이 검증한 CVE 목록과 NVD 조회 결과를 함께 반환합니다. NVD 후보는 버전 범위 일치만을 의미하므로 상태는 항상 '추정' "
+                    "입니다.",
      "inputSchema": _obj({
-         "target_id": {"type": "integer", "description": "대상 id"},
-         "ask_nvd": {"type": "boolean", "description": "NVD(services.nvd.nist.gov)에 지금 물어본다. "
-                                                        "점검 대상이 아니라 **바깥으로 나가는 요청** 이고 느리다(기본 false)"}},
+         "target_id": {"type": "integer", "description": "타깃 id"},
+         "ask_nvd": {"type": "boolean", "description": "NVD(services.nvd.nist.gov)에 실시간 조회합니다. "
+                                                        "진단 대상이 아닌 **외부로 나가는 요청**이며 응답이 느립니다(기본 false)"}},
          ["target_id"])},
 
     {"name": "make_campaign", "write": True,
-     "description": "점검 결과에서 나온 **CVE 를 뼈대로** 침투 시나리오(캠페인) 초안을 한 벌 짠다. "
-                    "뼈대는 `관찰한 제품·버전(점검이 본 것) → 그 버전에 걸리는 CVE → 그 전술의 결과` 다. "
-                    "팀이 적어 둔 CVE 는 전술·상태·근거 문서를 그대로 쓰고, 결과는 그 결과가 쓴 기법이 "
-                    "가리키는 전술에 놓는다. 보고서에 옮길 줄거리도 같이 돌려준다. "
-                    "단계 사이에 무엇을 넘겼는지(토큰·셸)는 사람이 보드에서 적는다.",
+     "description": "진단 결과를 바탕으로 공격 시나리오(캠페인) 초안을 생성합니다. 체인은 **식별된 제품·버전 → 해당 버전에 영향을 주는 CVE → 그 전술에 속한 진단 "
+                    "결과 → 달성 가능한 목표** 순으로 구성되며, 각 노드는 ATT&CK 전술에 배치됩니다. 팀이 검증한 CVE 는 등록된 전술·상태·근거 문서를 그대로 "
+                    "사용하고, 진단 결과는 해당 결과의 ATT&CK 기법이 속한 전술에 배치합니다. 근거가 있는 연결만 생성하며(버전 일치, 동일 제품, 목표 달성 가능), "
+                    "보고서용 요약 텍스트를 함께 반환합니다. 단계 간 획득물(토큰·셸 등)은 분석가가 보드에서 직접 연결합니다.",
      "inputSchema": _obj({
-         "target_id": {"type": "integer", "description": "대상 id"},
-         "name": {"type": "string", "description": "캠페인 이름(비우면 '<대상> 침투 시나리오')"},
-         "goal": {"type": "string", "description": "이 시나리오의 목표 한 줄"},
+         "target_id": {"type": "integer", "description": "타깃 id"},
+         "name": {"type": "string", "description": "캠페인 이름(생략 시 '<타깃> 침투 시나리오')"},
+         "goal": {"type": "string", "description": "시나리오 목표 한 줄"},
          "statuses": {"type": "array", "items": {"type": "string"},
-                      "description": "어떤 처리 상태의 결과를 넣을지(기본 confirmed 만). open 을 넣으면 미확인도"},
+                      "description": "포함할 처리 상태(기본 confirmed). open 을 넣으면 미확인 결과도 포함"},
          "severity": {"type": "array", "items": {"type": "string"},
-                      "description": "넣을 심각도(critical·high·medium·low). 비우면 info 만 뺀다. "
-                                     "확인됨이 많은 대상은 critical·high 로 좁히는 게 읽기 좋다"},
+                      "description": "포함할 심각도(critical·high·medium·low). 생략 시 info 만 제외. "
+                                     "결과가 많은 타깃은 critical·high 로 좁히는 편이 읽기 좋습니다"},
          "top": {"type": "integer",
-                 "description": "보드에 올릴 가짓수 상한(기본 20). 같은 제목은 한 노드로 묶고 심한 것부터 올린다"}},
+                 "description": "보드에 배치할 최대 노드 수(기본 20). 동일 제목은 한 노드로 묶고 심각도 순으로 선택합니다"}},
          ["target_id"])},
 
     {"name": "set_status", "write": True,
-     "description": "결과의 처리 상태를 바꾼다. 확인했으면 confirmed, 틀렸으면 false_positive. "
-                    "**왜 그렇게 봤는지 note 에 남긴다** — 근거 없는 판정은 다음 사람이 다시 확인해야 한다.",
+     "description": "진단 결과의 처리 상태를 변경합니다(open·confirmed·fixed·false_positive). 검증한 근거를 `note` 에 남기십시오 — 근거 "
+                    "없는 판정은 재검증 대상이 됩니다.",
      "inputSchema": _obj({
-         "id": {"type": "integer", "description": "결과 id"},
-         "status": {"type": "string", "description": "open · confirmed · fixed · false_positive"},
-         "note": {"type": "string", "description": "그렇게 본 까닭 한 줄(근거 끝에 붙는다)"}},
+         "id": {"type": "integer", "description": "진단 결과 id"},
+         "status": {"type": "string", "description": "변경할 상태: open · confirmed · fixed · false_positive"},
+         "note": {"type": "string", "description": "판정 근거 한 줄(증적 끝에 추가됩니다)"}},
          ["id", "status"])},
 ]
 
